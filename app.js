@@ -84,6 +84,137 @@ async function loadCharts() {
     }
 }
 
+// 抓取并加载 music.apple.com/new 页面全量板块
+async function loadNewPage() {
+    listPanelTitle.innerText = "Apple 官方最新发布 (/new)";
+    playlistListEl.innerHTML = '<div class="loading-state">正在深度抓取 Apple 官方最新发布板块 (/new)...</div>';
+    itemCountBadge.innerText = "...";
+    statusText.innerText = `正在抓取 music.apple.com/${currentStorefront}/new 纯文本板块数据...`;
+    const startTime = performance.now();
+
+    try {
+        const response = await fetch(`/api/apple_new?storefront=${currentStorefront}`);
+        const duration = Math.round(performance.now() - startTime);
+        
+        if (!response.ok) {
+            throw new Error(`抓取异常: HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const sections = data?.sections || [];
+        statusText.innerText = `music.apple.com/new 抓取完成 (共 ${sections.length} 个板块，0 图片开销)`;
+        speedMetric.innerText = `⚡ ${duration} ms`;
+
+        renderNewSections(sections);
+    } catch (err) {
+        const duration = Math.round(performance.now() - startTime);
+        playlistListEl.innerHTML = `<div class="loading-state">❌ 抓取 /new 页面失败: ${err.message}</div>`;
+        itemCountBadge.innerText = "0";
+        statusText.innerText = `抓取失败: ${err.message}`;
+        speedMetric.innerText = `❌ ${duration} ms`;
+    }
+}
+
+// 渲染 /new 页面的多板块结构化列表
+function renderNewSections(sections) {
+    if (!sections || sections.length === 0) {
+        playlistListEl.innerHTML = '<div class="loading-state">未抓取到板块数据。</div>';
+        itemCountBadge.innerText = "0";
+        return;
+    }
+
+    let totalItems = 0;
+    sections.forEach(s => totalItems += (s.items?.length || 0));
+    itemCountBadge.innerText = `${sections.length} 板块 / ${totalItems} 条`;
+
+    playlistListEl.innerHTML = "";
+
+    sections.forEach((sec) => {
+        // 板块吸顶分界线
+        const divHeader = document.createElement("div");
+        divHeader.className = "section-divider";
+        divHeader.innerHTML = `
+            <span>${escapeHtml(sec.title)}</span>
+            <span class="section-count">${sec.items.length} 条</span>
+        `;
+        playlistListEl.appendChild(divHeader);
+
+        // 板块内部项目
+        sec.items.forEach((item) => {
+            const kind = item.kind || "item";
+            let typeLabel = "[歌单]";
+            if (kind === "album") typeLabel = "[专辑]";
+            else if (kind === "song") typeLabel = "[单曲]";
+            else if (kind.includes("video") || kind.includes("Video")) typeLabel = "[MV/视频]";
+            else if (kind.includes("radio")) typeLabel = "[电台]";
+
+            const card = document.createElement("div");
+            card.className = "playlist-card";
+            card.innerHTML = `
+                <div class="playlist-title-row">
+                    <span class="playlist-name">
+                        <span style="color:#ff7588; font-weight:normal; font-size:12px;">${typeLabel}</span> 
+                        ${item.heading ? `<span style="color:var(--text-muted); font-size:11px;">[${escapeHtml(item.heading)}] </span>` : ''}
+                        ${escapeHtml(item.title)}
+                    </span>
+                    <span class="playlist-curator">${escapeHtml(item.subtitle)}</span>
+                </div>
+                <div class="playlist-meta-row">
+                    <span>${item.url ? '🔗 官方直链' : ''}</span>
+                    <button class="btn-mini-action" onclick="event.stopPropagation(); copyUrl('${item.url}')" title="直接复制该直链">📋 复制链接</button>
+                </div>
+            `;
+
+            card.addEventListener("click", () => {
+                document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
+                card.classList.add("active");
+
+                if (kind === "playlist" || kind === "album") {
+                    selectPlaylist(item.id, kind, item.title, item.subtitle, item.url);
+                } else if (kind === "song") {
+                    selectSingleSong(item.title, item.subtitle, item.url);
+                } else {
+                    selectOtherItem(item.title, item.subtitle, kind, item.url);
+                }
+            });
+
+            playlistListEl.appendChild(card);
+        });
+    });
+}
+
+function selectSingleSong(title, artist, url) {
+    currentPlaylistData = { id: "", type: "song", name: title, curator: artist, url };
+    currentTracks = [{
+        index: 1,
+        name: title,
+        artist: artist,
+        album: "Apple Music 推荐单曲",
+        durationMillis: 0,
+        url: url
+    }];
+
+    detailTitle.innerText = title;
+    detailSubtitle.innerText = `${artist} • 单曲推荐`;
+    detailActions.style.display = "flex";
+    renderTracklist(currentTracks);
+}
+
+function selectOtherItem(title, subtitle, kind, url) {
+    currentPlaylistData = { id: "", type: kind, name: title, curator: subtitle, url };
+    detailTitle.innerText = title;
+    detailSubtitle.innerText = `${subtitle} (${kind})`;
+    detailActions.style.display = "flex";
+    detailBody.innerHTML = `
+        <div class="placeholder-box">
+            <p style="font-size:15px; font-weight:600; color:var(--text-primary);">${escapeHtml(title)}</p>
+            <p style="color:var(--text-secondary);">${escapeHtml(subtitle)}</p>
+            <p class="muted" style="margin-top:10px;">类型: ${kind} | 官方直链已就绪</p>
+            <button class="btn btn-primary" onclick="copyPlaylistUrl()" style="margin-top:15px;">📋 复制该项目直链</button>
+        </div>
+    `;
+}
+
 // 搜索歌单与专辑
 async function handleSearch() {
     const query = searchInput.value.trim();
