@@ -1,5 +1,5 @@
 // Amusic - Apple Music 纯文本数据库浏览器核心逻辑
-const APPLE_MUSIC_API = "https://api.music.apple.com/v1/catalog";
+const APPLE_MUSIC_API = "/api/apple/v1/catalog";
 
 // 提取自 Apple Music 官方 Web 播放器的公共只读访客 Token (有效期至 2027 年)
 const DEFAULT_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6IldlYlBsYXlLaWQifQ.eyJpc3MiOiJBTVBXZWJQbGF5IiwiaWF0IjoxNzkyNzgwNTM0LCJleHAiOjE3OTg4Mjg1MzQsInJvb3RfaHR0cHNfb3JpZ2luIjpbImFwcGxlLmNvbSJdfQ.wcf_7U-zcgUjY2L8d4HWFkdxP1YSJCkkqEpEtVPKpRARrlaag0DHyIpRcoUEWZU8kJlvx5Q7ZNp04OabfuiuAw";
@@ -47,12 +47,7 @@ async function apiRequest(endpoint) {
     speedMetric.innerText = "";
 
     try {
-        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`, {
-            headers: {
-                "Authorization": `Bearer ${DEFAULT_TOKEN}`,
-                "Origin": "https://music.apple.com"
-            }
-        });
+        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`);
 
         const duration = Math.round(performance.now() - startTime);
 
