@@ -115,7 +115,7 @@ async function loadNewPage() {
     }
 }
 
-// 渲染 /new 页面的多板块结构化列表
+// 渲染 /new 页面的多板块结构化列表 (全歌单/专辑模式，无散装单曲)
 function renderNewSections(sections) {
     if (!sections || sections.length === 0) {
         playlistListEl.innerHTML = '<div class="loading-state">未抓取到板块数据。</div>';
@@ -125,7 +125,7 @@ function renderNewSections(sections) {
 
     let totalItems = 0;
     sections.forEach(s => totalItems += (s.items?.length || 0));
-    itemCountBadge.innerText = `${sections.length} 板块 / ${totalItems} 条`;
+    itemCountBadge.innerText = `${sections.length} 板块 / ${totalItems} 个歌单与专辑`;
 
     playlistListEl.innerHTML = "";
 
@@ -135,32 +135,30 @@ function renderNewSections(sections) {
         divHeader.className = "section-divider";
         divHeader.innerHTML = `
             <span>${escapeHtml(sec.title)}</span>
-            <span class="section-count">${sec.items.length} 条</span>
+            <span class="section-count">${sec.items.length} 个</span>
         `;
         playlistListEl.appendChild(divHeader);
 
-        // 板块内部项目
+        // 板块内部项目 (全部为歌单或专辑实体)
         sec.items.forEach((item) => {
-            const kind = item.kind || "item";
-            let typeLabel = "[歌单]";
-            if (kind === "album") typeLabel = "[专辑]";
-            else if (kind === "song") typeLabel = "[单曲]";
-            else if (kind.includes("video") || kind.includes("Video")) typeLabel = "[MV/视频]";
-            else if (kind.includes("radio")) typeLabel = "[电台]";
+            const isCurated = !!item.isCurated;
+            const kind = item.kind || "playlist";
+            let typeLabel = isCurated ? "[精选歌单]" : (kind === "album" ? "[专辑]" : "[歌单]");
+            let tagColor = isCurated ? "#ff7588" : (kind === "album" ? "#e3b341" : "#58a6ff");
 
             const card = document.createElement("div");
             card.className = "playlist-card";
             card.innerHTML = `
                 <div class="playlist-title-row">
                     <span class="playlist-name">
-                        <span style="color:#ff7588; font-weight:normal; font-size:12px;">${typeLabel}</span> 
-                        ${item.heading ? `<span style="color:var(--text-muted); font-size:11px;">[${escapeHtml(item.heading)}] </span>` : ''}
+                        <span style="color:${tagColor}; font-weight:normal; font-size:12px;">${typeLabel}</span> 
                         ${escapeHtml(item.title)}
                     </span>
-                    <span class="playlist-curator">${escapeHtml(item.subtitle)}</span>
+                    <span class="playlist-curator">${escapeHtml(item.curator || item.subtitle || 'Apple Music')}</span>
                 </div>
+                <div class="playlist-desc">${escapeHtml(item.desc || '')}</div>
                 <div class="playlist-meta-row">
-                    <span>${item.url ? '🔗 官方直链' : ''}</span>
+                    <span>${item.trackCount ? '🎵 ' + item.trackCount + ' 首歌曲' : (item.url ? '🔗 官方直链' : '')}</span>
                     <button class="btn-mini-action" onclick="event.stopPropagation(); copyUrl('${item.url}')" title="直接复制该直链">📋 复制链接</button>
                 </div>
             `;
@@ -169,12 +167,10 @@ function renderNewSections(sections) {
                 document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
                 card.classList.add("active");
 
-                if (kind === "playlist" || kind === "album") {
-                    selectPlaylist(item.id, kind, item.title, item.subtitle, item.url);
-                } else if (kind === "song") {
-                    selectSingleSong(item.title, item.subtitle, item.url);
+                if (isCurated) {
+                    selectCuratedCollection(item.title, item.curator, item.url, item.roomUrl, item.tracks);
                 } else {
-                    selectOtherItem(item.title, item.subtitle, kind, item.url);
+                    selectPlaylist(item.id, kind, item.title, item.curator || item.subtitle, item.url);
                 }
             });
 
@@ -183,36 +179,34 @@ function renderNewSections(sections) {
     });
 }
 
-function selectSingleSong(title, artist, url) {
-    currentPlaylistData = { id: "", type: "song", name: title, curator: artist, url };
-    currentTracks = [{
-        index: 1,
-        name: title,
-        artist: artist,
-        album: "Apple Music 推荐单曲",
-        durationMillis: 0,
-        url: url
-    }];
+// 点击官方合集歌单 (如“新歌精选”、“正在流行中”)
+async function selectCuratedCollection(title, curator, url, roomUrl, fallbackTracks) {
+    currentPlaylistData = { id: "", type: "playlist", name: title, curator: curator, url: url };
+    currentTracks = fallbackTracks || [];
 
     detailTitle.innerText = title;
-    detailSubtitle.innerText = `${artist} • 单曲推荐`;
+    detailSubtitle.innerText = `${curator} • 官方精选 (共 ${currentTracks.length} 首)`;
     detailActions.style.display = "flex";
     renderTracklist(currentTracks);
-}
 
-function selectOtherItem(title, subtitle, kind, url) {
-    currentPlaylistData = { id: "", type: kind, name: title, curator: subtitle, url };
-    detailTitle.innerText = title;
-    detailSubtitle.innerText = `${subtitle} (${kind})`;
-    detailActions.style.display = "flex";
-    detailBody.innerHTML = `
-        <div class="placeholder-box">
-            <p style="font-size:15px; font-weight:600; color:var(--text-primary);">${escapeHtml(title)}</p>
-            <p style="color:var(--text-secondary);">${escapeHtml(subtitle)}</p>
-            <p class="muted" style="margin-top:10px;">类型: ${kind} | 官方直链已就绪</p>
-            <button class="btn btn-primary" onclick="copyPlaylistUrl()" style="margin-top:15px;">📋 复制该项目直链</button>
-        </div>
-    `;
+    // 如果包含官方 Room 专题页，自动在后台拉取完整的 100 首曲目
+    if (roomUrl) {
+        try {
+            statusText.innerText = `正在从 Apple 专题拉取《${title}》完整曲目...`;
+            const resp = await fetch(`/api/apple_room?url=${encodeURIComponent(roomUrl)}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.tracks && data.tracks.length > 0) {
+                    currentTracks = data.tracks;
+                    detailSubtitle.innerText = `${curator} • 官方完整专题 (共 ${currentTracks.length} 首)`;
+                    statusText.innerText = `已载入《${title}》全部 ${currentTracks.length} 首曲目`;
+                    renderTracklist(currentTracks);
+                }
+            }
+        } catch (e) {
+            console.warn("加载 room 详情失败，保持精选列表", e);
+        }
+    }
 }
 
 // 搜索歌单与专辑
