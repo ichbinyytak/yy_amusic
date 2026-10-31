@@ -1,0 +1,516 @@
+:root {
+    --bg-main: #0d1117;
+    --bg-surface: #161b22;
+    --bg-surface-hover: #1f242c;
+    --bg-surface-active: #232933;
+    --border-color: #30363d;
+    --border-subtle: #21262d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent: #58a6ff;
+    --accent-hover: #79c0ff;
+    --accent-apple: #fa2d48;
+    --success: #3fb950;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    font-size: 14px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 顶部 Header */
+.app-header {
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-badge {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.brand-text h1 {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    display: inline-block;
+    color: #fff;
+}
+
+.brand-text .sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.storefront-select {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+}
+
+.storefront-select:focus {
+    border-color: var(--accent);
+}
+
+/* 检索区域 */
+.search-section {
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 12px 20px;
+    flex-shrink: 0;
+}
+
+.search-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.search-bar input {
+    flex: 1;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 14px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.search-bar input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
+.quick-tags {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+
+.tag-label {
+    color: var(--text-muted);
+}
+
+.tag {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 20px;
+    padding: 3px 10px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s ease;
+}
+
+.tag:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+/* 状态条 */
+.status-bar {
+    background-color: var(--bg-main);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 4px 20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+}
+
+.speed-metric {
+    color: var(--success);
+}
+
+/* 按钮通用 */
+.btn {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.btn-primary {
+    background-color: #238636;
+    color: #fff;
+    border-color: rgba(240, 246, 252, 0.1);
+}
+
+.btn-primary:hover {
+    background-color: #2ea043;
+}
+
+.btn-secondary {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--bg-surface-active);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.btn-outline:hover {
+    background-color: var(--bg-surface-hover);
+    border-color: var(--accent);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+    color: var(--text-primary);
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+/* 主内容布局：分栏 */
+.main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.list-panel {
+    width: 45%;
+    border-right: 1px solid var(--border-color);
+    background-color: var(--bg-main);
+}
+
+.detail-panel {
+    width: 55%;
+    background-color: var(--bg-surface);
+}
+
+.panel-header {
+    padding: 10px 16px;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.panel-header h2 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.count-badge {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+
+.panel-body {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* 歌单列表项 */
+.playlist-card {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.playlist-card:hover {
+    background-color: var(--bg-surface-hover);
+}
+
+.playlist-card.active {
+    background-color: rgba(88, 166, 255, 0.1);
+    border-left: 3px solid var(--accent);
+}
+
+.playlist-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.playlist-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.playlist-curator {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.playlist-desc {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.playlist-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.btn-mini-action {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.btn-mini-action:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+/* 右侧详情面板 */
+.detail-header {
+    background-color: var(--bg-surface);
+}
+
+.detail-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.detail-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.detail-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.placeholder-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    gap: 8px;
+    padding: 40px;
+}
+
+.muted {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* 歌曲表格 */
+.track-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.track-table th {
+    background-color: rgba(0, 0, 0, 0.2);
+    color: var(--text-muted);
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.track-table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+}
+
+.track-table tr:hover td {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+}
+
+.track-index {
+    width: 40px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.track-name {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.track-artist {
+    color: var(--text-secondary);
+}
+
+.track-duration {
+    width: 60px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.track-action {
+    width: 80px;
+    text-align: right;
+}
+
+.btn-copy-song {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+}
+
+.btn-copy-song:hover {
+    color: var(--accent);
+}
+
+/* 加载状态与错误 */
+.loading-state {
+    padding: 30px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+/* Toast 提示 */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background-color: #1f6feb;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
+    transition: all 0.2s ease;
+    z-index: 999;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* 响应式微调 */
+@media (max-width: 768px) {
+    .main-layout {
+        flex-direction: column;
+    }
+    .list-panel {
+        width: 100%;
+        height: 50%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .detail-panel {
+        width: 100%;
+        height: 50%;
+    }
+}

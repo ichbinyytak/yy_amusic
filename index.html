@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Amusic - Apple 音乐纯文本数据库浏览器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="brand">
+            <span class="logo-badge">🍎</span>
+            <div class="brand-text">
+                <h1>Amusic</h1>
+                <span class="sub">Apple Music 纯文本数据库浏览器</span>
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <!-- 地区选择 -->
+            <select id="storefrontSelect" class="storefront-select" title="选择 Apple Music 地区">
+                <option value="cn" selected>🇨🇳 中国大陆 (CN)</option>
+                <option value="hk">🇭🇰 中国香港 (HK)</option>
+                <option value="tw">🇹🇼 中国台湾 (TW)</option>
+                <option value="us">🇺🇸 美国 (US)</option>
+                <option value="jp">🇯🇵 日本 (JP)</option>
+                <option value="gb">🇬🇧 英国 (GB)</option>
+            </select>
+            <!-- 刷新榜单按钮 -->
+            <button class="btn btn-secondary" onclick="loadCharts()" title="刷新官方推荐榜单">
+                <span>🔄 刷新榜单</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="search-section">
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="搜索 Apple 歌单、专辑、歌手、曲风 (如：摇滚、周杰伦、流行、R&B)..." onkeydown="handleSearchKeyDown(event)" autofocus />
+            <button class="btn btn-primary" onclick="handleSearch()" id="searchBtn">
+                <span>🔍 检索数据</span>
+            </button>
+            <button class="btn btn-ghost" onclick="clearSearch()" id="clearBtn" style="display: none;">清空</button>
+        </div>
+
+        <!-- 常用快捷分类标签 -->
+        <div class="quick-tags" id="quickTags">
+            <span class="tag-label">快捷检索：</span>
+            <button class="tag" onclick="quickSearch('国语流行')">国语流行</button>
+            <button class="tag" onclick="quickSearch('经典摇滚')">经典摇滚</button>
+            <button class="tag" onclick="quickSearch('今日热门')">今日热门</button>
+            <button class="tag" onclick="quickSearch('欧美流行')">欧美流行</button>
+            <button class="tag" onclick="quickSearch('周杰伦')">周杰伦</button>
+            <button class="tag" onclick="quickSearch('独立音乐')">独立音乐</button>
+            <button class="tag" onclick="quickSearch('爵士与轻音乐')">爵士轻音乐</button>
+            <button class="tag" onclick="quickSearch('粤语经典')">粤语经典</button>
+        </div>
+    </div>
+
+    <!-- 状态指示条 -->
+    <div class="status-bar" id="statusBar">
+        <span id="statusText">正在连接 Apple Music 官方数据库...</span>
+        <span id="speedMetric" class="speed-metric"></span>
+    </div>
+
+    <!-- 主展示区：左右分栏 -->
+    <main class="main-layout">
+        <!-- 左侧：歌单/搜索结果列表 -->
+        <section class="panel list-panel">
+            <div class="panel-header">
+                <h2 id="listPanelTitle">官方热门歌单</h2>
+                <span class="count-badge" id="itemCountBadge">0</span>
+            </div>
+            <div class="panel-body" id="playlistList">
+                <div class="loading-state">加载中...</div>
+            </div>
+        </section>
+
+        <!-- 右侧：选中的歌单曲目明细 -->
+        <section class="panel detail-panel" id="detailPanel">
+            <div class="panel-header detail-header">
+                <div class="detail-title-group">
+                    <h2 id="detailTitle">请在左侧选择一个歌单</h2>
+                    <span class="detail-subtitle" id="detailSubtitle">点击任意歌单查看曲目详情并快速提取</span>
+                </div>
+                <div class="detail-actions" id="detailActions" style="display: none;">
+                    <button class="btn btn-sm btn-outline" onclick="copyPlaylistUrl()" title="复制 Apple Music 官方网页直链">
+                        📋 复制歌单链接
+                    </button>
+                    <button class="btn btn-sm btn-outline" onclick="copyTracklistText()" title="复制纯文本歌单 (歌名 - 歌手)">
+                        📑 复制歌曲文本
+                    </button>
+                </div>
+            </div>
+
+            <div class="panel-body detail-body" id="detailBody">
+                <div class="placeholder-box">
+                    <p>👈 从左侧列表点击任意歌单，在此处展开完整曲目。</p>
+                    <p class="muted">纯文字加载，无图片下载开销，秒级响应。</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast 提示条 -->
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
