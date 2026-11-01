@@ -3,16 +3,25 @@
    ======================================================== */
 
 .list-panel {
-    width: 50%;
-    max-width: 50%;
-    flex: 0 0 50%;
-    min-width: 0;
-    border-right: 1px solid var(--border-color);
+    position: fixed;
+    top: 46px;
+    bottom: 0;
+    left: 0;
+    width: 320px;
+    max-width: 85vw;
+    z-index: 850;
     background-color: var(--bg-main);
+    border-right: 1px solid var(--border-color);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.65);
+    transform: translateX(-100%);
+    transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    height: 100%;
+}
+
+.list-panel.open {
+    transform: translateX(0);
 }
 
 /* 顶区控制区：Apple 区域 + 3大Tab */

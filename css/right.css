@@ -3,9 +3,9 @@
    ======================================================== */
 
 .detail-panel {
-    width: 50%;
-    max-width: 50%;
-    flex: 0 0 50%;
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 100%;
     min-width: 0;
     background-color: var(--bg-surface);
     display: flex;

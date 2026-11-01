@@ -348,10 +348,16 @@ window.RightPanel = (function () {
         closeAddToPlaylistModal();
     }
 
+    function highlightPlayingTrack() {
+        if (!currentTracks || currentTracks.length === 0) return;
+        renderTracklist(currentTracks);
+    }
+
     return {
         selectPlaylist,
         selectCustomPlaylist,
         renderTracklist,
+        highlightPlayingTrack,
         playCurrentAll,
         playSong,
         toggleFavCurrentPlaylist,

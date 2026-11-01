@@ -357,7 +357,17 @@
       } else {
         this.playMode = 'loop';
       }
+      this._emit('modeChange', this.playMode);
       return this.playMode;
+    }
+
+    setMode(mode) {
+      if (['loop', 'single', 'shuffle', 'list-loop', 'single-loop'].includes(mode)) {
+        if (mode === 'list-loop') this.playMode = 'loop';
+        else if (mode === 'single-loop') this.playMode = 'single';
+        else this.playMode = mode;
+        this._emit('modeChange', this.playMode);
+      }
     }
 
     getModeLabel() {
@@ -414,7 +424,10 @@
     }
   }
 
-  // 挂载到全局
+  // 挂载到全局并实例化单例播放内核
   window.MusicPlayer = MusicPlayer;
+  if (!window.player) {
+    window.player = new MusicPlayer();
+  }
 
 })(window);

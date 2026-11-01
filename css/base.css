@@ -53,6 +53,28 @@ body {
     gap: 6px;
 }
 
+.btn-hamburger {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin-right: 2px;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+.btn-hamburger:hover, .btn-hamburger.active {
+    background-color: var(--bg-surface-hover);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 .brand {
     display: flex;
     align-items: center;
@@ -269,12 +291,26 @@ body {
 }
 
 .volume-container {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 4px;
 }
+.volume-icon {
+    cursor: pointer;
+    font-size: 13px;
+    user-select: none;
+    padding: 2px 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: color 0.15s ease;
+}
+.volume-icon:hover {
+    color: var(--text-primary);
+}
 .volume-slider {
-    width: 50px;
+    width: 44px;
     height: 4px;
     accent-color: var(--accent-apple);
     cursor: pointer;
@@ -509,7 +545,25 @@ body {
 .modal-close-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; }
 .modal-body { padding: 10px 12px; }
 
-/* 移动端专用调优 */
+/* 左侧歌单抽屉半透明遮罩 */
+.left-drawer-backdrop {
+    display: none;
+    position: fixed;
+    top: 46px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    z-index: 840;
+}
+.left-drawer-backdrop.open {
+    display: block;
+}
+
+/* 移动端专用调优：保持音量图标可见，隐藏滑块以省出空间 */
 @media (max-width: 768px) {
-    .volume-container { display: none !important; }
+    .volume-slider { display: none !important; }
+    .volume-container { display: inline-flex !important; }
 }

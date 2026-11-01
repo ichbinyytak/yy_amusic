@@ -32,6 +32,42 @@ window.LeftPanel = (function () {
                 }
             });
         }
+
+        // 按 Esc 键快速收回侧边抽屉
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                closeDrawer();
+            }
+        });
+    }
+
+    // 侧边栏抽屉显示/隐藏管理
+    function toggleDrawer() {
+        const listPanel = document.getElementById("listPanel");
+        const backdrop = document.getElementById("leftDrawerBackdrop");
+        const btn = document.getElementById("btnHamburger");
+        if (!listPanel) return;
+        const isOpen = listPanel.classList.toggle("open");
+        if (backdrop) backdrop.classList.toggle("open", isOpen);
+        if (btn) btn.classList.toggle("active", isOpen);
+    }
+
+    function openDrawer() {
+        const listPanel = document.getElementById("listPanel");
+        const backdrop = document.getElementById("leftDrawerBackdrop");
+        const btn = document.getElementById("btnHamburger");
+        if (listPanel) listPanel.classList.add("open");
+        if (backdrop) backdrop.classList.add("open");
+        if (btn) btn.classList.add("active");
+    }
+
+    function closeDrawer() {
+        const listPanel = document.getElementById("listPanel");
+        const backdrop = document.getElementById("leftDrawerBackdrop");
+        const btn = document.getElementById("btnHamburger");
+        if (listPanel) listPanel.classList.remove("open");
+        if (backdrop) backdrop.classList.remove("open");
+        if (btn) btn.classList.remove("active");
     }
 
     // 三大核心 Tab 切换
@@ -270,6 +306,7 @@ window.LeftPanel = (function () {
             card.addEventListener("click", () => {
                 document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
                 card.classList.add("active");
+                closeDrawer();
                 if (isFav) {
                     window.RightPanel.selectPlaylist(item.id, item.type || "playlist", item.name || item.title, item.curator, item.url);
                 } else {
@@ -390,6 +427,7 @@ window.LeftPanel = (function () {
             return;
         }
 
+        openDrawer();
         document.querySelectorAll(".main-tab-btn").forEach(btn => btn.classList.remove("active"));
         if (categoryFilterBar) categoryFilterBar.style.display = "none";
         if (clearBtn) clearBtn.style.display = "inline-block";
@@ -454,6 +492,7 @@ window.LeftPanel = (function () {
         card.addEventListener("click", () => {
             document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
             card.classList.add("active");
+            closeDrawer();
             window.RightPanel.selectPlaylist(item.id, isAlbum ? "album" : "playlist", name, curator, url);
         });
 
@@ -495,6 +534,9 @@ window.LeftPanel = (function () {
 
     return {
         init,
+        toggleDrawer,
+        openDrawer,
+        closeDrawer,
         switchMainTab,
         loadNewPage,
         loadSearchPage,
