@@ -384,6 +384,116 @@ window.Shell = (function () {
         if (drawerBackdrop) drawerBackdrop.classList.remove("open");
     }
 
+    /* -------------------- 收藏到分类弹窗管理 -------------------- */
+    let pendingFavPlaylist = null;
+
+    function openAddToFavModal(playlistData) {
+        if (!playlistData || !playlistData.id) return;
+        pendingFavPlaylist = playlistData;
+
+        const modal = document.getElementById("addToFavModal");
+        const infoEl = document.getElementById("favModalPlaylistInfo");
+        const choiceList = document.getElementById("favCategoryChoiceList");
+        const input = document.getElementById("newFavCategoryInput");
+
+        if (input) input.value = "";
+        const name = playlistData.name || playlistData.title || "未知歌单";
+        const curator = playlistData.curator || "Apple Music";
+        const isFaved = window.StorageManager.isPlaylistFaved(playlistData.id);
+
+        let curCat = "";
+        if (isFaved) {
+            const favs = window.StorageManager.getFavPlaylists();
+            const curItem = favs.find(f => f.id === playlistData.id);
+            curCat = curItem ? (curItem.category || "未分类") : "未分类";
+        }
+
+        if (infoEl) {
+            infoEl.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>${escapeHtml(name)} <span style="opacity:0.7; font-size:10px;">• ${escapeHtml(curator)}</span></span>
+                    ${isFaved ? `
+                        <button class="btn btn-sm btn-ghost" style="color:#ff7588; font-size:10px; padding:1px 5px; cursor:pointer;" onclick="window.Shell.unfavCurrentFromModal()" title="取消收藏">✕ 取消收藏</button>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        if (choiceList) {
+            const cats = window.StorageManager.getRegisteredCategories('fav');
+            const favs = window.StorageManager.getFavPlaylists();
+            let html = '';
+            cats.forEach(c => {
+                const count = favs.filter(f => (f.category || '未分类') === c).length;
+                const isCurrent = isFaved && curCat === c;
+                html += `
+                    <div class="playlist-choice-item" onclick="window.Shell.selectFavCategory('${escapeHtml(c)}')" style="${isCurrent ? 'background:rgba(88,166,255,0.15); border-left:2px solid var(--accent);' : ''}">
+                        <div>
+                            <strong>📁 ${escapeHtml(c)}</strong>
+                            ${isCurrent ? '<span style="color:var(--accent); font-size:9.5px; margin-left:6px;">(当前分类)</span>' : ''}
+                        </div>
+                        <span class="meta-tag">共 ${count} 个歌单</span>
+                    </div>
+                `;
+            });
+            choiceList.innerHTML = html;
+        }
+
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeAddToFavModal() {
+        const modal = document.getElementById("addToFavModal");
+        if (modal) modal.classList.remove("open");
+        pendingFavPlaylist = null;
+    }
+
+    function selectFavCategory(catName) {
+        if (!pendingFavPlaylist) return;
+        window.StorageManager.favPlaylistWithCategory(pendingFavPlaylist, catName);
+        showToast(`⭐ 已将歌单收藏至【${catName}】！`);
+        closeAddToFavModal();
+        if (window.RightPanel && window.RightPanel.updateFavButtonStatus) {
+            window.RightPanel.updateFavButtonStatus();
+        }
+        if (window.LeftPanel && window.LeftPanel.loadLibraryPage) {
+            window.LeftPanel.loadLibraryPage();
+        }
+    }
+
+    function confirmCreateCategoryAndFav() {
+        if (!pendingFavPlaylist) return;
+        const input = document.getElementById("newFavCategoryInput");
+        const name = input ? input.value.trim() : "";
+        if (!name) {
+            showToast("请输入新分类名称");
+            return;
+        }
+        window.StorageManager.addCategory('fav', name);
+        window.StorageManager.favPlaylistWithCategory(pendingFavPlaylist, name);
+        showToast(`⭐ 已创建分类【${name}】并成功收藏！`);
+        closeAddToFavModal();
+        if (window.RightPanel && window.RightPanel.updateFavButtonStatus) {
+            window.RightPanel.updateFavButtonStatus();
+        }
+        if (window.LeftPanel && window.LeftPanel.loadLibraryPage) {
+            window.LeftPanel.loadLibraryPage();
+        }
+    }
+
+    function unfavCurrentFromModal() {
+        if (!pendingFavPlaylist) return;
+        window.StorageManager.unfavPlaylist(pendingFavPlaylist.id);
+        showToast(`已从收藏夹中移除《${pendingFavPlaylist.name || pendingFavPlaylist.title}》`);
+        closeAddToFavModal();
+        if (window.RightPanel && window.RightPanel.updateFavButtonStatus) {
+            window.RightPanel.updateFavButtonStatus();
+        }
+        if (window.LeftPanel && window.LeftPanel.loadLibraryPage) {
+            window.LeftPanel.loadLibraryPage();
+        }
+    }
+
     return {
         init,
         handleProgressBarClick,
@@ -396,6 +506,11 @@ window.Shell = (function () {
         toggleSourceModal,
         closeAllDrawers,
         testSources,
-        syncSources
+        syncSources,
+        openAddToFavModal,
+        closeAddToFavModal,
+        selectFavCategory,
+        confirmCreateCategoryAndFav,
+        unfavCurrentFromModal
     };
 })();

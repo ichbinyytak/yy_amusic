@@ -9,54 +9,8 @@
 (function (window) {
   'use strict';
 
-  // 1. 默认精选正版歌单 (页面初始化直接开箱即用)
-  const DEFAULT_PLAYLIST = [
-    {
-      platform: "kw",
-      id: "332301462",
-      title: "海阔天空 (Edit)",
-      artist: "BEYOND",
-      album: "Beyond 20th Anniversary",
-      duration: 239,
-      score: 90.0
-    },
-    {
-      platform: "kw",
-      id: "254426",
-      title: "晴天",
-      artist: "周杰伦",
-      album: "叶惠美",
-      duration: 269,
-      score: 90.0
-    },
-    {
-      platform: "kw",
-      id: "5046200",
-      title: "平凡之路",
-      artist: "朴树",
-      album: "平凡之路",
-      duration: 301,
-      score: 90.0
-    },
-    {
-      platform: "kw",
-      id: "345094",
-      title: "夜空中最亮的星",
-      artist: "逃跑计划",
-      album: "世界",
-      duration: 252,
-      score: 90.0
-    },
-    {
-      platform: "kw",
-      id: "255280",
-      title: "十年",
-      artist: "陈奕迅",
-      album: "黑·白·灰",
-      duration: 205,
-      score: 90.0
-    }
-  ];
+  // 1. 默认播放队列初始化为空（由首次访问或记忆歌单动态注入）
+  const DEFAULT_PLAYLIST = [];
 
   // 格式化秒数为 mm:ss
   function formatTime(sec) {
@@ -87,10 +41,10 @@
         this.audio.volume = 0.8;
       }
 
-      // 歌单状态
-      this.playlist = [...DEFAULT_PLAYLIST];
-      this.currentIndex = 0;
-      this.isDefaultList = true;
+      // 歌单状态 (初始为空队列，待歌单加载后动态填入)
+      this.playlist = [];
+      this.currentIndex = -1;
+      this.isDefaultList = false;
 
       // 播放模式: 'loop' (列表循环) | 'single' (单曲循环) | 'shuffle' (随机播放)
       this.playMode = 'loop';
@@ -102,6 +56,10 @@
       // 歌词状态
       this.lyrics = [];
       this.currentLyricIdx = -1;
+
+      // 直链预解析缓存 (Map: songKey -> { url, bytes, sourceName, costMs })
+      this.resolveCache = new Map();
+      this.prefetchTimer = null;
 
       // 回调钩子 (用于更新 UI)
       this.listeners = {
@@ -234,7 +192,61 @@
       }
     }
 
-    // 播放指定索引的曲目
+    // 获取曲目唯一 Key
+    _getSongKey(song) {
+      if (!song) return "";
+      const sid = song.id || song.songmid || "";
+      const title = (song.title || song.name || "").trim().toLowerCase();
+      const artist = (song.artist || "").trim().toLowerCase();
+      return `${sid}_${title}_${artist}`;
+    }
+
+    // 后台静默预解析下一首曲目直链 (实现下一曲 0 毫秒秒切)
+    _schedulePrefetch() {
+      if (this.prefetchTimer) clearTimeout(this.prefetchTimer);
+      if (!this.playlist || this.playlist.length <= 1) return;
+
+      this.prefetchTimer = setTimeout(() => {
+        const nextIdx = (this.currentIndex + 1) % this.playlist.length;
+        const nextSong = this.playlist[nextIdx];
+        if (!nextSong) return;
+        const key = this._getSongKey(nextSong);
+        if (this.resolveCache.has(key)) return;
+
+        const payload = {
+          title: nextSong.title || nextSong.name || "",
+          name: nextSong.name || nextSong.title || "",
+          artist: nextSong.artist || "",
+          album: nextSong.album || "",
+          id: nextSong.id || "",
+          platform: nextSong.platform || "",
+          durationMillis: nextSong.durationMillis,
+          duration: nextSong.duration || (nextSong.durationMillis ? Math.round(nextSong.durationMillis / 1000) : undefined)
+        };
+
+        fetch('/api/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(r => r.json()).then(data => {
+          if (data && data.success && data.url) {
+            this.resolveCache.set(key, {
+              url: data.url,
+              bytes: data.bytes,
+              sourceName: data.source_name,
+              costMs: 0
+            });
+            // 缓存上限 30 首，超额淘汰老数据
+            if (this.resolveCache.size > 30) {
+              const firstKey = this.resolveCache.keys().next().value;
+              this.resolveCache.delete(firstKey);
+            }
+          }
+        }).catch(() => {});
+      }, 1200); // 歌曲起播 1.2 秒后平稳静默预取
+    }
+
+    // 播放指定索引的曲目 (支持秒级预解析直链秒开)
     async playIndex(idx) {
       if (idx < 0 || idx >= this.playlist.length) return;
       if (this.isResolving) return;
@@ -242,13 +254,50 @@
       this.unlockAudio();
       this.currentIndex = idx;
       const song = this.playlist[idx];
-      this.isResolving = true;
 
+      // 1. 毫秒级即时视觉反馈：第 0 毫秒立即高亮与切歌名，杜绝卡顿感
       this._emit('trackChange', { index: idx, song });
-      this._emit('stateChange', { isPlaying: false, isResolving: true, song });
 
       // 并行请求歌词
       this.fetchLyrics(song);
+
+      const songKey = this._getSongKey(song);
+      const cached = this.resolveCache.get(songKey);
+
+      // 2. 命中预解析直链缓存：0 毫秒秒切出声！
+      if (cached && cached.url) {
+        this.audio.src = cached.url;
+        const playPromise = this.audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            this._emit('stateChange', {
+              isPlaying: true,
+              isResolving: false,
+              song,
+              sourceName: cached.sourceName + ' ⚡秒开',
+              costMs: 0,
+              bytes: cached.bytes
+            });
+          }).catch(e => {
+            console.warn("自动出声受限(等待用户点击播控):", e);
+            this._emit('stateChange', {
+              isPlaying: false,
+              isResolving: false,
+              song,
+              sourceName: cached.sourceName + ' ⚡秒开',
+              costMs: 0,
+              bytes: cached.bytes
+            });
+          });
+        }
+        // 静默调度下一首的预解析
+        this._schedulePrefetch();
+        return;
+      }
+
+      // 3. 未命中缓存时，走正常寻链流程
+      this.isResolving = true;
+      this._emit('stateChange', { isPlaying: false, isResolving: true, song });
 
       try {
         const t0 = performance.now();
@@ -271,6 +320,14 @@
         const cost = (performance.now() - t0).toFixed(0);
 
         if (data.success && data.url) {
+          // 写入缓存供回切使用
+          this.resolveCache.set(songKey, {
+            url: data.url,
+            bytes: data.bytes,
+            sourceName: data.source_name,
+            costMs: cost
+          });
+
           this.audio.src = data.url;
           const playPromise = this.audio.play();
           if (playPromise !== undefined) {
@@ -295,6 +352,8 @@
               });
             });
           }
+          // 调度下一首预解析
+          this._schedulePrefetch();
         } else {
           this._emit('stateChange', {
             isPlaying: false,
@@ -433,10 +492,20 @@
       return { mode: 'shuffle', icon: '🔀', label: '随机播放' };
     }
 
-    // 替换/设置当前播放列表（如搜索结果直接成为当前列表）
+    // 替换/设置当前播放列表（如歌单曲目加载后同步至队列，或搜索结果直接成为当前列表）
     setPlaylist(newList, autoPlayIndex = -1) {
       if (!Array.isArray(newList)) return;
-      this.playlist = [...newList];
+      this.playlist = newList.map((t, idx) => ({
+        index: idx + 1,
+        title: t.name || t.title || "未知歌曲",
+        name: t.name || t.title || "未知歌曲",
+        artist: t.artist || "未知歌手",
+        album: t.album || "",
+        durationMillis: t.durationMillis,
+        duration: t.duration || (t.durationMillis ? Math.round(t.durationMillis / 1000) : undefined),
+        id: t.id || "",
+        platform: t.platform || ""
+      }));
       this.isDefaultList = false;
       this._emit('playlistChange', { playlist: this.playlist, isDefault: false });
 
@@ -457,12 +526,12 @@
       }
     }
 
-    // 重置回默认精选歌单
+    // 清空或重置播放队列
     loadDefaultPlaylist() {
-      this.playlist = [...DEFAULT_PLAYLIST];
-      this.isDefaultList = true;
-      this.currentIndex = 0;
-      this._emit('playlistChange', { playlist: this.playlist, isDefault: true });
+      this.playlist = [];
+      this.isDefaultList = false;
+      this.currentIndex = -1;
+      this._emit('playlistChange', { playlist: this.playlist, isDefault: false });
     }
 
     // 事件监听与派发

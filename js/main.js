@@ -22,15 +22,14 @@ window.addEventListener("DOMContentLoaded", () => {
     // 3. 无论是否恢复歌单，左侧列表默认加载“最新发布”
     window.LeftPanel.loadNewPage();
 
-    // 4. 检查并恢复上一次记忆的歌单
-    const lastPlRaw = localStorage.getItem("amusic_last_playlist");
-    if (lastPlRaw) {
+    // 4. 检查并恢复上一次记忆的歌单；首次打开默认加载【潜力新歌：国语流行】
+    const lastPl = window.StorageManager.getLastPlaylist();
+    if (lastPl) {
         try {
-            const lastPl = JSON.parse(lastPlRaw);
             if (lastPl.kind === 'curated' && lastPl.name) {
                 window.RightPanel.selectCuratedCollection(lastPl.name, lastPl.curator, lastPl.url, lastPl.roomUrl, lastPl.tracks);
             } else if (lastPl.kind === 'custom' && lastPl.id) {
-                const customs = window.LeftPanel.getCustomPlaylists();
+                const customs = window.StorageManager.getCustomPlaylists();
                 if (customs.some(c => c.id === lastPl.id)) {
                     window.RightPanel.selectCustomPlaylist(lastPl.id);
                 }
@@ -40,5 +39,14 @@ window.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
             console.warn("恢复上一次歌单失败", e);
         }
+    } else {
+        // 首次打开：默认加载【潜力新歌：国语流行】
+        window.RightPanel.selectPlaylist(
+            'pl.80e13199d5db46c7b519b25cf6e5816a',
+            'playlist',
+            '潜力新歌：国语流行',
+            'Apple Music 国语流行',
+            'https://music.apple.com/cn/playlist/%E6%BD%9C%E5%8A%9B%E6%96%B0%E6%AD%8C-%E5%9B%BD%E8%AF%AD%E6%B5%81%E8%A1%8C/pl.80e13199d5db46c7b519b25cf6e5816a'
+        );
     }
 });

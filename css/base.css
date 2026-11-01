@@ -127,6 +127,28 @@ body {
     font-size: 12px !important;
 }
 
+.btn-header-source {
+    width: 26px;
+    height: 26px;
+    padding: 0 !important;
+    font-size: 13px !important;
+    font-weight: 600;
+    color: var(--accent) !important;
+    border-color: rgba(63, 185, 80, 0.4) !important;
+    background: rgba(63, 185, 80, 0.08) !important;
+    border-radius: 6px !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+.btn-header-source:hover {
+    background: rgba(63, 185, 80, 0.18) !important;
+    border-color: var(--accent) !important;
+}
+
 /* 状态条 (静默隐藏) */
 .status-bar {
     display: none !important;
@@ -567,6 +589,34 @@ body {
 .modal-close-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; }
 .modal-body { padding: 10px 12px; }
 
+.playlist-choice-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.playlist-choice-item {
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-primary);
+    transition: all 0.15s ease;
+}
+.playlist-choice-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--border-color);
+}
+.playlist-choice-item .meta-tag {
+    font-size: 9px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
 /* 左侧歌单抽屉半透明遮罩 */
 .left-drawer-backdrop {
     display: none;
@@ -584,8 +634,9 @@ body {
     display: block;
 }
 
-/* 移动端专用调优：保持音量图标可见，隐藏滑块以省出空间 */
+/* 移动端专用调优 */
 @media (max-width: 768px) {
-    .volume-slider { display: none !important; }
-    .volume-container { display: inline-flex !important; }
+    .player-right { gap: 6px; }
+    .search-bar-compact input { width: 120px; font-size: 11px; }
+    .btn-header-source { width: 24px; height: 24px; font-size: 12px !important; }
 }

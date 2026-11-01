@@ -127,21 +127,27 @@
     max-width: 90px;
 }
 
-/* 方案A：音乐库/分类胶囊栏 */
+/* 方案A：音乐库/分类胶囊栏 (双行结构：上层主筛选与操作，下层分类标签与加分类) */
 .category-filter-bar {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 4px;
     padding: 4px 6px;
     background-color: var(--bg-main);
     border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.filter-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     overflow-x: auto;
     white-space: nowrap;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    flex-shrink: 0;
 }
-.category-filter-bar::-webkit-scrollbar { display: none; }
+.filter-bar-row::-webkit-scrollbar { display: none; }
 
 .cat-pill {
     padding: 2px 6px;
@@ -169,9 +175,11 @@
     font-weight: 600;
     margin-left: auto;
     cursor: pointer;
-    padding: 2px 6px;
-    font-size: 10px;
+    padding: 2px 7px;
+    font-size: 11px;
     border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
     flex-shrink: 0;
 }
 .btn-add-playlist-pill:hover { background: rgba(250, 45, 72, 0.3); color: #fff; }
@@ -250,6 +258,21 @@
 }
 .btn-card-del:hover { opacity: 1; }
 
+.btn-card-fav {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 1px 4px;
+    color: var(--text-secondary);
+    opacity: 0.75;
+    transition: all 0.15s ease;
+}
+.btn-card-fav:hover {
+    color: #ff7588;
+    opacity: 1;
+}
+
 /* /new 页面吸顶分类标题 */
 .section-divider {
     background-color: #1a1f27;
@@ -267,3 +290,155 @@
     z-index: 5;
 }
 .section-count { font-size: 8.5px; font-weight: normal; color: var(--text-muted); }
+
+/* 树形层级音乐库结构 */
+.library-section-block {
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.library-section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-subtle);
+    user-select: none;
+}
+
+.library-cat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px 6px 12px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+.library-cat-row:hover {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+}
+
+.library-cat-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.library-cat-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    color: var(--text-muted);
+}
+
+.library-cat-name {
+    font-weight: 500;
+}
+
+.library-cat-count {
+    font-size: 9px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.library-action-btns {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.lib-icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 4px;
+    font-size: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    line-height: 1;
+    min-width: 20px;
+    min-height: 20px;
+    opacity: 0.85;
+}
+.lib-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+    opacity: 1;
+}
+.lib-icon-btn.btn-danger:hover {
+    background: rgba(250, 45, 72, 0.2);
+    color: #ff7588;
+    border-color: rgba(250, 45, 72, 0.4);
+}
+.lib-icon-btn.btn-accent {
+    color: var(--accent);
+}
+.lib-icon-btn.btn-accent:hover {
+    background: rgba(88, 166, 255, 0.2);
+    border-color: var(--accent);
+}
+
+.library-cat-body {
+    display: none;
+    background: var(--bg-main);
+}
+.library-cat-body.open {
+    display: block;
+}
+
+.library-playlist-item {
+    padding: 6px 8px 6px 26px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.library-playlist-item:hover {
+    background: var(--bg-surface-hover);
+}
+.library-playlist-item.active {
+    background: rgba(88, 166, 255, 0.1);
+    border-left: 2px solid var(--accent);
+}
+
+.library-playlist-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow: hidden;
+    padding-right: 8px;
+}
+.library-playlist-title {
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.library-playlist-sub {
+    font-size: 9px;
+    color: var(--text-muted);
+}

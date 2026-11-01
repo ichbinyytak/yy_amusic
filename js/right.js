@@ -33,21 +33,23 @@ window.RightPanel = (function () {
             url: t.url || url
         })) : [];
 
-        try {
-            localStorage.setItem("amusic_last_playlist", JSON.stringify({
-                kind: 'curated',
-                name: title,
-                curator: curator,
-                url: url,
-                roomUrl: roomUrl,
-                tracks: currentTracks
-            }));
-        } catch (e) {}
+        // 记忆上一次选中的歌单
+        window.StorageManager.setLastPlaylist({
+            kind: 'curated',
+            name: title,
+            curator: curator,
+            url: url,
+            roomUrl: roomUrl,
+            tracks: currentTracks
+        });
 
         if (detailTitle) detailTitle.innerText = title;
         if (detailSubtitle) detailSubtitle.innerText = `${curator} • 官方精选 (共 ${currentTracks.length} 首)`;
         if (detailActions) detailActions.style.display = currentTracks.length > 0 ? "flex" : "none";
         renderTracklist(currentTracks);
+        if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+            window.player.setPlaylist(currentTracks, -1);
+        }
 
         // 如果包含官方 Room 专题页，自动在后台拉取完整的 100 首曲目
         if (roomUrl) {
@@ -68,6 +70,9 @@ window.RightPanel = (function () {
                         if (detailSubtitle) detailSubtitle.innerText = `${curator} • 官方完整专题 (共 ${currentTracks.length} 首)`;
                         if (detailActions) detailActions.style.display = "flex";
                         renderTracklist(currentTracks);
+                        if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+                            window.player.setPlaylist(currentTracks, -1);
+                        }
                     }
                 }
             } catch (e) {
@@ -84,16 +89,14 @@ window.RightPanel = (function () {
         currentTracks = [];
 
         // 记忆上一次选中的歌单
-        try {
-            localStorage.setItem("amusic_last_playlist", JSON.stringify({
-                kind: 'apple',
-                id,
-                type,
-                name,
-                curator,
-                url
-            }));
-        } catch (e) {}
+        window.StorageManager.setLastPlaylist({
+            kind: 'apple',
+            id,
+            type,
+            name,
+            curator,
+            url
+        });
 
         if (detailTitle) detailTitle.innerText = name;
         updateFavButtonStatus();
@@ -106,6 +109,9 @@ window.RightPanel = (function () {
             if (detailSubtitle) detailSubtitle.innerText = `${curator} • 共 ${currentTracks.length} 首歌曲`;
             if (detailActions) detailActions.style.display = "flex";
             renderTracklist(currentTracks);
+            if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+                window.player.setPlaylist(currentTracks, -1);
+            }
         } else {
             if (detailSubtitle) detailSubtitle.innerText = `${curator} • 正在获取曲目清单...`;
             if (detailActions) detailActions.style.display = "none";
@@ -138,6 +144,9 @@ window.RightPanel = (function () {
             if (detailSubtitle) detailSubtitle.innerText = `${curator} • 共 ${currentTracks.length} 首歌曲`;
             if (detailActions) detailActions.style.display = "flex";
             renderTracklist(currentTracks);
+            if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+                window.player.setPlaylist(currentTracks, -1);
+            }
         } catch (err) {
             if (!currentTracks || currentTracks.length === 0) {
                 if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取歌曲详情失败: ${err.message}</div>`;
@@ -148,7 +157,7 @@ window.RightPanel = (function () {
 
     // 点击自建歌单
     function selectCustomPlaylist(playlistId) {
-        const customs = window.LeftPanel.getCustomPlaylists();
+        const customs = window.StorageManager.getCustomPlaylists();
         const pl = customs.find(c => c.id === playlistId);
         if (!pl) return;
 
@@ -157,13 +166,11 @@ window.RightPanel = (function () {
         currentPlaylistData = { id: pl.id, name: pl.title, title: pl.title, curator: "我的自建歌单" };
         currentTracks = pl.tracks || [];
 
-        try {
-            localStorage.setItem("amusic_last_playlist", JSON.stringify({
-                kind: 'custom',
-                id: pl.id,
-                name: pl.title
-            }));
-        } catch (e) {}
+        window.StorageManager.setLastPlaylist({
+            kind: 'custom',
+            id: pl.id,
+            name: pl.title
+        });
 
         if (detailTitle) detailTitle.innerText = pl.title;
         if (detailSubtitle) detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
@@ -171,6 +178,9 @@ window.RightPanel = (function () {
         if (detailActions) detailActions.style.display = "flex";
 
         renderTracklist(currentTracks);
+        if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+            window.player.setPlaylist(currentTracks, -1);
+        }
     }
 
     // 渲染曲目表格 (高密度 3 列)
@@ -245,34 +255,19 @@ window.RightPanel = (function () {
         }
     }
 
-    // 收藏 / 取消收藏当前官方歌单
+    // 收藏 / 管理当前官方歌单 (弹出与“添加到我的歌单”完全一致的分类弹窗)
     function toggleFavCurrentPlaylist() {
         if (isViewingCustomPlaylist || !currentPlaylistData?.id) return;
-        let favs = window.LeftPanel.getFavPlaylists();
-        const exists = favs.some(f => f.id === currentPlaylistData.id);
-
-        if (exists) {
-            favs = favs.filter(f => f.id !== currentPlaylistData.id);
-            window.LeftPanel.saveFavPlaylists(favs);
-            updateFavButtonStatus();
-            showToast(`已从收藏夹中移除《${currentPlaylistData.name}》`);
-        } else {
-            const newFav = {
-                id: currentPlaylistData.id,
-                type: currentPlaylistData.type || "playlist",
-                name: currentPlaylistData.name,
-                title: currentPlaylistData.name,
-                curator: currentPlaylistData.curator || "Apple Music",
-                category: "默认",
-                url: currentPlaylistData.url || "",
-                trackCount: currentTracks.length,
-                savedAt: new Date().toLocaleDateString()
-            };
-            favs.unshift(newFav);
-            window.LeftPanel.saveFavPlaylists(favs);
-            updateFavButtonStatus();
-            showToast(`已收藏歌单《${currentPlaylistData.name}》！`);
-        }
+        const plData = {
+            id: currentPlaylistData.id,
+            type: currentPlaylistData.type || "playlist",
+            name: currentPlaylistData.name,
+            title: currentPlaylistData.name,
+            curator: currentPlaylistData.curator || "Apple Music",
+            url: currentPlaylistData.url || "",
+            trackCount: currentTracks ? currentTracks.length : 0
+        };
+        window.Shell.openAddToFavModal(plData);
     }
 
     function updateFavButtonStatus() {
@@ -282,16 +277,15 @@ window.RightPanel = (function () {
             return;
         }
         btnFavCurrent.style.display = "inline-flex";
-        const favs = window.LeftPanel.getFavPlaylists();
-        const isFav = favs.some(f => f.id === currentPlaylistData.id);
+        const isFav = window.StorageManager.isPlaylistFaved(currentPlaylistData.id);
         if (isFav) {
             btnFavCurrent.innerHTML = "★";
             btnFavCurrent.style.color = "#ff7588";
-            btnFavCurrent.title = "已收藏 (点击取消收藏)";
+            btnFavCurrent.title = "已收藏 (点击更改分类或取消收藏)";
         } else {
             btnFavCurrent.innerHTML = "⭐";
             btnFavCurrent.style.color = "";
-            btnFavCurrent.title = "收藏此歌单";
+            btnFavCurrent.title = "收藏此歌单 (选择分类)";
         }
     }
 
@@ -307,7 +301,7 @@ window.RightPanel = (function () {
 
         if (infoEl) infoEl.innerText = `${song.name} - ${song.artist}`;
         if (choiceList) {
-            const customs = window.LeftPanel.getCustomPlaylists();
+            const customs = window.StorageManager.getCustomPlaylists();
             if (customs.length === 0) {
                 choiceList.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:11px;">您还没有自建歌单，请在下方直接新建：</div>';
             } else {
@@ -335,46 +329,28 @@ window.RightPanel = (function () {
 
     function addTrackToExistingPlaylist(playlistId) {
         if (!pendingTrackToAdd) return;
-        let customs = window.LeftPanel.getCustomPlaylists();
-        const pl = customs.find(c => c.id === playlistId);
-        if (!pl) return;
-
-        if (!pl.tracks) pl.tracks = [];
-        const exists = pl.tracks.some(t => t.name === pendingTrackToAdd.name && t.artist === pendingTrackToAdd.artist);
-        if (exists) {
+        const res = window.StorageManager.addTrackToCustomPlaylist(playlistId, pendingTrackToAdd);
+        if (res.duplicate) {
             showToast(`《${pendingTrackToAdd.name}》已在该歌单中`);
             closeAddToPlaylistModal();
             return;
         }
-
-        pl.tracks.push({
-            name: pendingTrackToAdd.name,
-            artist: pendingTrackToAdd.artist,
-            album: pendingTrackToAdd.album || "",
-            durationMillis: pendingTrackToAdd.durationMillis || 0
-        });
-
-        window.LeftPanel.saveCustomPlaylists(customs);
-        showToast(`已加入歌单《${pl.title}》！`);
-        closeAddToPlaylistModal();
-
-        if (isViewingCustomPlaylist && currentCustomPlaylistId === playlistId) {
-            selectCustomPlaylist(playlistId);
+        if (res.ok) {
+            showToast(`已加入歌单《${res.playlist ? res.playlist.title : ''}》！`);
+            closeAddToPlaylistModal();
+            if (isViewingCustomPlaylist && currentCustomPlaylistId === playlistId) {
+                selectCustomPlaylist(playlistId);
+            }
         }
     }
 
     function removeSongFromCustom(idx) {
         if (!isViewingCustomPlaylist || !currentCustomPlaylistId) return;
-        let customs = window.LeftPanel.getCustomPlaylists();
-        const pl = customs.find(c => c.id === currentCustomPlaylistId);
-        if (!pl) return;
-
-        const removed = pl.tracks.splice(idx, 1)[0];
-        window.LeftPanel.saveCustomPlaylists(customs);
-        currentTracks = pl.tracks;
-        if (detailSubtitle) detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
-        renderTracklist(currentTracks);
-        showToast(`已从歌单移除: ${removed?.name || '歌曲'}`);
+        const success = window.StorageManager.removeTrackFromCustomPlaylist(currentCustomPlaylistId, idx);
+        if (success) {
+            selectCustomPlaylist(currentCustomPlaylistId);
+            showToast(`已从自建歌单移除该曲目`);
+        }
     }
 
     function confirmCreateAndAdd() {
@@ -386,25 +362,13 @@ window.RightPanel = (function () {
         }
         if (!pendingTrackToAdd) return;
 
-        const customs = window.LeftPanel.getCustomPlaylists();
-        const newPl = {
-            id: "custom_" + Date.now(),
-            title: name,
-            category: "默认",
-            createdAt: new Date().toLocaleDateString(),
-            tracks: [{
-                name: pendingTrackToAdd.name,
-                artist: pendingTrackToAdd.artist,
-                album: pendingTrackToAdd.album || "",
-                durationMillis: pendingTrackToAdd.durationMillis || 0
-            }]
-        };
-
-        customs.unshift(newPl);
-        window.LeftPanel.saveCustomPlaylists(customs);
-        showToast(`已新建歌单《${name}》并加入歌曲！`);
-        if (input) input.value = "";
-        closeAddToPlaylistModal();
+        const newPl = window.StorageManager.createCustomPlaylist(name);
+        if (newPl) {
+            window.StorageManager.addTrackToCustomPlaylist(newPl.id, pendingTrackToAdd);
+            showToast(`已新建歌单《${newPl.title}》并加入歌曲！`);
+            if (input) input.value = "";
+            closeAddToPlaylistModal();
+        }
     }
 
     function highlightPlayingTrack() {
