@@ -79,15 +79,131 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
-// 通用 Apple Music API 请求函数
-async function apiRequest(endpoint) {
+// 客户端轻量持久化缓存引擎 (SWR: Stale-While-Revalidate)
+// 服务器零状态透传，所有页面和歌单数据完全由客户端离线存储并驱动 0ms 秒开与 304 验鲜
+// ========================================================
+const ClientCache = {
+    PREFIX: 'amusic_swr_',
+
+    get(key) {
+        try {
+            const raw = localStorage.getItem(this.PREFIX + key);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+    },
+
+    set(key, data, etag = '') {
+        try {
+            localStorage.setItem(this.PREFIX + key, JSON.stringify({
+                data,
+                etag: etag || '',
+                time: Date.now()
+            }));
+        } catch (e) {
+            this.cleanOldest();
+            try {
+                localStorage.setItem(this.PREFIX + key, JSON.stringify({ data, etag: etag || '', time: Date.now() }));
+            } catch (err) {}
+        }
+    },
+
+    cleanOldest() {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(this.PREFIX)) {
+                keys.push(k);
+            }
+        }
+        keys.slice(0, 25).forEach(k => localStorage.removeItem(k));
+    }
+};
+
+/**
+ * 通用 SWR 网络请求器：
+ * 优先使用客户端本地缓存秒开展示；并在后台向服务器携带 If-None-Match 验鲜：
+ * - 若 304 (无更新)：保持本地缓存，显示已验鲜；
+ * - 若 200 (有更新)：写入本地缓存并刷新界面。
+ */
+async function swrFetch(url, cacheKey, { onCached, onUpdated, onError, showLoading }) {
+    const cached = ClientCache.get(cacheKey);
+    let hasRenderedCached = false;
+
+    if (cached && cached.data) {
+        hasRenderedCached = true;
+        try {
+            onCached(cached.data, cached.time);
+            speedMetric.innerText = `⚡ 0ms (客户端缓存)`;
+        } catch (e) {
+            console.warn("渲染客户端缓存失败", e);
+        }
+    } else if (showLoading) {
+        showLoading();
+    }
+
+    const startTime = performance.now();
+    try {
+        const headers = {};
+        if (cached && cached.etag) {
+            headers["If-None-Match"] = cached.etag;
+        }
+
+        const res = await fetch(url, { headers });
+        const costMs = Math.round(performance.now() - startTime);
+
+        if (res.status === 304) {
+            // 无更新，客户端缓存即最新！
+            speedMetric.innerText = `⚡ 0ms (客户端缓存 • 已验鲜 ${costMs}ms)`;
+            return;
+        }
+
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+
+        const freshData = await res.json();
+        const freshEtag = res.headers.get("ETag") || '';
+        ClientCache.set(cacheKey, freshData, freshEtag);
+
+        speedMetric.innerText = `⚡ ${costMs}ms (在线更新)`;
+        if (onUpdated) {
+            onUpdated(freshData, costMs, hasRenderedCached);
+        }
+    } catch (err) {
+        const costMs = Math.round(performance.now() - startTime);
+        if (hasRenderedCached) {
+            speedMetric.innerText = `⚡ 0ms (客户端离线缓存)`;
+            console.warn("网络验鲜受阻，沿用客户端本地缓存", err);
+        } else {
+            speedMetric.innerText = `❌ ${costMs}ms`;
+            if (onError) onError(err);
+        }
+    }
+}
+
+// ========================================================
+// 通用 Apple Music API 请求函数 (支持 304 快速协商)
+// ========================================================
+async function apiRequest(endpoint, etag = '') {
     const startTime = performance.now();
     statusText.innerText = `正在向 Apple 官方服务器请求: ${endpoint.split("?")[0]} ...`;
     speedMetric.innerText = "";
 
     try {
-        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`);
+        const headers = {};
+        if (etag) headers["If-None-Match"] = etag;
+
+        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`, { headers });
         const duration = Math.round(performance.now() - startTime);
+
+        if (response.status === 304) {
+            speedMetric.innerText = `⚡ 0ms (已验鲜 ${duration}ms)`;
+            statusText.innerText = `Apple 数据库响应: 数据无变更 (304)`;
+            return 304;
+        }
 
         if (!response.ok) {
             throw new Error(`Apple API 响应异常: HTTP ${response.status}`);
@@ -157,72 +273,76 @@ function updateBadgeCounts() {
     if (customCountBadge) customCountBadge.innerText = getCustomPlaylists().length;
 }
 
-// 抓取并加载 music.apple.com/new 页面全量板块
+// 抓取并加载 music.apple.com/new 页面全量板块 (客户端 SWR 0ms 秒开)
 async function loadNewPage() {
     setActiveNav("btnNavNew");
     if (categoryFilterBar) categoryFilterBar.style.display = "none";
     mobileBackToList();
     listPanelTitle.innerText = "Apple 官方最新发布 (/new)";
-    playlistListEl.innerHTML = '<div class="loading-state">正在深度抓取 Apple 官方最新发布板块 (/new)...</div>';
-    itemCountBadge.innerText = "...";
-    statusText.innerText = `正在抓取 music.apple.com/${currentStorefront}/new 纯文本板块数据...`;
-    const startTime = performance.now();
 
-    try {
-        const response = await fetch(`/api/apple_new?storefront=${currentStorefront}`);
-        const duration = Math.round(performance.now() - startTime);
-        
-        if (!response.ok) {
-            throw new Error(`抓取异常: HTTP ${response.status}`);
+    const cacheKey = `new_page_${currentStorefront}`;
+
+    swrFetch(`/api/apple_new?storefront=${currentStorefront}`, cacheKey, {
+        showLoading: () => {
+            playlistListEl.innerHTML = '<div class="loading-state">正在获取 Apple 官方最新发布板块 (/new)...</div>';
+            itemCountBadge.innerText = "...";
+            statusText.innerText = `正在连接 Apple 官方数据库...`;
+        },
+        onCached: (data) => {
+            const sections = data?.sections || [];
+            itemCountBadge.innerText = `${sections.length} 板块`;
+            statusText.innerText = `music.apple.com/new (共 ${sections.length} 个板块，客户端秒开)`;
+            renderNewSections(sections);
+        },
+        onUpdated: (data, costMs, hasCached) => {
+            const sections = data?.sections || [];
+            itemCountBadge.innerText = `${sections.length} 板块`;
+            statusText.innerText = `music.apple.com/new 数据已同步 (共 ${sections.length} 个板块)`;
+            if (!hasCached) {
+                renderNewSections(sections);
+            }
+        },
+        onError: (err) => {
+            playlistListEl.innerHTML = `<div class="loading-state">❌ 获取 /new 页面失败: ${err.message}</div>`;
+            itemCountBadge.innerText = "0";
+            statusText.innerText = `获取失败: ${err.message}`;
         }
-
-        const data = await response.json();
-        const sections = data?.sections || [];
-        statusText.innerText = `music.apple.com/new 抓取完成 (共 ${sections.length} 个板块，0 图片开销)`;
-        speedMetric.innerText = `⚡ ${duration} ms`;
-
-        renderNewSections(sections);
-    } catch (err) {
-        const duration = Math.round(performance.now() - startTime);
-        playlistListEl.innerHTML = `<div class="loading-state">❌ 抓取 /new 页面失败: ${err.message}</div>`;
-        itemCountBadge.innerText = "0";
-        statusText.innerText = `抓取失败: ${err.message}`;
-        speedMetric.innerText = `❌ ${duration} ms`;
-    }
+    });
 }
 
-// 抓取并加载 music.apple.com/search 类别浏览全部分类专区
+// 抓取并加载 music.apple.com/search 类别浏览全部分类专区 (客户端 SWR 0ms 秒开)
 async function loadSearchPage() {
     setActiveNav("btnNavSearchPage");
     if (categoryFilterBar) categoryFilterBar.style.display = "none";
     mobileBackToList();
     listPanelTitle.innerText = "类别浏览与探索 (music.apple.com/search)";
-    playlistListEl.innerHTML = '<div class="loading-state">正在抓取 Apple 官方全部分类与专区列表 (/search)...</div>';
-    itemCountBadge.innerText = "...";
-    statusText.innerText = `正在抓取 music.apple.com/${currentStorefront}/search 纯文本分类数据...`;
-    const startTime = performance.now();
 
-    try {
-        const response = await fetch(`/api/apple_search_page?storefront=${currentStorefront}`);
-        const duration = Math.round(performance.now() - startTime);
+    const cacheKey = `search_categories_${currentStorefront}`;
 
-        if (!response.ok) {
-            throw new Error(`抓取异常: HTTP ${response.status}`);
+    swrFetch(`/api/apple_search_page?storefront=${currentStorefront}`, cacheKey, {
+        showLoading: () => {
+            playlistListEl.innerHTML = '<div class="loading-state">正在获取 Apple 官方全部分类与专区列表 (/search)...</div>';
+            itemCountBadge.innerText = "...";
+            statusText.innerText = `正在连接 Apple 分类专区数据...`;
+        },
+        onCached: (data) => {
+            const categories = data?.categories || [];
+            statusText.innerText = `music.apple.com/search (共 ${categories.length} 个官方专区，客户端秒开)`;
+            renderSearchCategories(categories);
+        },
+        onUpdated: (data, costMs, hasCached) => {
+            const categories = data?.categories || [];
+            statusText.innerText = `Apple 官方专区已同步 (共 ${categories.length} 个专区)`;
+            if (!hasCached) {
+                renderSearchCategories(categories);
+            }
+        },
+        onError: (err) => {
+            playlistListEl.innerHTML = `<div class="loading-state">❌ 获取分类失败: ${err.message}</div>`;
+            itemCountBadge.innerText = "0";
+            statusText.innerText = `获取失败: ${err.message}`;
         }
-
-        const data = await response.json();
-        const categories = data?.categories || [];
-        statusText.innerText = `music.apple.com/search 抓取完成 (共 ${categories.length} 个官方分类专区，0 图片开销)`;
-        speedMetric.innerText = `⚡ ${duration} ms`;
-
-        renderSearchCategories(categories);
-    } catch (err) {
-        const duration = Math.round(performance.now() - startTime);
-        playlistListEl.innerHTML = `<div class="loading-state">❌ 抓取 /search 分类失败: ${err.message}</div>`;
-        itemCountBadge.innerText = "0";
-        statusText.innerText = `抓取失败: ${err.message}`;
-        speedMetric.innerText = `❌ ${duration} ms`;
-    }
+    });
 }
 
 let cachedCategories = [];
@@ -276,32 +396,51 @@ function renderSearchCategories(categories) {
     });
 }
 
-// 点击某个分类专区（如“国语流行”或“摇滚”），加载该专区的全部官方歌单
+// 点击某个分类专区（如“国语流行”或“摇滚”），加载该专区的全部官方歌单 (客户端 SWR 0ms 秒开)
 async function openCategoryPlaylists(cat) {
     listPanelTitle.innerText = `【${cat.title}】官方专区`;
+    const curatorUrl = cat.url || `https://music.apple.com/${currentStorefront}/curator/${encodeURIComponent(cat.title)}/${cat.id}`;
+    const cacheKey = `curator_${currentStorefront}_${cat.id || encodeURIComponent(cat.title)}`;
+
+    // 1. 如果该专区有完整的官方主页链接 (如 curator 页面)，直接通过 SWR 客户端秒开抓取官方真实板块！
+    if (cat.url && (cat.url.includes("/curator/") || cat.url.includes("/apple-curator/"))) {
+        swrFetch(`/api/apple_curator_page?url=${encodeURIComponent(cat.url)}`, cacheKey, {
+            showLoading: () => {
+                playlistListEl.innerHTML = `<div class="loading-state">正在深度获取【${escapeHtml(cat.title)}】官方全量板块...</div>`;
+                itemCountBadge.innerText = "...";
+                statusText.innerText = `正在连接 Apple 官方专区板块...`;
+            },
+            onCached: (data) => {
+                const sections = data?.sections || [];
+                statusText.innerText = `已载入【${cat.title}】官方主页 ${sections.length} 个真实板块 (客户端秒开)`;
+                renderNewSections(sections, true);
+            },
+            onUpdated: (data, costMs, hasCached) => {
+                const sections = data?.sections || [];
+                statusText.innerText = `【${cat.title}】官方主页已同步 (共 ${sections.length} 个板块)`;
+                if (!hasCached) {
+                    renderNewSections(sections, true);
+                }
+            },
+            onError: (err) => {
+                playlistListEl.innerHTML = `
+                    <div class="placeholder-box" style="padding: 30px 16px;">
+                        <p>❌ 抓取专区主页受阻: ${escapeHtml(err.message)}</p>
+                        <button class="btn btn-sm btn-outline" onclick="loadSearchPage()" style="margin-top: 10px;">‹ 返回专区列表</button>
+                    </div>
+                `;
+            }
+        });
+        return;
+    }
+
+    // 2. 兜底回退：通过 apple-curators API 与专区搜索
     playlistListEl.innerHTML = `<div class="loading-state">正在深度抓取 Apple【${escapeHtml(cat.title)}】官方主页全量板块...</div>`;
     itemCountBadge.innerText = "...";
     statusText.innerText = `正在抓取 ${cat.url || cat.title} 官方全量板块...`;
     const startTime = performance.now();
 
     try {
-        // 1. 如果该专区有完整的官方主页链接 (如 curator 页面)，直接深度抓取官方真实板块！
-        // 确保展示的“焦点推荐、歌单、年度热门、年代作品、明星曲目单、经典专辑”与官网 100% 相同！
-        if (cat.url && (cat.url.includes("/curator/") || cat.url.includes("/apple-curator/"))) {
-            const resp = await fetch(`/api/apple_curator_page?url=${encodeURIComponent(cat.url)}`);
-            if (resp.ok) {
-                const data = await resp.json();
-                if (data.sections && data.sections.length > 0) {
-                    const duration = Math.round(performance.now() - startTime);
-                    statusText.innerText = `已载入【${cat.title}】官方主页 ${data.sections.length} 个真实板块 (0 图片开销)`;
-                    speedMetric.innerText = `⚡ ${duration} ms`;
-                    renderNewSections(data.sections, true);
-                    return;
-                }
-            }
-        }
-
-        // 2. 兜底回退：通过 apple-curators API 与专区搜索
         let playlists = [];
         try {
             const curData = await apiRequest(`apple-curators/${cat.id}/playlists?limit=10`);
@@ -560,7 +699,7 @@ function renderPlaylistCards(items) {
     });
 }
 
-// 点击歌单，查看详细曲目
+// 点击歌单，查看详细曲目 (客户端 SWR 0ms 秒开)
 async function selectPlaylist(id, type, name, curator, url) {
     isViewingCustomPlaylist = false;
     currentCustomPlaylistId = null;
@@ -570,15 +709,32 @@ async function selectPlaylist(id, type, name, curator, url) {
     mobileShowDetail();
 
     detailTitle.innerText = name;
-    detailSubtitle.innerText = `${curator} • 正在获取曲目清单...`;
-    detailActions.style.display = "none";
-    detailBody.innerHTML = '<div class="loading-state">正在向 Apple 数据库解析曲目列表...</div>';
-
     updateFavButtonStatus();
+
+    const cacheKey = `playlist_${type}_${id}`;
+    const cached = ClientCache.get(cacheKey);
+
+    if (cached && cached.data && cached.data.length > 0) {
+        currentTracks = cached.data;
+        detailSubtitle.innerText = `${curator} • 共 ${currentTracks.length} 首歌曲 (客户端秒开)`;
+        detailActions.style.display = "flex";
+        renderTracklist(currentTracks);
+        speedMetric.innerText = `⚡ 0ms (客户端缓存)`;
+    } else {
+        detailSubtitle.innerText = `${curator} • 正在获取曲目清单...`;
+        detailActions.style.display = "none";
+        detailBody.innerHTML = '<div class="loading-state">正在向 Apple 数据库解析曲目列表...</div>';
+    }
 
     try {
         const endpoint = `${type}s/${id}`;
-        const data = await apiRequest(endpoint);
+        const data = await apiRequest(endpoint, cached?.etag);
+
+        if (data === 304) {
+            speedMetric.innerText = `⚡ 0ms (客户端缓存 • 已验鲜)`;
+            return;
+        }
+
         const item = data?.data?.[0];
         const tracks = item?.relationships?.tracks?.data || [];
 
@@ -595,12 +751,15 @@ async function selectPlaylist(id, type, name, curator, url) {
             };
         });
 
+        ClientCache.set(cacheKey, currentTracks);
         detailSubtitle.innerText = `${curator} • 共 ${currentTracks.length} 首歌曲`;
         detailActions.style.display = "flex";
         renderTracklist(currentTracks);
     } catch (err) {
-        detailBody.innerHTML = `<div class="loading-state">❌ 获取歌曲详情失败: ${err.message}</div>`;
-        detailSubtitle.innerText = "获取曲目清单失败";
+        if (!currentTracks || currentTracks.length === 0) {
+            detailBody.innerHTML = `<div class="loading-state">❌ 获取歌曲详情失败: ${err.message}</div>`;
+            detailSubtitle.innerText = "获取曲目清单失败";
+        }
     }
 }
 

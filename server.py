@@ -18,6 +18,7 @@ import threading
 import urllib.request
 import urllib.error
 import urllib.parse
+import hashlib
 
 # 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
 from source_manager import source_hub
@@ -35,11 +36,7 @@ DEFAULT_TOKEN = (
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-# 内存缓存（TTL 5~10 分钟）
-NEW_PAGE_CACHE = {}
-ROOM_CACHE = {}
-SEARCH_PAGE_CACHE = {}
-CURATOR_PAGE_CACHE = {}
+# 服务端保持极致轻量、零状态透传，所有页面和歌单数据完全由客户端离线存储并驱动秒开与 304 验鲜
 
 def http_get_html(url, timeout=15):
     """发起 HTTP GET 请求抓取 HTML 页面"""
@@ -84,12 +81,6 @@ def fetch_apple_new_page(storefront="cn"):
     抓取 /new 页面并严格重构为【歌单/专辑】聚合实体。
     单曲类板块（如新歌精选、正在流行中）自动升格为官方精选合集歌单。
     """
-    now = time.time()
-    if storefront in NEW_PAGE_CACHE:
-        cached_time, cached_data = NEW_PAGE_CACHE[storefront]
-        if now - cached_time < 300:
-            return cached_data
-
     html = http_get_html(f"https://music.apple.com/{storefront}/new")
     d = extract_ssr_data(html, "BrowsePageIntent")
     sections_out = []
@@ -159,20 +150,12 @@ def fetch_apple_new_page(storefront="cn"):
                         'items': valid_items
                     })
 
-    result = {"storefront": storefront, "sections": sections_out}
-    NEW_PAGE_CACHE[storefront] = (now, result)
-    return result
+    return {"storefront": storefront, "sections": sections_out}
 
 def fetch_apple_search_page(storefront="cn"):
     """
     抓取 /search 探索中枢，提取官方 50+ 个音乐专区 (Curator 与专区分类)
     """
-    now = time.time()
-    if storefront in SEARCH_PAGE_CACHE:
-        cached_time, cached_data = SEARCH_PAGE_CACHE[storefront]
-        if now - cached_time < 600:
-            return cached_data
-
     html = http_get_html(f"https://music.apple.com/{storefront}/search")
     d = extract_ssr_data(html, "data")
     categories = []
@@ -190,21 +173,13 @@ def fetch_apple_search_page(storefront="cn"):
                         'url': card['url']
                     })
 
-    result = {"storefront": storefront, "categories": categories}
-    SEARCH_PAGE_CACHE[storefront] = (now, result)
-    return result
+    return {"storefront": storefront, "categories": categories}
 
 def fetch_apple_curator_page(url):
     """
     深度抓取 Apple Music 官方专区主页 (如 /curator/apple-music-国语流行/1019400042)
     100% 还原官网的焦点推荐、歌单、年度热门、明星曲目单与经典专辑等板块
     """
-    now = time.time()
-    if url in CURATOR_PAGE_CACHE:
-        cached_time, cached_data = CURATOR_PAGE_CACHE[url]
-        if now - cached_time < 300:
-            return cached_data
-
     html = http_get_html(url)
     d = extract_ssr_data(html, "data")
     sections_out = []
@@ -234,20 +209,12 @@ def fetch_apple_curator_page(url):
                     'items': valid_items
                 })
 
-    result = {"url": url, "sections": sections_out}
-    CURATOR_PAGE_CACHE[url] = (now, result)
-    return result
+    return {"url": url, "sections": sections_out}
 
 def fetch_apple_room(room_url):
     """
     抓取 Apple Music 官方专题 Room (如新歌精选 100 首曲目大合集)
     """
-    now = time.time()
-    if room_url in ROOM_CACHE:
-        cached_time, cached_tracks = ROOM_CACHE[room_url]
-        if now - cached_time < 300:
-            return cached_tracks
-
     html = http_get_html(room_url)
     d = extract_ssr_data(html, "data")
     tracks = []
@@ -269,7 +236,6 @@ def fetch_apple_room(room_url):
         except Exception:
             pass
 
-    ROOM_CACHE[room_url] = (now, tracks)
     return tracks
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -277,11 +243,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
 
     def send_json(self, data, status=200):
-        """统一 JSON 响应辅助函数"""
+        """统一 JSON 响应辅助函数，支持 ETag 与 HTTP 304 快速协商（客户端主导缓存）"""
         res_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        etag = f'"{hashlib.md5(res_bytes).hexdigest()}"'
+
+        client_etag = self.headers.get("If-None-Match")
+        if client_etag and client_etag.strip('"') == etag.strip('"'):
+            self.send_response(304)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("ETag", etag)
+            self.end_headers()
+            return
+
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "private, no-cache")
         self.send_header("Content-Length", str(len(res_bytes)))
         self.end_headers()
         self.wfile.write(res_bytes)
@@ -337,32 +315,54 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e)
             return
 
-        # 5. 官方数据库请求代理转发 (附带 Bearer Token 与合法 Origin，突破浏览器限制)
+        # 5. 官方数据库请求代理转发 (附带 Bearer Token 与合法 Origin，支持 304 快速协商)
         if self.path.startswith("/api/apple/"):
             apple_path = self.path[len("/api/apple/"):]
             apple_url = f"https://api.music.apple.com/{apple_path}"
+            client_etag = self.headers.get("If-None-Match")
             try:
-                req = urllib.request.Request(apple_url, headers={
+                headers = {
                     "Authorization": f"Bearer {DEFAULT_TOKEN}",
                     "Origin": "https://music.apple.com",
                     "User-Agent": USER_AGENT
-                })
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    data = resp.read()
-                    self.send_response(resp.status)
+                }
+                if client_etag:
+                    headers["If-None-Match"] = client_etag
+                req = urllib.request.Request(apple_url, headers=headers)
+                try:
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        res_bytes = resp.read()
+                        etag = resp.headers.get("ETag") or f'"{hashlib.md5(res_bytes).hexdigest()}"'
+                        if client_etag and client_etag.strip('"') == etag.strip('"'):
+                            self.send_response(304)
+                            self.send_header("Access-Control-Allow-Origin", "*")
+                            self.send_header("ETag", etag)
+                            self.end_headers()
+                            return
+
+                        self.send_response(resp.status)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.send_header("ETag", etag)
+                        self.send_header("Cache-Control", "private, no-cache")
+                        self.send_header("Content-Length", str(len(res_bytes)))
+                        self.end_headers()
+                        self.wfile.write(res_bytes)
+                except urllib.error.HTTPError as he:
+                    if he.code == 304:
+                        self.send_response(304)
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        if client_etag:
+                            self.send_header("ETag", client_etag)
+                        self.end_headers()
+                        return
+                    err_data = he.read()
+                    self.send_response(he.code)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Access-Control-Allow-Origin", "*")
-                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Content-Length", str(len(err_data)))
                     self.end_headers()
-                    self.wfile.write(data)
-            except urllib.error.HTTPError as e:
-                err_data = e.read()
-                self.send_response(e.code)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Content-Length", str(len(err_data)))
-                self.end_headers()
-                self.wfile.write(err_data)
+                    self.wfile.write(err_data)
             except Exception as e:
                 self.send_error_json(e)
             return
