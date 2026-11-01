@@ -924,9 +924,8 @@ function renderTracklist(tracks) {
                 <td class="track-artist">${escapeHtml(t.artist)}</td>
                 <td class="track-duration">${durationStr}</td>
                 <td class="track-action">
-                    <button class="btn-play-song" onclick="playSong(${idx})" title="立即播放此歌曲">▶ 播放</button>
-                    <button class="btn-add-to-pl" onclick="openAddToPlaylistModal(${idx})" title="加入我的自建歌单">➕ 歌单</button>
-                    <button class="btn-copy-song" onclick="copySongText('${escapeJsString(copyText)}')" title="复制歌名与歌手">复制</button>
+                    <button class="btn-play-song" onclick="playSong(${idx})" title="立即播放此歌曲">▶</button>
+                    <button class="btn-add-to-pl" onclick="openAddToPlaylistModal(${idx})" title="加入我的自建歌单">➕</button>
                     ${isViewingCustomPlaylist ? `<button class="btn-remove-song" onclick="removeSongFromCustom(${idx})" title="从歌单移除">✕</button>` : ''}
                 </td>
             </tr>
