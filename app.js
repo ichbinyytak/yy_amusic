@@ -53,6 +53,33 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
+// 通用 Apple Music API 请求函数
+async function apiRequest(endpoint) {
+    const startTime = performance.now();
+    statusText.innerText = `正在向 Apple 官方服务器请求: ${endpoint.split("?")[0]} ...`;
+    speedMetric.innerText = "";
+
+    try {
+        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`);
+        const duration = Math.round(performance.now() - startTime);
+
+        if (!response.ok) {
+            throw new Error(`Apple API 响应异常: HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        statusText.innerText = "Apple 数据库连接正常 (纯文本传输，0 图片开销)";
+        speedMetric.innerText = `⚡ ${duration} ms`;
+        return data;
+    } catch (err) {
+        const duration = Math.round(performance.now() - startTime);
+        statusText.innerText = `请求失败: ${err.message}`;
+        speedMetric.innerText = `❌ ${duration} ms`;
+        console.error("Apple Music API Error:", err);
+        throw err;
+    }
+}
+
 // 抽屉导航控制
 // ========================================================
 function toggleSidebar() {
@@ -206,7 +233,6 @@ function renderSearchCategories(categories) {
             <div class="playlist-desc">点击立即查看【${escapeHtml(cat.title)}】专区收录的所有官方精选歌单与专辑</div>
             <div class="playlist-meta-row">
                 <span>专区 ID: ${escapeHtml(cat.id)}</span>
-                <button class="btn-mini-action" onclick="event.stopPropagation(); copyUrl('${cat.url}')" title="复制专区官方直链">📋 复制链接</button>
             </div>
         `;
 
@@ -362,8 +388,7 @@ function renderNewSections(sections, backToCategories = false) {
                 </div>
                 <div class="playlist-desc">${escapeHtml(item.desc || '')}</div>
                 <div class="playlist-meta-row">
-                    <span>${item.trackCount ? '🎵 ' + item.trackCount + ' 首歌曲' : (item.url ? '🔗 官方直链' : '')}</span>
-                    <button class="btn-mini-action" onclick="event.stopPropagation(); copyUrl('${item.url}')" title="直接复制该直链">📋 复制链接</button>
+                    <span>${item.trackCount ? '🎵 ' + item.trackCount + ' 首歌曲' : (item.url ? '🔗 官方精选' : '')}</span>
                 </div>
             `;
 
@@ -487,8 +512,7 @@ function renderPlaylistCards(items) {
             </div>
             <div class="playlist-desc">${escapeHtml(desc)}</div>
             <div class="playlist-meta-row">
-                <span>${date ? '📅 ' + date : ''}</span>
-                <button class="btn-mini-action" onclick="event.stopPropagation(); copyUrl('${url}')" title="直接复制该歌单链接">📋 复制链接</button>
+                <span>${date ? '📅 ' + date : '🔗 官方专辑'}</span>
             </div>
         `;
 
