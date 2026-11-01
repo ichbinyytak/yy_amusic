@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>YY-Amusic - Apple 音乐纯文本数据库浏览器</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
     <link rel="stylesheet" href="style.css">
@@ -91,14 +91,16 @@
         <span id="speedMetric" class="speed-metric"></span>
     </div>
 
-    <!-- 主展示区：两栏布局 (歌单列表 + 曲目明细) -->
-    <main class="main-layout">
+    <!-- 主展示区：两栏布局 (歌单列表 + 曲目明细，手机端单栏平滑联动切换) -->
+    <main class="main-layout" id="mainLayout">
         <!-- 中间栏：歌单/专辑/分类列表 -->
-        <section class="panel list-panel">
+        <section class="panel list-panel" id="listPanel">
             <div class="panel-header">
                 <h2 id="listPanelTitle">官方热门歌单</h2>
                 <span class="count-badge" id="itemCountBadge">0</span>
             </div>
+            <!-- 歌单分类筛选栏 (仅在收藏/自建歌单时动态激活) -->
+            <div class="category-filter-bar" id="categoryFilterBar" style="display: none;"></div>
             <div class="panel-body" id="playlistList">
                 <div class="loading-state">加载中...</div>
             </div>
@@ -107,6 +109,8 @@
         <!-- 右侧栏：选中的歌单曲目明细 -->
         <section class="panel detail-panel" id="detailPanel">
             <div class="panel-header detail-header">
+                <!-- 手机端返回歌单列表按钮 -->
+                <button class="btn-mobile-back" id="btnMobileBack" onclick="mobileBackToList()" title="返回歌单列表">‹ 返回</button>
                 <div class="detail-title-group">
                     <h2 id="detailTitle">请在左侧选择一个歌单</h2>
                     <span class="detail-subtitle" id="detailSubtitle">点击任意歌单查看曲目详情并快速点播</span>
@@ -240,6 +244,9 @@
             <div class="loading-state">正在获取音源列表...</div>
         </div>
     </div>
+
+    <!-- 抽屉暗色遮罩 (针对手机端底部抽屉与弹窗) -->
+    <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeAllDrawers()"></div>
 
     <!-- Toast 提示条 -->
     <div class="toast" id="toast"></div>

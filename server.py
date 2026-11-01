@@ -74,7 +74,7 @@ def parse_card_item(it, sec_title=""):
         'title': title,
         'curator': subtitle or 'Apple Music',
         'heading': it.get('heading', ''),
-        'desc': f'收录于【{sec_title}】板块' if sec_title else '',
+        'desc': sec_title if sec_title else '',
         'id': adam_id,
         'url': url
     }

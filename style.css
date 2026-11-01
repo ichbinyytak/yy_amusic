@@ -420,7 +420,7 @@ body {
 }
 
 .panel-header h2 {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
 }
 
@@ -428,8 +428,8 @@ body {
     background-color: rgba(255, 255, 255, 0.08);
     color: var(--text-secondary);
     border-radius: 12px;
-    padding: 2px 7px;
-    font-size: 10.5px;
+    padding: 1px 6px;
+    font-size: 9.5px;
     font-family: var(--font-mono);
 }
 
@@ -440,13 +440,13 @@ body {
 
 /* 歌单列表项 */
 .playlist-card {
-    padding: 9px 12px;
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border-subtle);
     cursor: pointer;
     transition: background-color 0.15s ease;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
 }
 
 .playlist-card:hover {
@@ -462,25 +462,26 @@ body {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
 }
 
 .playlist-name {
     font-weight: 600;
     color: var(--text-primary);
-    font-size: 12.5px;
+    font-size: 11.5px;
+    line-height: 1.35;
 }
 
 .playlist-curator {
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 10px;
     white-space: nowrap;
 }
 
 .playlist-desc {
     color: var(--text-secondary);
-    font-size: 11px;
-    line-height: 1.4;
+    font-size: 10px;
+    line-height: 1.35;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -491,8 +492,8 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 3px;
-    font-size: 10.5px;
+    margin-top: 2px;
+    font-size: 9.5px;
     color: var(--text-muted);
     font-family: var(--font-mono);
 }
@@ -510,6 +511,115 @@ body {
 .btn-mini-action:hover {
     color: var(--accent);
     border-color: var(--accent);
+}
+
+/* 歌单分类筛选栏 (支持横向滑动) */
+.category-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+}
+
+.category-filter-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.cat-pill {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    background-color: var(--bg-main);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    line-height: 1.4;
+}
+
+.cat-pill:hover {
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.cat-pill.active {
+    background-color: rgba(250, 45, 72, 0.15);
+    border-color: #ff7588;
+    color: #ff7588;
+    font-weight: 600;
+}
+
+.cat-pill-add {
+    border-style: dashed;
+    color: var(--text-muted);
+}
+
+.cat-pill-add:hover {
+    border-color: #ff7588;
+    color: #ff7588;
+}
+
+/* 卡片分类标签与删除按钮 */
+.cat-badge {
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.cat-badge:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-card-del {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin-left: auto;
+    transition: all 0.15s ease;
+    line-height: 1;
+}
+
+.btn-card-del:hover {
+    color: #ff7588;
+    background-color: rgba(250, 45, 72, 0.15);
+}
+
+/* 手机端返回按钮与抽屉全局遮罩 */
+.btn-mobile-back {
+    display: none;
+}
+
+.drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 550;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.drawer-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 /* 右侧详情面板 */
@@ -656,20 +766,260 @@ body {
     transform: translateY(0);
 }
 
-/* 响应式微调 */
+/* ========================================================
+   移动端深度优化 (@media max-width: 768px)
+   专为手机浏览器定制：单栏视图平滑切换、微小紧凑字号、底部抽屉卡片化
+   ======================================================== */
 @media (max-width: 768px) {
+    /* 1. 移动端顶栏高度与品牌排版 */
+    .app-header {
+        padding: 6px 10px;
+        gap: 8px;
+        height: 46px;
+    }
+
+    .brand-group {
+        gap: 6px;
+    }
+
+    .btn-sidebar-toggle {
+        width: 32px;
+        height: 32px;
+        font-size: 15px;
+    }
+
+    .logo-badge {
+        font-size: 18px;
+    }
+
+    .brand-text h1 {
+        font-size: 14px;
+    }
+
+    .brand-text .sub {
+        display: none !important;
+    }
+
+    .header-right {
+        flex: 1;
+        justify-content: flex-end;
+    }
+
+    .search-bar-compact {
+        width: 100%;
+        max-width: 220px;
+    }
+
+    .search-bar-compact input {
+        width: 100% !important;
+        font-size: 12px;
+        padding: 4px 8px;
+    }
+
+    .search-bar-compact input:focus {
+        width: 100% !important;
+    }
+
+    #searchBtn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+
+    /* 2. 状态条 */
+    .status-bar {
+        padding: 2px 10px;
+        font-size: 10px;
+    }
+
+    /* 3. 核心单栏视图联动机制 (手机端单栏切换，非上下各50%挤压) */
     .main-layout {
+        position: relative;
         flex-direction: column;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
     }
+
+    /* 默认：展示歌单列表，隐藏曲目详情 */
     .list-panel {
-        width: 100%;
-        height: 50%;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
+        display: flex !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        border-right: none !important;
+        border-bottom: none !important;
     }
+
     .detail-panel {
-        width: 100%;
-        height: 50%;
+        display: none !important;
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    /* 激活详情模式：隐藏歌单列表，展示曲目详情 */
+    .mobile-detail-active .list-panel {
+        display: none !important;
+    }
+
+    .mobile-detail-active .detail-panel {
+        display: flex !important;
+    }
+
+    /* 手机端返回按钮高亮显示 */
+    .btn-mobile-back {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        height: 28px;
+        padding: 0 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        flex-shrink: 0;
+        margin-right: 6px;
+        line-height: 1;
+    }
+
+    .btn-mobile-back:active {
+        background-color: var(--accent);
+        color: #fff;
+    }
+
+    .detail-header {
+        padding: 8px 10px;
+    }
+
+    .detail-title-group h2 {
+        font-size: 13px;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .detail-subtitle {
+        font-size: 10px;
+    }
+
+    /* 4. 移动端曲目表排版优化 */
+    .track-table th, .track-table td {
+        padding: 7px 6px;
+    }
+
+    .track-index {
+        width: 24px;
+        font-size: 10px;
+    }
+
+    .track-name {
+        font-size: 11.5px;
+    }
+
+    .track-artist {
+        font-size: 10px;
+    }
+
+    .track-duration {
+        display: none; /* 手机端隐藏耗时，腾出空间给操作按钮与歌名 */
+    }
+
+    .track-actions-cell {
+        width: 66px;
+    }
+
+    .btn-track-action {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+
+    /* 5. 移动端播放器底栏 */
+    .bottom-dock-container {
+        padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+    }
+
+    .player-bar {
+        height: 52px;
+        padding: 4px 10px;
+    }
+
+    .player-art-badge {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+    }
+
+    .player-track-info {
+        max-width: 110px;
+    }
+
+    .player-title {
+        font-size: 11px;
+    }
+
+    .player-artist {
+        font-size: 9.5px;
+    }
+
+    .player-volume {
+        display: none !important; /* 手机通过实体按键调音，隐藏滑块节省空间 */
+    }
+
+    .player-controls {
+        gap: 6px;
+    }
+
+    .btn-player-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+    }
+
+    .btn-play-pause {
+        width: 34px;
+        height: 34px;
+        font-size: 13px;
+    }
+
+    .btn-nav-compact {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+
+    /* 6. 移动端歌词栏微调 */
+    .lyric-dock {
+        padding: 3px 10px;
+        min-height: 36px;
+    }
+
+    .lyric-dock.expanded {
+        height: 150px;
+        max-height: 28vh;
+    }
+
+    .lyric-line-current {
+        font-size: 11px;
+    }
+
+    .lyric-line-next {
+        font-size: 9.5px;
+    }
+
+    /* 7. 移动端抽屉 (队列与音源) 改造为标准 Bottom Sheet */
+    .queue-drawer, .source-drawer {
+        right: 0 !important;
+        left: 0 !important;
+        bottom: 0 !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        max-height: 72vh !important;
+        border-radius: 14px 14px 0 0 !important;
+        box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.85) !important;
+        z-index: 600 !important;
     }
 }
 
@@ -678,8 +1028,8 @@ body {
     background-color: #1a1f27;
     border-top: 1px solid var(--border-color);
     border-bottom: 1px solid var(--border-subtle);
-    padding: 6px 12px;
-    font-size: 12px;
+    padding: 5px 10px;
+    font-size: 11px;
     font-weight: 700;
     color: #ff7588;
     display: flex;
@@ -691,7 +1041,7 @@ body {
 }
 
 .section-count {
-    font-size: 10.5px;
+    font-size: 9.5px;
     font-weight: normal;
     color: var(--text-muted);
     font-family: var(--font-mono);

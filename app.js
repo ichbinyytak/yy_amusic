@@ -33,6 +33,32 @@ const sidebarDrawer = document.getElementById("sidebarDrawer");
 const sidebarOverlay = document.getElementById("sidebarOverlay");
 const favCountBadge = document.getElementById("favCountBadge");
 const customCountBadge = document.getElementById("customCountBadge");
+const categoryFilterBar = document.getElementById("categoryFilterBar");
+
+// 分类筛选状态
+let currentFavCategory = "全部";
+let currentCustomCategory = "全部";
+
+// 手机端单栏联动：切换到曲目详情视图
+function mobileShowDetail() {
+    const main = document.getElementById("mainLayout");
+    if (main) main.classList.add("mobile-detail-active");
+}
+
+// 手机端返回歌单列表视图
+function mobileBackToList() {
+    const main = document.getElementById("mainLayout");
+    if (main) main.classList.remove("mobile-detail-active");
+}
+
+// 关闭所有底部抽屉与遮罩
+function closeAllDrawers() {
+    document.getElementById("queueDrawer")?.classList.remove("open");
+    document.getElementById("btnQueueModal")?.classList.remove("btn-nav-active");
+    document.getElementById("sourceDrawer")?.classList.remove("open");
+    document.getElementById("btnSourceModal")?.classList.remove("btn-nav-active");
+    document.getElementById("drawerBackdrop")?.classList.remove("open");
+}
 
 // 初始化
 window.addEventListener("DOMContentLoaded", () => {
@@ -134,6 +160,8 @@ function updateBadgeCounts() {
 // 抓取并加载 music.apple.com/new 页面全量板块
 async function loadNewPage() {
     setActiveNav("btnNavNew");
+    if (categoryFilterBar) categoryFilterBar.style.display = "none";
+    mobileBackToList();
     listPanelTitle.innerText = "Apple 官方最新发布 (/new)";
     playlistListEl.innerHTML = '<div class="loading-state">正在深度抓取 Apple 官方最新发布板块 (/new)...</div>';
     itemCountBadge.innerText = "...";
@@ -166,6 +194,8 @@ async function loadNewPage() {
 // 抓取并加载 music.apple.com/search 类别浏览全部分类专区
 async function loadSearchPage() {
     setActiveNav("btnNavSearchPage");
+    if (categoryFilterBar) categoryFilterBar.style.display = "none";
+    mobileBackToList();
     listPanelTitle.innerText = "类别浏览与探索 (music.apple.com/search)";
     playlistListEl.innerHTML = '<div class="loading-state">正在抓取 Apple 官方全部分类与专区列表 (/search)...</div>';
     itemCountBadge.innerText = "...";
@@ -225,7 +255,7 @@ function renderSearchCategories(categories) {
         card.innerHTML = `
             <div class="playlist-title-row">
                 <span class="playlist-name">
-                    <span style="color:#79c0ff; font-weight:normal; font-size:11px;">[专区]</span> 
+                    <span style="color:#79c0ff; font-weight:normal; font-size:10px;">[专区]</span> 
                     ${escapeHtml(cat.title)}
                 </span>
                 <span class="playlist-curator">Apple Music 官方</span>
@@ -381,14 +411,14 @@ function renderNewSections(sections, backToCategories = false) {
             card.innerHTML = `
                 <div class="playlist-title-row">
                     <span class="playlist-name">
-                        <span style="color:${tagColor}; font-weight:normal; font-size:11px;">${typeLabel}</span> 
+                        <span style="color:${tagColor}; font-weight:normal; font-size:10px;">${typeLabel}</span> 
                         ${escapeHtml(item.title)}
                     </span>
                     <span class="playlist-curator">${escapeHtml(item.curator || item.subtitle || 'Apple Music')}</span>
                 </div>
                 <div class="playlist-desc">${escapeHtml(item.desc || '')}</div>
                 <div class="playlist-meta-row">
-                    <span>${item.trackCount ? '🎵 ' + item.trackCount + ' 首歌曲' : (item.url ? '🔗 官方精选' : '')}</span>
+                    <span>${item.trackCount ? '🎵 ' + item.trackCount + ' 首' : (item.url ? '<span title="官方精选">🔗</span>' : '')}</span>
                 </div>
             `;
 
@@ -412,6 +442,8 @@ function renderNewSections(sections, backToCategories = false) {
 async function selectCuratedCollection(title, curator, url, roomUrl, fallbackTracks) {
     currentPlaylistData = { id: "", type: "playlist", name: title, curator: curator, url: url };
     currentTracks = fallbackTracks || [];
+
+    mobileShowDetail();
 
     detailTitle.innerText = title;
     detailSubtitle.innerText = `${curator} • 官方精选 (共 ${currentTracks.length} 首)`;
@@ -448,6 +480,8 @@ async function handleSearch() {
     }
 
     setActiveNav("");
+    if (categoryFilterBar) categoryFilterBar.style.display = "none";
+    mobileBackToList();
     clearBtn.style.display = "inline-block";
     listPanelTitle.innerText = `搜索结果: "${query}"`;
     playlistListEl.innerHTML = `<div class="loading-state">正在检索数据库中包含 "${escapeHtml(query)}" 的歌单与专辑...</div>`;
@@ -507,7 +541,7 @@ function renderPlaylistCards(items) {
         card.id = `card-${item.id}`;
         card.innerHTML = `
             <div class="playlist-title-row">
-                <span class="playlist-name"><span style="color:var(--accent); font-weight:normal; font-size:11px;">${typeLabel}</span> ${escapeHtml(name)}</span>
+                <span class="playlist-name"><span style="color:var(--accent); font-weight:normal; font-size:10px;">${typeLabel}</span> ${escapeHtml(name)}</span>
                 <span class="playlist-curator">${escapeHtml(curator)}</span>
             </div>
             <div class="playlist-desc">${escapeHtml(desc)}</div>
@@ -532,6 +566,8 @@ async function selectPlaylist(id, type, name, curator, url) {
     currentCustomPlaylistId = null;
     currentPlaylistData = { id, type, name, curator, url };
     currentTracks = [];
+
+    mobileShowDetail();
 
     detailTitle.innerText = name;
     detailSubtitle.innerText = `${curator} • 正在获取曲目清单...`;
@@ -600,12 +636,14 @@ function toggleFavCurrentPlaylist() {
         updateFavButtonStatus();
         showToast(`已取消收藏歌单《${currentPlaylistData.name}》`);
     } else {
+        const defaultCat = currentFavCategory !== "全部" ? currentFavCategory : "默认";
         const newFav = {
             id: currentPlaylistData.id,
             type: currentPlaylistData.type || "playlist",
             name: currentPlaylistData.name,
             title: currentPlaylistData.name,
             curator: currentPlaylistData.curator || "Apple Music",
+            category: defaultCat,
             url: currentPlaylistData.url || "",
             trackCount: currentTracks.length,
             savedAt: new Date().toLocaleDateString()
@@ -617,15 +655,83 @@ function toggleFavCurrentPlaylist() {
     }
 }
 
+// 统一分类筛选条渲染器
+function renderCategoryFilterBar(type, list) {
+    if (!categoryFilterBar) return;
+    categoryFilterBar.style.display = "flex";
+    
+    // 提取全部已知分类
+    const distinctCats = ["全部", ...Array.from(new Set(list.map(item => item.category || "默认")))];
+    const currentCat = type === 'fav' ? currentFavCategory : currentCustomCategory;
+    if (!distinctCats.includes(currentCat)) {
+        if (type === 'fav') currentFavCategory = "全部";
+        else currentCustomCategory = "全部";
+    }
+
+    let html = '';
+    distinctCats.forEach(cat => {
+        const isActive = cat === (type === 'fav' ? currentFavCategory : currentCustomCategory);
+        html += `<span class="cat-pill ${isActive ? 'active' : ''}" onclick="selectCategoryFilter('${type}', '${escapeHtml(cat)}')">${escapeHtml(cat)}</span>`;
+    });
+    html += `<span class="cat-pill cat-pill-add" onclick="promptCreateCategory('${type}')">➕ 新建分类</span>`;
+
+    categoryFilterBar.innerHTML = html;
+}
+
+function selectCategoryFilter(type, cat) {
+    if (type === 'fav') {
+        currentFavCategory = cat;
+        loadFavPlaylists();
+    } else {
+        currentCustomCategory = cat;
+        loadCustomPlaylists();
+    }
+}
+
+function promptCreateCategory(type) {
+    const name = prompt("请输入新分类名称 (例如: 华语流行 / 摇滚 / 车载 / 睡眠 / 工作):");
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    if (type === 'fav') {
+        currentFavCategory = trimmed;
+        loadFavPlaylists();
+    } else {
+        currentCustomCategory = trimmed;
+        loadCustomPlaylists();
+    }
+    showToast(`已切换至新分类: ${trimmed}`);
+}
+
+function promptChangeCategory(type, id) {
+    const isFav = type === 'fav';
+    const list = isFav ? getFavPlaylists() : getCustomPlaylists();
+    const target = list.find(item => item.id === id);
+    if (!target) return;
+    const oldCat = target.category || "默认";
+    const newCat = prompt(`修改歌单【${target.name || target.title}】所属分类:`, oldCat);
+    if (newCat === null) return;
+    target.category = newCat.trim() || "默认";
+    if (isFav) {
+        saveFavPlaylists(list);
+        loadFavPlaylists();
+    } else {
+        saveCustomPlaylists(list);
+        loadCustomPlaylists();
+    }
+    showToast(`已移动到分类: ${target.category}`);
+}
+
 // 浏览“⭐ 收藏的歌单”
 function loadFavPlaylists() {
     setActiveNav("btnNavFav");
-    listPanelTitle.innerText = "⭐ 收藏的歌单 (官方镜像)";
+    mobileBackToList();
+    listPanelTitle.innerText = "⭐ 收藏的歌单";
     const favs = getFavPlaylists();
     itemCountBadge.innerText = favs.length;
     statusText.innerText = `当前已收藏 ${favs.length} 个官方歌单`;
 
     if (favs.length === 0) {
+        if (categoryFilterBar) categoryFilterBar.style.display = "none";
         playlistListEl.innerHTML = `
             <div class="placeholder-box" style="padding: 40px 20px;">
                 <p>暂无收藏的歌单</p>
@@ -635,43 +741,71 @@ function loadFavPlaylists() {
         return;
     }
 
+    renderCategoryFilterBar('fav', favs);
+
+    const filteredFavs = currentFavCategory === "全部" 
+        ? favs 
+        : favs.filter(f => (f.category || "默认") === currentFavCategory);
+
     playlistListEl.innerHTML = "";
-    favs.forEach((item, idx) => {
+    if (filteredFavs.length === 0) {
+        playlistListEl.innerHTML = `
+            <div class="placeholder-box" style="padding: 30px 16px;">
+                <p>分类【${escapeHtml(currentFavCategory)}】下暂无收藏歌单</p>
+                <button class="btn btn-sm btn-outline" onclick="currentFavCategory='全部'; loadFavPlaylists();" style="margin-top: 10px;">查看全部分类</button>
+            </div>
+        `;
+        return;
+    }
+
+    filteredFavs.forEach((item) => {
         const card = document.createElement("div");
         card.className = "playlist-card";
+        const catName = item.category || "默认";
         card.innerHTML = `
             <div class="playlist-title-row">
                 <span class="playlist-name">${escapeHtml(item.name || item.title)}</span>
                 <span class="playlist-curator">${escapeHtml(item.curator)}</span>
             </div>
             <div class="playlist-meta-row">
-                <span class="meta-tag">官方歌单</span>
+                <span class="cat-badge" onclick="event.stopPropagation(); promptChangeCategory('fav', '${escapeHtml(item.id)}')" title="点击修改分类">🏷️ ${escapeHtml(catName)}</span>
                 <span class="meta-tag">共 ${item.trackCount || '?'} 首</span>
-                <span class="meta-tag" style="margin-left: auto;">${item.savedAt || ''}</span>
+                <span class="meta-tag" style="margin-left: 4px;">${item.savedAt || ''}</span>
+                <button class="btn-card-del" onclick="event.stopPropagation(); removeFavPlaylist('${escapeHtml(item.id)}')" title="取消收藏">🗑️</button>
             </div>
         `;
         card.addEventListener("click", () => {
             document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
             card.classList.add("active");
-            if (item.url && item.url.includes("/room/")) {
-                selectRoom(item.url, item.name || item.title, item.curator);
-            } else {
-                selectPlaylist(item.id, item.type || "playlist", item.name || item.title, item.curator, item.url);
-            }
+            selectPlaylist(item.id, item.type || "playlist", item.name || item.title, item.curator, item.url);
         });
         playlistListEl.appendChild(card);
     });
 }
 
+// 取消收藏歌单
+function removeFavPlaylist(id) {
+    if (!confirm("确定要取消收藏此歌单吗？")) return;
+    let favs = getFavPlaylists();
+    const target = favs.find(f => f.id === id);
+    favs = favs.filter(f => f.id !== id);
+    saveFavPlaylists(favs);
+    updateFavButtonStatus();
+    showToast(`已移除收藏歌单《${target ? target.name || target.title : ''}》`);
+    loadFavPlaylists();
+}
+
 // 浏览“🎵 我的自建歌单”
 function loadCustomPlaylists() {
     setActiveNav("btnNavCustom");
+    mobileBackToList();
     listPanelTitle.innerText = "🎵 我的自建歌单";
     const customs = getCustomPlaylists();
     itemCountBadge.innerText = customs.length;
     statusText.innerText = `本地自建歌单共 ${customs.length} 个`;
 
     if (customs.length === 0) {
+        if (categoryFilterBar) categoryFilterBar.style.display = "none";
         playlistListEl.innerHTML = `
             <div class="placeholder-box" style="padding: 40px 20px;">
                 <p>暂无自建歌单</p>
@@ -682,20 +816,38 @@ function loadCustomPlaylists() {
         return;
     }
 
+    renderCategoryFilterBar('custom', customs);
+
+    const filteredCustoms = currentCustomCategory === "全部" 
+        ? customs 
+        : customs.filter(c => (c.category || "默认") === currentCustomCategory);
+
     playlistListEl.innerHTML = "";
-    customs.forEach((pl, idx) => {
+    if (filteredCustoms.length === 0) {
+        playlistListEl.innerHTML = `
+            <div class="placeholder-box" style="padding: 30px 16px;">
+                <p>分类【${escapeHtml(currentCustomCategory)}】下暂无自建歌单</p>
+                <button class="btn btn-sm btn-outline" onclick="currentCustomCategory='全部'; loadCustomPlaylists();" style="margin-top: 10px;">查看全部分类</button>
+            </div>
+        `;
+        return;
+    }
+
+    filteredCustoms.forEach((pl) => {
         const card = document.createElement("div");
         card.className = "playlist-card";
         const trackCount = (pl.tracks || []).length;
+        const catName = pl.category || "默认";
         card.innerHTML = `
             <div class="playlist-title-row">
                 <span class="playlist-name">${escapeHtml(pl.title)}</span>
                 <span class="playlist-curator">自建歌单</span>
             </div>
             <div class="playlist-meta-row">
-                <span class="meta-tag">本地</span>
+                <span class="cat-badge" onclick="event.stopPropagation(); promptChangeCategory('custom', '${escapeHtml(pl.id)}')" title="点击修改分类">🏷️ ${escapeHtml(catName)}</span>
                 <span class="meta-tag">共 ${trackCount} 首</span>
-                <span class="meta-tag" style="margin-left: auto;">${pl.createdAt || ''}</span>
+                <span class="meta-tag" style="margin-left: 4px;">${pl.createdAt || ''}</span>
+                <button class="btn-card-del" onclick="event.stopPropagation(); deleteCustomPlaylist('${escapeHtml(pl.id)}')" title="删除歌单">🗑️</button>
             </div>
         `;
         card.addEventListener("click", () => {
@@ -718,6 +870,8 @@ function selectCustomPlaylist(playlistId) {
     currentPlaylistData = { id: pl.id, name: pl.title, title: pl.title, curator: "我的自建歌单" };
     currentTracks = pl.tracks || [];
 
+    mobileShowDetail();
+
     detailTitle.innerText = pl.title;
     detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
     updateFavButtonStatus();
@@ -731,9 +885,11 @@ function promptCreateCustomPlaylist() {
     const name = prompt("请输入新歌单名称:", "我的精选歌单");
     if (!name || !name.trim()) return;
     const customs = getCustomPlaylists();
+    const defaultCat = currentCustomCategory !== "全部" ? currentCustomCategory : "默认";
     const newPl = {
         id: "custom_" + Date.now(),
         title: name.trim(),
+        category: defaultCat,
         createdAt: new Date().toLocaleDateString(),
         tracks: []
     };
@@ -747,12 +903,15 @@ function promptCreateCustomPlaylist() {
 function deleteCustomPlaylist(playlistId) {
     if (!confirm("确定要删除此自建歌单吗？")) return;
     let customs = getCustomPlaylists();
+    const target = customs.find(c => c.id === playlistId);
     customs = customs.filter(c => c.id !== playlistId);
     saveCustomPlaylists(customs);
-    showToast("歌单已删除");
+    showToast(`歌单《${target ? target.title : ''}》已删除`);
     loadCustomPlaylists();
-    detailActions.style.display = "none";
-    detailBody.innerHTML = '<div class="loading-state">歌单已删除。请在左侧选择其他歌单。</div>';
+    if (currentCustomPlaylistId === playlistId) {
+        detailActions.style.display = "none";
+        detailBody.innerHTML = '<div class="loading-state">歌单已删除。请在左侧选择其他歌单。</div>';
+    }
 }
 
 // 从自建歌单中移除某首歌曲
@@ -1244,13 +1403,14 @@ function updateVolumeIcon(v) {
     else volumeIcon.innerText = "🔊";
 }
 
-// 播放队列抽屉 (从底部向上平滑拉起，非弹出遮罩)
+// 播放队列抽屉 (从底部向上平滑拉起)
 function toggleQueueModal() {
     const drawer = document.getElementById("queueDrawer");
     if (!drawer) return;
     const isOpen = drawer.classList.toggle("open");
     const btn = document.getElementById("btnQueueModal");
     btn?.classList.toggle("btn-nav-active", isOpen);
+    const backdrop = document.getElementById("drawerBackdrop");
     if (isOpen) {
         // 关闭音源抽屉避免遮挡
         const sDrawer = document.getElementById("sourceDrawer");
@@ -1258,7 +1418,10 @@ function toggleQueueModal() {
             sDrawer.classList.remove("open");
             document.getElementById("btnSourceModal")?.classList.remove("btn-nav-active");
         }
+        backdrop?.classList.add("open");
         renderQueueList();
+    } else {
+        backdrop?.classList.remove("open");
     }
 }
 
@@ -1291,13 +1454,14 @@ function renderQueueList() {
     queueListBody.innerHTML = html;
 }
 
-// 音源管理抽屉 (从底部向上平滑拉起，非弹出遮罩)
+// 音源管理抽屉 (从底部向上平滑拉起)
 function toggleSourceModal() {
     const drawer = document.getElementById("sourceDrawer");
     if (!drawer) return;
     const isOpen = drawer.classList.toggle("open");
     const btn = document.getElementById("btnSourceModal");
     btn?.classList.toggle("btn-nav-active", isOpen);
+    const backdrop = document.getElementById("drawerBackdrop");
     if (isOpen) {
         // 关闭队列抽屉避免遮挡
         const qDrawer = document.getElementById("queueDrawer");
@@ -1305,7 +1469,10 @@ function toggleSourceModal() {
             qDrawer.classList.remove("open");
             document.getElementById("btnQueueModal")?.classList.remove("btn-nav-active");
         }
+        backdrop?.classList.add("open");
         loadSources();
+    } else {
+        backdrop?.classList.remove("open");
     }
 }
 
