@@ -1,0 +1,364 @@
+/**
+ * ========================================================
+ * js/right.js - 右侧框架控制器 (歌单曲目明细、点播与收藏管理)
+ * ========================================================
+ */
+
+window.RightPanel = (function () {
+    let currentPlaylistData = null;
+    let currentTracks = [];
+    let isViewingCustomPlaylist = false;
+    let currentCustomPlaylistId = null;
+    let pendingTrackToAdd = null;
+
+    // DOM 元素引用
+    const detailTitle = document.getElementById("detailTitle");
+    const detailSubtitle = document.getElementById("detailSubtitle");
+    const detailActions = document.getElementById("detailActions");
+    const detailBody = document.getElementById("detailBody");
+    const btnFavCurrent = document.getElementById("btnFavCurrent");
+
+    // 点击 Apple 官方歌单/专辑
+    async function selectPlaylist(id, type, name, curator, url) {
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = { id, type, name, curator, url };
+        currentTracks = [];
+
+        // 记忆上一次选中的歌单
+        try {
+            localStorage.setItem("amusic_last_playlist", JSON.stringify({
+                kind: 'apple',
+                id,
+                type,
+                name,
+                curator,
+                url
+            }));
+        } catch (e) {}
+
+        if (detailTitle) detailTitle.innerText = name;
+        updateFavButtonStatus();
+
+        const cacheKey = `playlist_${type}_${id}`;
+        const cached = ClientCache.get(cacheKey);
+
+        if (cached && cached.data && cached.data.length > 0) {
+            currentTracks = cached.data;
+            if (detailSubtitle) detailSubtitle.innerText = `${curator} • 共 ${currentTracks.length} 首歌曲`;
+            if (detailActions) detailActions.style.display = "flex";
+            renderTracklist(currentTracks);
+        } else {
+            if (detailSubtitle) detailSubtitle.innerText = `${curator} • 正在获取曲目清单...`;
+            if (detailActions) detailActions.style.display = "none";
+            if (detailBody) detailBody.innerHTML = '<div class="loading-state">正在向 Apple 数据库解析曲目列表...</div>';
+        }
+
+        try {
+            const endpoint = `${type}s/${id}`;
+            const data = await apiRequest(endpoint, cached?.etag);
+            if (data === 304) return;
+
+            const item = data?.data?.[0];
+            const tracks = item?.relationships?.tracks?.data || [];
+
+            currentTracks = tracks.map((t, idx) => {
+                const attr = t.attributes;
+                return {
+                    index: idx + 1,
+                    name: attr?.name || "未知曲目",
+                    artist: attr?.artistName || "未知歌手",
+                    album: attr?.albumName || name,
+                    durationMillis: attr?.durationInMillis || 0,
+                    isrc: attr?.isrc || "",
+                    url: attr?.url || ""
+                };
+            });
+
+            ClientCache.set(cacheKey, currentTracks);
+            if (detailSubtitle) detailSubtitle.innerText = `${curator} • 共 ${currentTracks.length} 首歌曲`;
+            if (detailActions) detailActions.style.display = "flex";
+            renderTracklist(currentTracks);
+        } catch (err) {
+            if (!currentTracks || currentTracks.length === 0) {
+                if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取歌曲详情失败: ${err.message}</div>`;
+                if (detailSubtitle) detailSubtitle.innerText = "获取曲目清单失败";
+            }
+        }
+    }
+
+    // 点击自建歌单
+    function selectCustomPlaylist(playlistId) {
+        const customs = window.LeftPanel.getCustomPlaylists();
+        const pl = customs.find(c => c.id === playlistId);
+        if (!pl) return;
+
+        isViewingCustomPlaylist = true;
+        currentCustomPlaylistId = playlistId;
+        currentPlaylistData = { id: pl.id, name: pl.title, title: pl.title, curator: "我的自建歌单" };
+        currentTracks = pl.tracks || [];
+
+        try {
+            localStorage.setItem("amusic_last_playlist", JSON.stringify({
+                kind: 'custom',
+                id: pl.id,
+                name: pl.title
+            }));
+        } catch (e) {}
+
+        if (detailTitle) detailTitle.innerText = pl.title;
+        if (detailSubtitle) detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
+        updateFavButtonStatus();
+        if (detailActions) detailActions.style.display = "flex";
+
+        renderTracklist(currentTracks);
+    }
+
+    // 渲染曲目表格 (高密度 3 列)
+    function renderTracklist(tracks) {
+        if (!detailBody) return;
+        if (!tracks || tracks.length === 0) {
+            detailBody.innerHTML = '<div class="loading-state">该歌单暂无曲目。</div>';
+            return;
+        }
+
+        const curPlayingSong = window.player && window.player.playlist[window.player.currentIndex];
+
+        let html = `
+            <table class="track-table">
+                <thead>
+                    <tr>
+                        <th class="track-index">#</th>
+                        <th class="track-info-th">歌曲 / 歌手</th>
+                        <th class="track-action">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        tracks.forEach((t, idx) => {
+            const isPlayingThis = curPlayingSong &&
+                (curPlayingSong.title === t.name || curPlayingSong.name === t.name) &&
+                (curPlayingSong.artist === t.artist);
+            const rowClass = isPlayingThis ? 'track-row-playing' : '';
+
+            html += `
+                <tr class="${rowClass}" id="track-row-${idx}">
+                    <td class="track-index">${isPlayingThis ? '🔊' : (t.index || idx + 1)}</td>
+                    <td class="track-info-cell">
+                        <div class="track-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
+                        <div class="track-artist" title="${escapeHtml(t.artist)}">${escapeHtml(t.artist)}</div>
+                    </td>
+                    <td class="track-action">
+                        <button class="btn-play-song" onclick="window.RightPanel.playSong(${idx})" title="立即播放此歌曲">▶</button>
+                        <button class="btn-add-to-pl" onclick="window.RightPanel.openAddToPlaylistModal(${idx})" title="加入我的自建歌单">➕</button>
+                        ${isViewingCustomPlaylist ? `<button class="btn-remove-song" onclick="window.RightPanel.removeSongFromCustom(${idx})" title="从歌单移除">✕</button>` : ''}
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+        `;
+
+        detailBody.innerHTML = html;
+    }
+
+    // 播放全部
+    function playCurrentAll() {
+        if (!currentTracks || currentTracks.length === 0) {
+            showToast("当前歌单暂无可播放曲目");
+            return;
+        }
+        if (window.player) {
+            window.player.playTracklist(currentTracks, 0);
+            showToast(`已开始播放当前歌单全部 ${currentTracks.length} 首歌曲`);
+        }
+    }
+
+    // 点击单曲播放
+    function playSong(idx) {
+        if (!currentTracks || !currentTracks[idx]) return;
+        if (window.player) {
+            window.player.playTracklist(currentTracks, idx);
+        }
+    }
+
+    // 收藏 / 取消收藏当前官方歌单
+    function toggleFavCurrentPlaylist() {
+        if (isViewingCustomPlaylist || !currentPlaylistData?.id) return;
+        let favs = window.LeftPanel.getFavPlaylists();
+        const exists = favs.some(f => f.id === currentPlaylistData.id);
+
+        if (exists) {
+            favs = favs.filter(f => f.id !== currentPlaylistData.id);
+            window.LeftPanel.saveFavPlaylists(favs);
+            updateFavButtonStatus();
+            showToast(`已从收藏夹中移除《${currentPlaylistData.name}》`);
+        } else {
+            const newFav = {
+                id: currentPlaylistData.id,
+                type: currentPlaylistData.type || "playlist",
+                name: currentPlaylistData.name,
+                title: currentPlaylistData.name,
+                curator: currentPlaylistData.curator || "Apple Music",
+                category: "默认",
+                url: currentPlaylistData.url || "",
+                trackCount: currentTracks.length,
+                savedAt: new Date().toLocaleDateString()
+            };
+            favs.unshift(newFav);
+            window.LeftPanel.saveFavPlaylists(favs);
+            updateFavButtonStatus();
+            showToast(`已收藏歌单《${currentPlaylistData.name}》！`);
+        }
+    }
+
+    function updateFavButtonStatus() {
+        if (!btnFavCurrent) return;
+        if (isViewingCustomPlaylist || !currentPlaylistData?.id) {
+            btnFavCurrent.style.display = "none";
+            return;
+        }
+        btnFavCurrent.style.display = "inline-flex";
+        const favs = window.LeftPanel.getFavPlaylists();
+        const isFav = favs.some(f => f.id === currentPlaylistData.id);
+        if (isFav) {
+            btnFavCurrent.innerHTML = "★";
+            btnFavCurrent.style.color = "#ff7588";
+            btnFavCurrent.title = "已收藏 (点击取消收藏)";
+        } else {
+            btnFavCurrent.innerHTML = "⭐";
+            btnFavCurrent.style.color = "";
+            btnFavCurrent.title = "收藏此歌单";
+        }
+    }
+
+    // 自建歌单添加单曲模态框
+    function openAddToPlaylistModal(trackIdx) {
+        const song = currentTracks[trackIdx];
+        if (!song) return;
+        pendingTrackToAdd = song;
+
+        const modal = document.getElementById("addToPlaylistModal");
+        const infoEl = document.getElementById("addToSongInfo");
+        const choiceList = document.getElementById("playlistChoiceList");
+
+        if (infoEl) infoEl.innerText = `${song.name} - ${song.artist}`;
+        if (choiceList) {
+            const customs = window.LeftPanel.getCustomPlaylists();
+            if (customs.length === 0) {
+                choiceList.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:11px;">您还没有自建歌单，请在下方直接新建：</div>';
+            } else {
+                let html = '';
+                customs.forEach(c => {
+                    const count = (c.tracks || []).length;
+                    html += `
+                        <div class="playlist-choice-item" onclick="window.RightPanel.addTrackToExistingPlaylist('${c.id}')">
+                            <strong>${escapeHtml(c.title)}</strong>
+                            <span class="meta-tag">共 ${count} 首</span>
+                        </div>
+                    `;
+                });
+                choiceList.innerHTML = html;
+            }
+        }
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeAddToPlaylistModal() {
+        const modal = document.getElementById("addToPlaylistModal");
+        if (modal) modal.classList.remove("open");
+        pendingTrackToAdd = null;
+    }
+
+    function addTrackToExistingPlaylist(playlistId) {
+        if (!pendingTrackToAdd) return;
+        let customs = window.LeftPanel.getCustomPlaylists();
+        const pl = customs.find(c => c.id === playlistId);
+        if (!pl) return;
+
+        if (!pl.tracks) pl.tracks = [];
+        const exists = pl.tracks.some(t => t.name === pendingTrackToAdd.name && t.artist === pendingTrackToAdd.artist);
+        if (exists) {
+            showToast(`《${pendingTrackToAdd.name}》已在该歌单中`);
+            closeAddToPlaylistModal();
+            return;
+        }
+
+        pl.tracks.push({
+            name: pendingTrackToAdd.name,
+            artist: pendingTrackToAdd.artist,
+            album: pendingTrackToAdd.album || "",
+            durationMillis: pendingTrackToAdd.durationMillis || 0
+        });
+
+        window.LeftPanel.saveCustomPlaylists(customs);
+        showToast(`已加入歌单《${pl.title}》！`);
+        closeAddToPlaylistModal();
+
+        if (isViewingCustomPlaylist && currentCustomPlaylistId === playlistId) {
+            selectCustomPlaylist(playlistId);
+        }
+    }
+
+    function removeSongFromCustom(idx) {
+        if (!isViewingCustomPlaylist || !currentCustomPlaylistId) return;
+        let customs = window.LeftPanel.getCustomPlaylists();
+        const pl = customs.find(c => c.id === currentCustomPlaylistId);
+        if (!pl) return;
+
+        const removed = pl.tracks.splice(idx, 1)[0];
+        window.LeftPanel.saveCustomPlaylists(customs);
+        currentTracks = pl.tracks;
+        if (detailSubtitle) detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
+        renderTracklist(currentTracks);
+        showToast(`已从歌单移除: ${removed?.name || '歌曲'}`);
+    }
+
+    function confirmCreateAndAdd() {
+        const input = document.getElementById("newPlaylistInput");
+        const name = input ? input.value.trim() : "";
+        if (!name) {
+            showToast("歌单名称不能为空");
+            return;
+        }
+        if (!pendingTrackToAdd) return;
+
+        const customs = window.LeftPanel.getCustomPlaylists();
+        const newPl = {
+            id: "custom_" + Date.now(),
+            title: name,
+            category: "默认",
+            createdAt: new Date().toLocaleDateString(),
+            tracks: [{
+                name: pendingTrackToAdd.name,
+                artist: pendingTrackToAdd.artist,
+                album: pendingTrackToAdd.album || "",
+                durationMillis: pendingTrackToAdd.durationMillis || 0
+            }]
+        };
+
+        customs.unshift(newPl);
+        window.LeftPanel.saveCustomPlaylists(customs);
+        showToast(`已新建歌单《${name}》并加入歌曲！`);
+        if (input) input.value = "";
+        closeAddToPlaylistModal();
+    }
+
+    return {
+        selectPlaylist,
+        selectCustomPlaylist,
+        renderTracklist,
+        playCurrentAll,
+        playSong,
+        toggleFavCurrentPlaylist,
+        openAddToPlaylistModal,
+        closeAddToPlaylistModal,
+        addTrackToExistingPlaylist,
+        removeSongFromCustom,
+        confirmCreateAndAdd
+    };
+})();

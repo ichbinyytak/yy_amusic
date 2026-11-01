@@ -1,0 +1,219 @@
+/* ========================================================
+   右侧框架样式 (Right Column: 50% 歌单曲目明细与点播)
+   ======================================================== */
+
+.detail-panel {
+    width: 50%;
+    max-width: 50%;
+    flex: 0 0 50%;
+    min-width: 0;
+    background-color: var(--bg-surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100%;
+}
+
+.detail-header {
+    padding: 5px 8px;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.detail-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+}
+
+.detail-title-group h2 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.detail-subtitle {
+    font-size: 8.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.detail-actions {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+}
+
+.btn-action-icon {
+    width: 24px;
+    height: 22px;
+    padding: 0 !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10.5px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.btn-action-icon:hover { transform: scale(1.06); }
+
+/* 歌曲表格：超高密度 3 列 (# | 歌名/歌手 | 操作) */
+.track-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.track-table th {
+    background-color: rgba(0, 0, 0, 0.2);
+    color: var(--text-muted);
+    font-weight: 500;
+    text-align: left;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.track-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+}
+
+.track-table tr:hover td {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+}
+
+.track-row-playing td {
+    background-color: rgba(126, 231, 135, 0.08) !important;
+}
+.track-row-playing .track-name {
+    color: #7ee787 !important;
+    font-weight: 700;
+}
+
+.track-index {
+    width: 18px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    text-align: center;
+}
+
+.track-info-th {
+    width: auto;
+}
+
+.track-info-cell {
+    max-width: 0;
+    width: 100%;
+}
+
+.track-name {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 10.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+}
+
+.track-artist {
+    color: var(--text-muted);
+    font-size: 8.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+    margin-top: 1px;
+}
+
+.track-action {
+    width: 46px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.btn-play-song, .btn-add-to-pl, .btn-remove-song {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 10px;
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+}
+.btn-play-song { color: var(--success); }
+.btn-play-song:hover { background: rgba(63, 185, 80, 0.15); }
+.btn-add-to-pl:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.btn-remove-song:hover { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+
+/* 占位提示与加载 */
+.placeholder-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    gap: 6px;
+    padding: 20px;
+    font-size: 11px;
+}
+
+.loading-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.muted {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+/* Toast 提示条 */
+.toast {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background-color: #1f6feb;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 1200;
+}
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}

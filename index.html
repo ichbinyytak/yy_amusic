@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>YY-Amusic - Apple 音乐纯文本数据库浏览器</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/left.css">
+    <link rel="stylesheet" href="css/right.css">
 </head>
 <body>
-    <!-- 顶部极简导航栏 (品牌 YY-Amusic + 右侧紧凑搜索) -->
+    <!-- 顶部主页导航栏 (品牌 YY-Amusic + 紧凑搜索) -->
     <header class="app-header">
         <div class="brand-group">
             <div class="brand">
@@ -21,24 +23,24 @@
 
         <div class="header-right">
             <div class="search-bar-compact">
-                <input type="text" id="searchInput" placeholder="搜索 Apple 歌单、专辑、歌手、风格..." onkeydown="handleSearchKeyDown(event)" />
-                <button class="btn btn-sm btn-primary btn-search-icon" onclick="handleSearch()" id="searchBtn" title="搜索 Apple 音乐库">
+                <input type="text" id="searchInput" placeholder="搜索歌单、专辑、歌手..." />
+                <button class="btn btn-sm btn-primary btn-search-icon" onclick="window.LeftPanel.handleSearch()" id="searchBtn" title="搜索 Apple 音乐库">
                     <span>🔍</span>
                 </button>
-                <button class="btn btn-sm btn-ghost" onclick="clearSearch()" id="clearBtn" style="display: none;" title="清空搜索">✕</button>
+                <button class="btn btn-sm btn-ghost" onclick="window.LeftPanel.clearSearch()" id="clearBtn" style="display: none;" title="清空搜索">✕</button>
             </div>
         </div>
     </header>
 
-    <!-- 状态指示条 (静默隐藏，不展示 apple 数据库连接行) -->
+    <!-- 状态指示条 (静默隐藏) -->
     <div class="status-bar" id="statusBar" style="display: none;">
         <span id="statusText"></span>
         <span id="speedMetric" class="speed-metric"></span>
     </div>
 
-    <!-- 主展示区：两栏布局 (歌单列表 + 曲目明细，手机端单栏平滑联动切换) -->
+    <!-- 主展示区：左右各 50% 核心布局 -->
     <main class="main-layout" id="mainLayout">
-        <!-- 左侧栏：常驻顶区 (Apple区域 + 3大Tab) + 歌单/专辑/分类列表 (根据手绘草图) -->
+        <!-- 1. 左侧框架：Apple 区域 + 3大Tab + 动态歌单/分类列表 -->
         <section class="panel list-panel" id="listPanel">
             <!-- 顶区：Apple 区域选择 + 3大核心横排 Tab 卡片 -->
             <div class="list-nav-header">
@@ -55,9 +57,9 @@
                 </div>
 
                 <div class="main-tabs-row">
-                    <button class="main-tab-btn active" id="btnTabNew" onclick="switchMainTab('new')">最新发布</button>
-                    <button class="main-tab-btn" id="btnTabCategories" onclick="switchMainTab('categories')">类别探索</button>
-                    <button class="main-tab-btn" id="btnTabLibrary" onclick="switchMainTab('library')">我的音乐库</button>
+                    <button class="main-tab-btn active" id="btnTabNew" onclick="window.LeftPanel.switchMainTab('new')">最新发布</button>
+                    <button class="main-tab-btn" id="btnTabCategories" onclick="window.LeftPanel.switchMainTab('categories')">类别探索</button>
+                    <button class="main-tab-btn" id="btnTabLibrary" onclick="window.LeftPanel.switchMainTab('library')">我的音乐库</button>
                 </div>
             </div>
 
@@ -65,7 +67,7 @@
             <div class="list-nav-divider"></div>
 
             <!-- 列表栏小标题与数量统计 -->
-            <div class="panel-header list-sub-header">
+            <div class="list-sub-header">
                 <h2 id="listPanelTitle">最新发布</h2>
                 <span class="count-badge" id="itemCountBadge">0</span>
             </div>
@@ -79,20 +81,18 @@
             </div>
         </section>
 
-        <!-- 右侧栏：选中的歌单曲目明细 -->
+        <!-- 2. 右侧框架：选中的歌单曲目明细与点播 -->
         <section class="panel detail-panel" id="detailPanel">
-            <div class="panel-header detail-header">
-                <!-- 手机端返回歌单列表按钮 -->
-                <button class="btn-mobile-back" id="btnMobileBack" onclick="mobileBackToList()" title="返回歌单列表">‹ 返回</button>
+            <div class="detail-header">
                 <div class="detail-title-group">
                     <h2 id="detailTitle">请在左侧选择一个歌单</h2>
                     <span class="detail-subtitle" id="detailSubtitle">点击任意歌单查看曲目详情并快速点播</span>
                 </div>
                 <div class="detail-actions" id="detailActions" style="display: none;">
-                    <button class="btn btn-sm btn-primary btn-action-icon" onclick="playCurrentAll()" title="播放当前歌单内所有曲目">
+                    <button class="btn btn-sm btn-primary btn-action-icon" onclick="window.RightPanel.playCurrentAll()" title="播放当前歌单内所有曲目">
                         ▶
                     </button>
-                    <button class="btn btn-sm btn-outline btn-action-icon" id="btnFavCurrent" onclick="toggleFavCurrentPlaylist()" title="收藏此歌单">
+                    <button class="btn btn-sm btn-outline btn-action-icon" id="btnFavCurrent" onclick="window.RightPanel.toggleFavCurrentPlaylist()" title="收藏此歌单">
                         ⭐
                     </button>
                 </div>
@@ -100,75 +100,72 @@
 
             <div class="panel-body detail-body" id="detailBody">
                 <div class="placeholder-box">
-                    <p>👈 从中间列表点击任意歌单，在此处展开完整曲目。</p>
+                    <p>👈 从左侧列表点击任意歌单，在此处展开完整曲目。</p>
                     <p class="muted">纯文字加载，无图片下载开销，秒级响应。</p>
                 </div>
             </div>
         </section>
     </main>
 
-    <!-- 底部播控区域：播放器栏 + 智能双态歌词栏 -->
+    <!-- 3. 主页框架底栏：播放器栏 + 通栏进度条 + 智能双态歌词栏 -->
     <div class="bottom-dock-container">
-        <!-- 1. 播放器栏 (Player Bar) -->
+        <!-- 播放器栏 -->
         <footer class="player-bar" id="playerBar">
             <div class="player-main-row">
-                <!-- 左侧：仅歌曲信息 (不要图标) -->
+                <!-- 左侧：歌曲信息 -->
                 <div class="player-track-info">
                     <div class="player-title" id="playerTitle">未在播放</div>
-                    <div class="player-artist-row">
-                        <span class="player-artist" id="playerArtist">等待点播</span>
-                    </div>
+                    <div class="player-artist" id="playerArtist">等待点播</div>
                 </div>
 
                 <!-- 中部：简洁版播控按钮 -->
                 <div class="player-controls">
-                    <button class="player-btn" id="btnMode" onclick="handleCycleMode()" title="切换播放模式">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    <button class="player-btn" id="btnMode" onclick="window.Shell.handleCycleMode()" title="切换播放模式">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                     </button>
                     <button class="player-btn" onclick="window.player?.prev()" title="上一首">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
                     </button>
                     <button class="player-btn player-btn-main" id="btnPlayPause" onclick="window.player?.togglePlay()" title="播放/暂停">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                     <button class="player-btn" onclick="window.player?.next()" title="下一首">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
                     </button>
                 </div>
 
-                <!-- 右侧：队列与音量 (无中文) -->
+                <!-- 右侧：队列与音源 -->
                 <div class="player-right">
                     <div class="volume-container">
-                        <span class="volume-icon" id="volumeIcon" onclick="toggleMute()">🔊</span>
-                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="handleVolumeChange(this.value)" />
+                        <span class="volume-icon" id="volumeIcon" onclick="window.Shell.toggleMute()">🔊</span>
+                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="window.Shell.handleVolumeChange(this.value)" />
                     </div>
-                    <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="toggleQueueModal()" id="btnQueueModal" title="播放队列">
+                    <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="window.Shell.toggleQueueModal()" id="btnQueueModal" title="播放队列">
                         📑 <span id="queueCount">0</span>
                     </button>
-                    <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="toggleSourceModal()" id="btnSourceModal" title="底层音源监控">
+                    <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="window.Shell.toggleSourceModal()" id="btnSourceModal" title="底层音源监控">
                         ⚡
                     </button>
                 </div>
             </div>
 
-            <!-- 底部：整条通栏播放进度条 (横跨歌曲信息到队列、音源下方) -->
+            <!-- 通栏播放进度条 -->
             <div class="player-progress-full">
                 <span class="player-time" id="playerCurTime">00:00</span>
-                <div class="progress-bar-bg" id="progressBarBg" onclick="handleProgressBarClick(event)">
+                <div class="progress-bar-bg" id="progressBarBg" onclick="window.Shell.handleProgressBarClick(event)">
                     <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
                 </div>
                 <span class="player-time" id="playerTotalTime">00:00</span>
             </div>
         </footer>
 
-        <!-- 2. 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行) -->
-        <div class="lyric-dock" id="lyricDock" onclick="expandLyricDock(event)" title="点击展开 6 行完整歌词">
+        <!-- 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行) -->
+        <div class="lyric-dock" id="lyricDock" onclick="window.Shell.expandLyricDock(event)" title="点击展开 6 行完整歌词">
             <div class="lyric-dock-header">
                 <span class="lyric-dock-indicator">♪ 歌词实时同步</span>
-                <button class="lyric-close-btn" id="lyricCloseBtn" onclick="collapseLyricDock(event)" title="收回为两行">✕</button>
+                <button class="lyric-close-btn" id="lyricCloseBtn" onclick="window.Shell.collapseLyricDock(event)" title="收回为两行">✕</button>
             </div>
             <div class="lyric-lines-wrapper" id="lyricLinesWrapper">
-                <!-- 动态渲染当前与后续歌词 -->
                 <div class="lyric-line lyric-line-current" id="lyricCurrentLine">♪ YY-Amusic 纯文本音乐底座已就绪</div>
                 <div class="lyric-line lyric-line-next" id="lyricNextLine">点播任意歌曲，歌词毫秒级同步滚屏</div>
             </div>
@@ -176,47 +173,43 @@
     </div>
 
     <!-- 弹窗：添加到自建歌单 -->
-    <div class="modal-overlay" id="addToPlaylistModal" onclick="closeModalOnOverlay(event, 'addToPlaylistModal')">
+    <div class="modal-overlay" id="addToPlaylistModal" onclick="if(event.target===this) window.RightPanel.closeAddToPlaylistModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3>➕ 添加到我的歌单</h3>
-                <button class="modal-close-btn" onclick="closeAddToPlaylistModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.RightPanel.closeAddToPlaylistModal()">✕</button>
             </div>
             <div class="modal-body">
-                <div class="add-to-song-info" id="addToSongInfo">歌曲名 - 歌手</div>
-                <div class="playlist-choice-list" id="playlistChoiceList">
-                    <!-- 动态自建歌单列表 -->
-                </div>
-                <div class="create-playlist-inline">
-                    <input type="text" id="newPlaylistInput" placeholder="输入新歌单名称..." onkeydown="handleNewPlaylistKeyDown(event)" />
-                    <button class="btn btn-sm btn-primary" onclick="confirmCreateAndAdd()">新建并加入</button>
+                <div class="add-to-song-info" id="addToSongInfo" style="font-size:11px; margin-bottom:8px; color:var(--accent);">歌曲名 - 歌手</div>
+                <div class="playlist-choice-list" id="playlistChoiceList" style="max-height:160px; overflow-y:auto; margin-bottom:8px;"></div>
+                <div class="create-playlist-inline" style="display:flex; gap:4px;">
+                    <input type="text" id="newPlaylistInput" placeholder="输入新歌单名称..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:11px;" onkeydown="if(event.key==='Enter') window.RightPanel.confirmCreateAndAdd()" />
+                    <button class="btn btn-sm btn-primary" onclick="window.RightPanel.confirmCreateAndAdd()">新建并加入</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 底部向上拉起播放队列抽屉 (非遮罩弹窗) -->
+    <!-- 底部向上拉起播放队列抽屉 (Bottom Sheet) -->
     <div class="queue-drawer" id="queueDrawer">
         <div class="queue-drawer-header">
             <span class="queue-drawer-title">📑 当前播放队列</span>
-            <button class="queue-drawer-close" onclick="toggleQueueModal()" title="收起队列">✕</button>
+            <button class="queue-drawer-close" onclick="window.Shell.toggleQueueModal()" title="收起队列">✕</button>
         </div>
-        <div class="queue-drawer-body queue-list" id="queueListBody">
-            <!-- 队列项目 -->
-        </div>
+        <div class="queue-drawer-body queue-list" id="queueListBody"></div>
     </div>
 
-    <!-- 底部向上拉起音源管理抽屉 (非遮罩弹窗) -->
+    <!-- 底部向上拉起音源管理抽屉 (Bottom Sheet) -->
     <div class="source-drawer" id="sourceDrawer">
         <div class="source-drawer-header">
             <div>
                 <span class="source-drawer-title">⚡ 底层音源健康度监控</span>
                 <div class="source-drawer-subtitle">双核并发冲刺，毫秒出声，严格过滤 &lt;1.5MB 试听</div>
             </div>
-            <div class="source-drawer-actions">
-                <button class="btn btn-sm btn-primary" onclick="testSources()" id="btnTestSources">⚡ 测速</button>
-                <button class="btn btn-sm btn-outline" onclick="syncSources()" id="btnSyncSources">🔄 同步</button>
-                <button class="source-drawer-close" onclick="toggleSourceModal()" title="收起音源面板">✕</button>
+            <div class="source-drawer-actions" style="display:flex; gap:4px;">
+                <button class="btn btn-sm btn-primary" onclick="window.Shell.testSources()" id="btnTestSources">⚡ 测速</button>
+                <button class="btn btn-sm btn-outline" onclick="window.Shell.syncSources()" id="btnSyncSources">🔄 同步</button>
+                <button class="source-drawer-close" onclick="window.Shell.toggleSourceModal()" title="收起音源面板">✕</button>
             </div>
         </div>
         <div class="source-drawer-body sources-list" id="sourcesListBody">
@@ -224,13 +217,18 @@
         </div>
     </div>
 
-    <!-- 抽屉暗色遮罩 (针对手机端底部抽屉与弹窗) -->
-    <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeAllDrawers()"></div>
+    <!-- 抽屉暗色遮罩 -->
+    <div class="drawer-backdrop" id="drawerBackdrop" onclick="window.Shell.closeAllDrawers()"></div>
 
     <!-- Toast 提示条 -->
     <div class="toast" id="toast"></div>
 
+    <!-- 模块化脚本加载：播放内核 + API 底座 + 主页框架 + 左侧框架 + 右侧框架 + 应用总装 -->
     <script src="player.js"></script>
-    <script src="app.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/shell.js"></script>
+    <script src="js/left.js"></script>
+    <script src="js/right.js"></script>
+    <script src="js/main.js"></script>
 </body>
 </html>
