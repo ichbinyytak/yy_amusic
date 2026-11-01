@@ -26,6 +26,7 @@ DEFAULT_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6IldlYlBsYXlLaWQifQ.
 NEW_PAGE_CACHE = {}
 ROOM_CACHE = {}
 SEARCH_PAGE_CACHE = {}
+CURATOR_PAGE_CACHE = {}
 
 def fetch_apple_new_page(storefront="cn"):
     """
@@ -195,6 +196,87 @@ def fetch_apple_search_page(storefront="cn"):
     SEARCH_PAGE_CACHE[storefront] = (now, result)
     return result
 
+def fetch_apple_curator_page(url):
+    """
+    深度抓取 Apple Music 官方专区主页 (如 /curator/apple-music-国语流行/1019400042)
+    完整解析官方页面的所有板块：焦点推荐、官方歌单、年度热门、年代作品、最新发行、明星曲目单、经典专辑等
+    """
+    now = time.time()
+    if url in CURATOR_PAGE_CACHE:
+        cached_time, cached_data = CURATOR_PAGE_CACHE[url]
+        if now - cached_time < 300:
+            return cached_data
+
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        html = resp.read().decode("utf-8", errors="ignore")
+
+    sections_out = []
+    scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL)
+    for s in scripts:
+        if 'data' in s and 'sections' in s:
+            try:
+                d = json.loads(s)
+                page_data = d.get('data', [{}])[0].get('data', {})
+                sections = page_data.get('sections', [])
+                for idx, sec in enumerate(sections):
+                    hdr = sec.get('header') or {}
+                    item_hdr = hdr.get('item') or {}
+                    title_link = item_hdr.get('titleLink') or {}
+                    sec_title = (title_link.get('title') 
+                                 or hdr.get('title') 
+                                 or (('🌟 焦点推荐') if idx == 1 else ''))
+                    if not sec_title:
+                        continue
+
+                    items = sec.get('items', [])
+                    if not items:
+                        continue
+
+                    valid_items = []
+                    for it in items:
+                        desc = it.get('contentDescriptor') or {}
+                        kind = desc.get('kind') or it.get('itemKind') or ''
+                        if kind not in ['playlist', 'album']:
+                            continue
+
+                        t = it.get('title') or (it.get('titleLinks', [{}])[0].get('title') if it.get('titleLinks') else '')
+                        st = it.get('subtitle') or (it.get('subtitleLinks', [{}])[0].get('title') if it.get('subtitleLinks') else '')
+                        adam_id = desc.get('identifiers', {}).get('storeAdamID') or it.get('id')
+                        url_item = desc.get('url') or ''
+                        if not url_item and it.get('titleLinks'):
+                            url_item = it['titleLinks'][0].get('segue', {}).get('destination', {}).get('contentDescriptor', {}).get('url', '')
+
+                        if t:
+                            valid_items.append({
+                                'type': kind,
+                                'kind': kind,
+                                'title': t,
+                                'curator': st or 'Apple Music',
+                                'heading': it.get('heading', ''),
+                                'desc': f'收录于【{sec_title}】板块',
+                                'id': adam_id,
+                                'url': url_item
+                            })
+
+                    if valid_items:
+                        sections_out.append({
+                            'title': sec_title,
+                            'items': valid_items
+                        })
+                break
+            except Exception:
+                pass
+
+    result = {
+        "url": url,
+        "sections": sections_out
+    }
+    CURATOR_PAGE_CACHE[url] = (now, result)
+    return result
+
 def fetch_apple_room(room_url):
     """
     抓取 Apple Music 专题 Room 链接（例如“新歌精选”官方专题页），提取完整的 100 首曲目
@@ -291,7 +373,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(err_bytes)
             return
 
-        # 3. 抓取 Room 完整专题曲目 (例如“新歌精选”的 100 首曲目)
+        # 3. 抓取具体专区官方页面（例如 国语流行 专区官方主页真实板块）
+        if self.path.startswith("/api/apple_curator_page"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            curator_url = qs.get("url", [""])[0]
+            if not curator_url:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b'{"error":"Missing url"}')
+                return
+            try:
+                data = fetch_apple_curator_page(curator_url)
+                res_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(res_bytes)))
+                self.end_headers()
+                self.wfile.write(res_bytes)
+            except Exception as e:
+                err_bytes = json.dumps({"error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self.end_headers()
+                self.wfile.write(err_bytes)
+            return
+
+        # 4. 抓取 Room 完整专题曲目 (例如“新歌精选”的 100 首曲目)
         if self.path.startswith("/api/apple_room"):
             parsed = urllib.parse.urlparse(self.path)
             qs = urllib.parse.parse_qs(parsed.query)
@@ -320,7 +431,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(err_bytes)
             return
 
-        # 4. 代理转发给 Apple Music 官方数据库（解决浏览器禁止伪造 Origin 头部的 401 限制）
+        # 5. 代理转发给 Apple Music 官方数据库（解决浏览器禁止伪造 Origin 头部的 401 限制）
         if self.path.startswith("/api/apple/"):
             apple_path = self.path[len("/api/apple/"):]
             apple_url = f"https://api.music.apple.com/{apple_path}"

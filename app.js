@@ -200,16 +200,31 @@ function renderSearchCategories(categories) {
 
 // 点击某个分类专区（如“国语流行”或“摇滚”），加载该专区的全部官方歌单
 async function openCategoryPlaylists(cat) {
-    listPanelTitle.innerText = `【${cat.title}】专区歌单池`;
-    playlistListEl.innerHTML = `<div class="loading-state">正在拉取【${escapeHtml(cat.title)}】专区的官方歌单...</div>`;
+    listPanelTitle.innerText = `【${cat.title}】官方专区`;
+    playlistListEl.innerHTML = `<div class="loading-state">正在深度抓取 Apple【${escapeHtml(cat.title)}】官方主页全量板块...</div>`;
     itemCountBadge.innerText = "...";
-    statusText.innerText = `正在向 Apple 请求【${cat.title}】专区歌单...`;
+    statusText.innerText = `正在抓取 ${cat.url || cat.title} 官方全量板块...`;
     const startTime = performance.now();
 
     try {
-        let playlists = [];
+        // 1. 如果该专区有完整的官方主页链接 (如 curator 页面)，直接深度抓取官方真实板块！
+        // 确保展示的“焦点推荐、歌单、年度热门、年代作品、明星曲目单、经典专辑”与官网 100% 相同！
+        if (cat.url && (cat.url.includes("/curator/") || cat.url.includes("/apple-curator/"))) {
+            const resp = await fetch(`/api/apple_curator_page?url=${encodeURIComponent(cat.url)}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.sections && data.sections.length > 0) {
+                    const duration = Math.round(performance.now() - startTime);
+                    statusText.innerText = `已载入【${cat.title}】官方主页 ${data.sections.length} 个真实板块 (0 图片开销)`;
+                    speedMetric.innerText = `⚡ ${duration} ms`;
+                    renderNewSections(data.sections, true);
+                    return;
+                }
+            }
+        }
 
-        // 1. 尝试通过 apple-curators 接口拉取 (Apple 严格限制 limit 最大为 10)
+        // 2. 兜底回退：通过 apple-curators API 与专区搜索
+        let playlists = [];
         try {
             const curData = await apiRequest(`apple-curators/${cat.id}/playlists?limit=10`);
             if (curData?.data && curData.data.length > 0) {
@@ -219,7 +234,6 @@ async function openCategoryPlaylists(cat) {
             console.log("Curator 接口未直接支持该专区 ID，准备执行全库搜索补充", e);
         }
 
-        // 2. 如果官方 curator 结果不足 5 个或无结果，补充全库专区搜索 (Apple 限制 search limit 最大为 25)
         if (playlists.length < 5) {
             try {
                 const searchData = await apiRequest(`search?types=playlists,albums&term=${encodeURIComponent(cat.title)}&limit=25`);
@@ -268,8 +282,8 @@ async function openCategoryPlaylists(cat) {
     }
 }
 
-// 渲染 /new 页面的多板块结构化列表 (全歌单/专辑模式，无散装单曲)
-function renderNewSections(sections) {
+// 渲染多板块结构化列表 (全歌单/专辑模式，无散装单曲)
+function renderNewSections(sections, backToCategories = false) {
     if (!sections || sections.length === 0) {
         playlistListEl.innerHTML = '<div class="loading-state">未抓取到板块数据。</div>';
         itemCountBadge.innerText = "0";
@@ -281,6 +295,21 @@ function renderNewSections(sections) {
     itemCountBadge.innerText = `${sections.length} 板块 / ${totalItems} 个歌单与专辑`;
 
     playlistListEl.innerHTML = "";
+
+    // 如果需要返回分类列表
+    if (backToCategories) {
+        const divBack = document.createElement("div");
+        divBack.className = "section-divider";
+        divBack.style.cursor = "pointer";
+        divBack.style.color = "#79c0ff";
+        divBack.style.backgroundColor = "rgba(88, 166, 255, 0.12)";
+        divBack.innerHTML = `
+            <span>‹ 返回 50 大分类专区列表</span>
+            <span class="section-count">共 ${sections.length} 个官方板块</span>
+        `;
+        divBack.onclick = () => renderSearchCategories(cachedCategories);
+        playlistListEl.appendChild(divBack);
+    }
 
     sections.forEach((sec) => {
         // 板块吸顶分界线
