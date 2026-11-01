@@ -983,22 +983,22 @@ body {
 }
 
 .lyric-line-current {
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
     color: #7ee787;
     line-height: 1.4;
 }
 
 .lyric-line-next {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--text-muted);
-    margin-top: 2px;
+    margin-top: 1px;
     opacity: 0.75;
 }
 
 /* 展开态：显示 6 行完整歌词 */
 .lyric-dock.expanded {
-    height: 180px;
+    height: 160px;
     background-color: #0b0e12;
     cursor: default;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
@@ -1012,31 +1012,31 @@ body {
     flex: 1;
     overflow-y: auto;
     justify-content: flex-start;
-    gap: 8px;
+    gap: 6px;
     padding: 4px 0;
 }
 
 .lyric-dock.expanded .lyric-line {
     padding: 2px 8px;
     border-radius: 4px;
-    line-height: 1.5;
+    line-height: 1.4;
 }
 
 .lyric-dock.expanded .lyric-line-prev {
-    font-size: 12px;
+    font-size: 10.5px;
     color: var(--text-muted);
     opacity: 0.5;
 }
 
 .lyric-dock.expanded .lyric-line-current {
-    font-size: 15px;
+    font-size: 12.5px;
     font-weight: 700;
     color: #7ee787;
     background-color: rgba(126, 231, 135, 0.08);
 }
 
 .lyric-dock.expanded .lyric-line-next {
-    font-size: 12px;
+    font-size: 10.5px;
     color: var(--text-secondary);
     opacity: 0.7;
     margin-top: 0;
@@ -1262,6 +1262,70 @@ body {
     padding: 12px 18px;
     overflow-y: auto;
     flex: 1;
+}
+
+/* 底部向上拉起播放队列抽屉 (无中间遮罩) */
+.queue-drawer {
+    position: fixed;
+    right: 20px;
+    bottom: 122px;
+    width: 330px;
+    max-height: 420px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.65);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateY(20px) scale(0.96);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+
+.queue-drawer.open {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.queue-drawer-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--bg-main);
+}
+
+.queue-drawer-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.queue-drawer-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+}
+
+.queue-drawer-close:hover {
+    color: #fff;
+    background-color: var(--bg-surface-hover);
+}
+
+.queue-drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+    max-height: 350px;
 }
 
 .queue-item {

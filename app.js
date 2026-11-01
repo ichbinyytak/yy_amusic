@@ -1252,10 +1252,13 @@ function updateVolumeIcon(v) {
     else volumeIcon.innerText = "🔊";
 }
 
-// 播放队列弹窗
+// 播放队列抽屉 (从底部向上平滑拉起，非弹出遮罩)
 function toggleQueueModal() {
-    const modal = document.getElementById("queueModal");
-    const isOpen = modal.classList.toggle("open");
+    const drawer = document.getElementById("queueDrawer");
+    if (!drawer) return;
+    const isOpen = drawer.classList.toggle("open");
+    const btn = document.getElementById("btnQueueModal");
+    btn?.classList.toggle("btn-nav-active", isOpen);
     if (isOpen) {
         renderQueueList();
     }

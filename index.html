@@ -213,16 +213,14 @@
         </div>
     </div>
 
-    <!-- 弹窗：播放队列 Drawer -->
-    <div class="modal-overlay" id="queueModal" onclick="closeModalOnOverlay(event, 'queueModal')">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>当前播放队列</h3>
-                <button class="modal-close-btn" onclick="toggleQueueModal()">✕</button>
-            </div>
-            <div class="modal-body queue-list" id="queueListBody">
-                <!-- 队列项目 -->
-            </div>
+    <!-- 底部向上拉起播放队列抽屉 (非遮罩弹窗) -->
+    <div class="queue-drawer" id="queueDrawer">
+        <div class="queue-drawer-header">
+            <span class="queue-drawer-title">📑 当前播放队列</span>
+            <button class="queue-drawer-close" onclick="toggleQueueModal()" title="收起队列">✕</button>
+        </div>
+        <div class="queue-drawer-body queue-list" id="queueListBody">
+            <!-- 队列项目 -->
         </div>
     </div>
 
