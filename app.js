@@ -576,13 +576,14 @@ function updateFavButtonStatus() {
         return;
     }
     btnFavCurrent.style.display = "inline-flex";
+    btnFavCurrent.innerText = "⭐";
     const favs = getFavPlaylists();
     const isFav = favs.some(f => f.id === currentPlaylistData.id);
     if (isFav) {
-        btnFavCurrent.innerText = "⭐ 已收藏";
+        btnFavCurrent.title = "已收藏 (点击取消收藏)";
         btnFavCurrent.classList.add("btn-nav-active");
     } else {
-        btnFavCurrent.innerText = "⭐ 收藏歌单";
+        btnFavCurrent.title = "收藏此歌单";
         btnFavCurrent.classList.remove("btn-nav-active");
     }
 }
