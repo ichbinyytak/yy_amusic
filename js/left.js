@@ -20,8 +20,12 @@ window.LeftPanel = (function () {
 
     function init() {
         if (storefrontSelect) {
+            storefrontSelect.value = window.currentStorefront || "cn";
             storefrontSelect.addEventListener("change", (e) => {
-                currentStorefront = e.target.value;
+                const sf = e.target.value;
+                currentStorefront = sf;
+                window.currentStorefront = sf;
+                try { localStorage.setItem("amusic_storefront", sf); } catch (err) {}
                 const query = searchInput ? searchInput.value.trim() : "";
                 if (query) {
                     handleSearch();
@@ -89,28 +93,29 @@ window.LeftPanel = (function () {
         }
     }
 
+    function getStorefront() {
+        return window.currentStorefront || (storefrontSelect ? storefrontSelect.value : "cn") || "cn";
+    }
+
     // 1. 最新发布 (/new)
     function loadNewPage() {
         switchTabUI("new", "最新发布");
         if (categoryFilterBar) categoryFilterBar.style.display = "none";
 
-        const cacheKey = `new_page_${currentStorefront}`;
-        swrFetch(`/api/apple_new?storefront=${currentStorefront}`, cacheKey, {
+        const sf = getStorefront();
+        const cacheKey = `new_page_${sf}`;
+        swrFetch(`/api/apple_new?storefront=${sf}`, cacheKey, {
             showLoading: () => {
                 playlistListEl.innerHTML = '<div class="loading-state">正在获取 Apple 官方最新发布板块...</div>';
                 itemCountBadge.innerText = "...";
             },
             onCached: (data) => {
                 const sections = data?.sections || [];
-                itemCountBadge.innerText = `${sections.length} 板块`;
                 renderNewSections(sections);
             },
-            onUpdated: (data, hasCached) => {
+            onUpdated: (data) => {
                 const sections = data?.sections || [];
-                itemCountBadge.innerText = `${sections.length} 板块`;
-                if (!hasCached) {
-                    renderNewSections(sections);
-                }
+                renderNewSections(sections);
             },
             onError: (err) => {
                 playlistListEl.innerHTML = `<div class="loading-state">❌ 获取 /new 页面失败: ${err.message}</div>`;
@@ -119,11 +124,26 @@ window.LeftPanel = (function () {
         });
     }
 
-    function renderNewSections(sections) {
+    function renderNewSections(sections, backToCategories = false) {
         playlistListEl.innerHTML = "";
         if (!sections || sections.length === 0) {
-            playlistListEl.innerHTML = '<div class="loading-state">暂未解析到最新发布板块数据。</div>';
+            playlistListEl.innerHTML = '<div class="loading-state">暂未解析到板块数据。</div>';
+            itemCountBadge.innerText = "0";
             return;
+        }
+
+        let totalItems = 0;
+        sections.forEach(s => totalItems += (s.items?.length || 0));
+        itemCountBadge.innerText = `${sections.length} 板块 / ${totalItems} 歌单`;
+
+        if (backToCategories) {
+            const divBack = document.createElement("div");
+            divBack.className = "section-divider";
+            divBack.style.cursor = "pointer";
+            divBack.style.color = "var(--accent)";
+            divBack.innerHTML = `<span>‹ 返回全部分类专区</span><span class="section-count">返回</span>`;
+            divBack.onclick = () => renderSearchCategories(cachedCategories);
+            playlistListEl.appendChild(divBack);
         }
 
         sections.forEach(sec => {
@@ -148,23 +168,20 @@ window.LeftPanel = (function () {
         switchTabUI("categories", "类别探索");
         if (categoryFilterBar) categoryFilterBar.style.display = "none";
 
-        const cacheKey = `search_categories_${currentStorefront}`;
-        swrFetch(`/api/apple_search_page?storefront=${currentStorefront}`, cacheKey, {
+        const sf = getStorefront();
+        const cacheKey = `search_categories_${sf}`;
+        swrFetch(`/api/apple_search_page?storefront=${sf}`, cacheKey, {
             showLoading: () => {
                 playlistListEl.innerHTML = '<div class="loading-state">正在获取 Apple 官方全部分类专区...</div>';
                 itemCountBadge.innerText = "...";
             },
             onCached: (data) => {
                 const categories = data?.categories || [];
-                itemCountBadge.innerText = `${categories.length} 专区`;
                 renderSearchCategories(categories);
             },
-            onUpdated: (data, hasCached) => {
+            onUpdated: (data) => {
                 const categories = data?.categories || [];
-                itemCountBadge.innerText = `${categories.length} 专区`;
-                if (!hasCached) {
-                    renderSearchCategories(categories);
-                }
+                renderSearchCategories(categories);
             },
             onError: (err) => {
                 playlistListEl.innerHTML = `<div class="loading-state">❌ 获取分类失败: ${err.message}</div>`;
@@ -178,8 +195,16 @@ window.LeftPanel = (function () {
         playlistListEl.innerHTML = "";
         if (cachedCategories.length === 0) {
             playlistListEl.innerHTML = '<div class="loading-state">暂无可探索分类专区。</div>';
+            itemCountBadge.innerText = "0";
             return;
         }
+
+        itemCountBadge.innerText = `${cachedCategories.length} 个专区`;
+
+        const divHeader = document.createElement("div");
+        divHeader.className = "section-divider";
+        divHeader.innerHTML = `<span>📂 Apple 官方 50 大音乐专区</span><span class="section-count">${cachedCategories.length} 个</span>`;
+        playlistListEl.appendChild(divHeader);
 
         cachedCategories.forEach(cat => {
             const card = document.createElement("div");
@@ -190,7 +215,7 @@ window.LeftPanel = (function () {
                     <span class="playlist-curator">Apple 专区 ›</span>
                 </div>
                 <div class="playlist-meta-row">
-                    <span class="meta-tag">点击进入专区精选</span>
+                    <span>${cat.id ? '专区 ID: ' + escapeHtml(cat.id) : '官方精选收录'}</span>
                 </div>
             `;
             card.addEventListener("click", () => openCategoryPlaylists(cat));
@@ -203,37 +228,29 @@ window.LeftPanel = (function () {
         playlistListEl.innerHTML = `<div class="loading-state">正在加载【${escapeHtml(cat.title)}】官方歌单...</div>`;
         itemCountBadge.innerText = "...";
 
-        const backBtn = document.createElement("div");
-        backBtn.className = "section-divider";
-        backBtn.style.cursor = "pointer";
-        backBtn.innerHTML = `<span>‹ 返回全部分类专区</span><span class="section-count">返回</span>`;
-        backBtn.onclick = () => renderSearchCategories(cachedCategories);
+        const sf = getStorefront();
+        const cacheKey = `cat_playlists_${sf}_${cat.id || encodeURIComponent(cat.title)}`;
+        const curatorUrl = cat.url || `https://music.apple.com/${sf}/curator/${encodeURIComponent(cat.title)}/${cat.id}`;
 
-        const cacheKey = `cat_playlists_${currentStorefront}_${encodeURIComponent(cat.url)}`;
-        swrFetch(`/api/curator_page?url=${encodeURIComponent(cat.url)}`, cacheKey, {
+        swrFetch(`/api/apple_curator_page?url=${encodeURIComponent(curatorUrl)}`, cacheKey, {
+            showLoading: () => {
+                playlistListEl.innerHTML = `<div class="loading-state">正在加载【${escapeHtml(cat.title)}】官方歌单...</div>`;
+            },
             onCached: (data) => {
                 const sections = data?.sections || [];
-                itemCountBadge.innerText = `${sections.length} 板块`;
-                playlistListEl.innerHTML = "";
-                playlistListEl.appendChild(backBtn);
-                renderNewSections(sections);
+                renderNewSections(sections, true);
             },
-            onUpdated: (data, hasCached) => {
+            onUpdated: (data) => {
                 const sections = data?.sections || [];
-                itemCountBadge.innerText = `${sections.length} 板块`;
-                if (!hasCached) {
-                    playlistListEl.innerHTML = "";
-                    playlistListEl.appendChild(backBtn);
-                    renderNewSections(sections);
-                }
+                renderNewSections(sections, true);
             },
             onError: (err) => {
-                playlistListEl.innerHTML = "";
-                playlistListEl.appendChild(backBtn);
-                const errDiv = document.createElement("div");
-                errDiv.className = "loading-state";
-                errDiv.innerText = `❌ 加载专区失败: ${err.message}`;
-                playlistListEl.appendChild(errDiv);
+                playlistListEl.innerHTML = `
+                    <div class="placeholder-box" style="padding: 20px 10px;">
+                        <p>❌ 加载专区失败: ${escapeHtml(err.message)}</p>
+                        <button class="btn btn-sm btn-outline" onclick="window.LeftPanel.loadSearchPage()" style="margin-top: 8px;">‹ 返回专区列表</button>
+                    </div>
+                `;
             }
         });
     }
@@ -468,24 +485,34 @@ window.LeftPanel = (function () {
 
     // 辅助卡片构造器
     function createPlaylistCard(item) {
-        const attr = item.attributes;
-        const isAlbum = item.type === "albums";
-        const typeLabel = isAlbum ? "[专辑]" : "[歌单]";
-        const name = attr?.name || "未知标题";
-        const curator = attr?.curatorName || attr?.artistName || "Apple Music";
-        const date = attr?.lastModifiedDate ? attr.lastModifiedDate.split("T")[0] : (attr?.releaseDate || "");
-        const url = attr?.url || `https://music.apple.com/${currentStorefront}/${isAlbum ? 'album' : 'playlist'}/${item.id}`;
+        const isCurated = !!item.isCurated;
+        const kind = item.kind || item.type || (item.attributes ? (item.type === "albums" ? "album" : "playlist") : "playlist");
+        const isAlbum = kind === "album" || kind === "albums";
+        const typeLabel = isCurated ? "[精选歌单]" : (isAlbum ? "[专辑]" : "[歌单]");
+        const tagColor = isCurated ? "var(--accent-apple, #ff7588)" : (isAlbum ? "#e3b341" : "#58a6ff");
+
+        const name = item.title || item.name || item.attributes?.name || "未知标题";
+        const curator = item.curator || item.subtitle || item.attributes?.curatorName || item.attributes?.artistName || "Apple Music";
+        const desc = item.desc || item.attributes?.description?.short || item.heading || "";
+        const trackCount = item.trackCount || (item.tracks ? item.tracks.length : "");
+        const date = item.attributes?.lastModifiedDate ? item.attributes.lastModifiedDate.split("T")[0] : (item.attributes?.releaseDate || "");
+        const sf = getStorefront();
+        const url = item.url || item.attributes?.url || `https://music.apple.com/${sf}/${isAlbum ? 'album' : 'playlist'}/${item.id || ''}`;
 
         const card = document.createElement("div");
         card.className = "playlist-card";
-        card.id = `card-${item.id}`;
+        if (item.id) card.id = `card-${item.id}`;
         card.innerHTML = `
             <div class="playlist-title-row">
-                <span class="playlist-name"><span style="color:var(--accent); font-size:9.5px;">${typeLabel}</span> ${escapeHtml(name)}</span>
+                <span class="playlist-name">
+                    <span style="color:${tagColor}; font-size:9.5px; font-weight:normal;">${typeLabel}</span> 
+                    ${escapeHtml(name)}
+                </span>
                 <span class="playlist-curator">${escapeHtml(curator)}</span>
             </div>
+            ${desc ? `<div class="playlist-desc" style="font-size:10px; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(desc)}</div>` : ''}
             <div class="playlist-meta-row">
-                <span>${date ? '📅 ' + date : '🔗 官方精选'}</span>
+                <span>${trackCount ? '🎵 ' + trackCount + ' 首' : (date ? '📅 ' + date : '🔗 官方精选')}</span>
             </div>
         `;
 
@@ -493,7 +520,14 @@ window.LeftPanel = (function () {
             document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
             card.classList.add("active");
             closeDrawer();
-            window.RightPanel.selectPlaylist(item.id, isAlbum ? "album" : "playlist", name, curator, url);
+
+            if (isCurated && window.RightPanel.selectCuratedCollection) {
+                window.RightPanel.selectCuratedCollection(name, curator, url, item.roomUrl, item.tracks);
+            } else if (item.id) {
+                window.RightPanel.selectPlaylist(item.id, isAlbum ? "album" : "playlist", name, curator, url);
+            } else if (item.tracks && window.RightPanel.selectCuratedCollection) {
+                window.RightPanel.selectCuratedCollection(name, curator, url, item.roomUrl, item.tracks);
+            }
         });
 
         return card;

@@ -18,6 +18,64 @@ window.RightPanel = (function () {
     const detailBody = document.getElementById("detailBody");
     const btnFavCurrent = document.getElementById("btnFavCurrent");
 
+    // 点击官方合集歌单 (如“新歌精选”、“正在流行中”)
+    async function selectCuratedCollection(title, curator, url, roomUrl, fallbackTracks) {
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = { id: "", type: "playlist", name: title, curator: curator, url: url };
+        currentTracks = (fallbackTracks && fallbackTracks.length > 0) ? fallbackTracks.map((t, idx) => ({
+            index: idx + 1,
+            name: t.name || t.title || "未知曲目",
+            artist: t.artist || "未知歌手",
+            album: t.album || title,
+            durationMillis: t.durationMillis || (t.duration ? t.duration * 1000 : 0),
+            id: t.id || "",
+            url: t.url || url
+        })) : [];
+
+        try {
+            localStorage.setItem("amusic_last_playlist", JSON.stringify({
+                kind: 'curated',
+                name: title,
+                curator: curator,
+                url: url,
+                roomUrl: roomUrl,
+                tracks: currentTracks
+            }));
+        } catch (e) {}
+
+        if (detailTitle) detailTitle.innerText = title;
+        if (detailSubtitle) detailSubtitle.innerText = `${curator} • 官方精选 (共 ${currentTracks.length} 首)`;
+        if (detailActions) detailActions.style.display = currentTracks.length > 0 ? "flex" : "none";
+        renderTracklist(currentTracks);
+
+        // 如果包含官方 Room 专题页，自动在后台拉取完整的 100 首曲目
+        if (roomUrl) {
+            try {
+                const resp = await fetch(`/api/apple_room?url=${encodeURIComponent(roomUrl)}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.tracks && data.tracks.length > 0) {
+                        currentTracks = data.tracks.map((t, idx) => ({
+                            index: idx + 1,
+                            name: t.name || t.title || "未知曲目",
+                            artist: t.artist || "未知歌手",
+                            album: t.album || title,
+                            durationMillis: t.durationMillis || (t.duration ? t.duration * 1000 : 0),
+                            id: t.id || "",
+                            url: t.url || url
+                        }));
+                        if (detailSubtitle) detailSubtitle.innerText = `${curator} • 官方完整专题 (共 ${currentTracks.length} 首)`;
+                        if (detailActions) detailActions.style.display = "flex";
+                        renderTracklist(currentTracks);
+                    }
+                }
+            } catch (e) {
+                console.warn("加载 room 详情失败，保持精选列表", e);
+            }
+        }
+    }
+
     // 点击 Apple 官方歌单/专辑
     async function selectPlaylist(id, type, name, curator, url) {
         isViewingCustomPlaylist = false;
@@ -55,7 +113,8 @@ window.RightPanel = (function () {
         }
 
         try {
-            const endpoint = `${type}s/${id}`;
+            const normalizedType = type.endsWith('s') ? type : `${type}s`;
+            const endpoint = `${normalizedType}/${id}`;
             const data = await apiRequest(endpoint, cached?.etag);
             if (data === 304) return;
 
@@ -355,6 +414,7 @@ window.RightPanel = (function () {
 
     return {
         selectPlaylist,
+        selectCuratedCollection,
         selectCustomPlaylist,
         renderTracklist,
         highlightPlayingTrack,

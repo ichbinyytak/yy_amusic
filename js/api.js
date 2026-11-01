@@ -4,8 +4,13 @@
  * ========================================================
  */
 
-const APPLE_MUSIC_API = "https://amp-api.music.apple.com/v1/catalog";
+const APPLE_MUSIC_API = "/api/apple/v1/catalog";
 let currentStorefront = "cn";
+try {
+    const savedSf = localStorage.getItem("amusic_storefront");
+    if (savedSf) currentStorefront = savedSf;
+} catch (e) {}
+window.currentStorefront = currentStorefront;
 
 // 客户端轻量持久化缓存引擎 (SWR: Stale-While-Revalidate)
 const ClientCache = {
@@ -102,7 +107,8 @@ async function apiRequest(endpoint, etag = '') {
         const headers = {};
         if (etag) headers["If-None-Match"] = etag;
 
-        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`, { headers });
+        const sf = window.currentStorefront || currentStorefront || "cn";
+        const response = await fetch(`${APPLE_MUSIC_API}/${sf}/${endpoint}`, { headers });
         if (response.status === 304) {
             return 304;
         }

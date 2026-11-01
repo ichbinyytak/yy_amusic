@@ -27,7 +27,9 @@ window.addEventListener("DOMContentLoaded", () => {
     if (lastPlRaw) {
         try {
             const lastPl = JSON.parse(lastPlRaw);
-            if (lastPl.kind === 'custom' && lastPl.id) {
+            if (lastPl.kind === 'curated' && lastPl.name) {
+                window.RightPanel.selectCuratedCollection(lastPl.name, lastPl.curator, lastPl.url, lastPl.roomUrl, lastPl.tracks);
+            } else if (lastPl.kind === 'custom' && lastPl.id) {
                 const customs = window.LeftPanel.getCustomPlaylists();
                 if (customs.some(c => c.id === lastPl.id)) {
                     window.RightPanel.selectCustomPlaylist(lastPl.id);
