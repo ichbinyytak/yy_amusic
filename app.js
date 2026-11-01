@@ -39,17 +39,9 @@ const categoryFilterBar = document.getElementById("categoryFilterBar");
 let currentFavCategory = "全部";
 let currentCustomCategory = "全部";
 
-// 手机端单栏联动：切换到曲目详情视图
-function mobileShowDetail() {
-    const main = document.getElementById("mainLayout");
-    if (main) main.classList.add("mobile-detail-active");
-}
-
-// 手机端返回歌单列表视图
-function mobileBackToList() {
-    const main = document.getElementById("mainLayout");
-    if (main) main.classList.remove("mobile-detail-active");
-}
+// 左右两栏保持 50% 常驻展示
+function mobileShowDetail() {}
+function mobileBackToList() {}
 
 // 关闭所有底部抽屉与遮罩
 function closeAllDrawers() {

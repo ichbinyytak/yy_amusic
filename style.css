@@ -29,6 +29,7 @@ body {
     line-height: 1.5;
     font-size: 13px;
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -320,18 +321,9 @@ body {
     display: none;
 }
 
-/* 状态条 */
+/* 状态条 (静默隐藏) */
 .status-bar {
-    background-color: var(--bg-main);
-    border-bottom: 1px solid var(--border-subtle);
-    padding: 4px 20px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0;
-    font-family: var(--font-mono);
+    display: none !important;
 }
 
 .speed-metric {
@@ -416,10 +408,13 @@ body {
     transform: scale(1.08);
 }
 
-/* 主内容布局：分栏 */
+/* 主内容布局：左右分栏各 50% */
 .main-layout {
     display: flex;
+    flex-direction: row;
     flex: 1;
+    min-height: 0;
+    width: 100%;
     overflow: hidden;
 }
 
@@ -430,16 +425,19 @@ body {
 }
 
 .list-panel {
-    width: 340px;
-    min-width: 280px;
-    max-width: 400px;
+    width: 50%;
+    max-width: 50%;
+    flex: 0 0 50%;
+    min-width: 0;
     border-right: 1px solid var(--border-color);
     background-color: var(--bg-main);
-    flex-shrink: 0;
 }
 
 .detail-panel {
-    flex: 1;
+    width: 50%;
+    max-width: 50%;
+    flex: 0 0 50%;
+    min-width: 0;
     background-color: var(--bg-surface);
 }
 
@@ -645,7 +643,7 @@ body {
     inset: 0;
     background-color: rgba(0, 0, 0, 0.65);
     backdrop-filter: blur(2px);
-    z-index: 550;
+    z-index: 900;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -802,36 +800,26 @@ body {
 
 /* ========================================================
    移动端深度优化 (@media max-width: 768px)
-   专为手机浏览器定制：单栏视图平滑切换、微小紧凑字号、底部抽屉卡片化
+   专为手机浏览器定制：左侧与右侧各 50%、常驻双态歌词栏、标准 Bottom Sheet 队列与音源
    ======================================================== */
 @media (max-width: 768px) {
     /* 1. 移动端顶栏高度与品牌排版 */
     .app-header {
-        padding: 6px 10px;
-        gap: 8px;
-        height: 46px;
+        padding: 5px 8px;
+        gap: 6px;
+        height: 44px;
     }
 
     .brand-group {
         gap: 6px;
     }
 
-    .btn-sidebar-toggle {
-        width: 32px;
-        height: 32px;
-        font-size: 15px;
-    }
-
     .logo-badge {
-        font-size: 18px;
+        font-size: 16px;
     }
 
     .brand-text h1 {
-        font-size: 14px;
-    }
-
-    .brand-text .sub {
-        display: none !important;
+        font-size: 13px;
     }
 
     .header-right {
@@ -841,13 +829,13 @@ body {
 
     .search-bar-compact {
         width: 100%;
-        max-width: 220px;
+        max-width: 190px;
     }
 
     .search-bar-compact input {
         width: 100% !important;
-        font-size: 12px;
-        padding: 4px 8px;
+        font-size: 11.5px;
+        padding: 3px 6px;
     }
 
     .search-bar-compact input:focus {
@@ -855,219 +843,316 @@ body {
     }
 
     #searchBtn {
-        padding: 4px 8px;
+        padding: 3px 6px;
         font-size: 11px;
     }
 
-    /* 2. 状态条 */
+    /* 2. 状态条完全隐藏 */
     .status-bar {
-        padding: 2px 10px;
-        font-size: 10px;
+        display: none !important;
     }
 
-    /* 3. 核心单栏视图联动机制 (手机端单栏切换，非上下各50%挤压) */
+    /* 3. 核心 50% / 50% 左右并列布局 (手机端同时可见歌单与曲目) */
     .main-layout {
-        position: relative;
-        flex-direction: column;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
+        display: flex !important;
+        flex-direction: row !important;
+        flex: 1 1 0% !important;
+        min-height: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: hidden !important;
     }
 
-    /* 默认：展示歌单列表，隐藏曲目详情 */
     .list-panel {
         display: flex !important;
-        width: 100% !important;
-        max-width: 100% !important;
+        width: 50% !important;
+        max-width: 50% !important;
+        flex: 0 0 50% !important;
+        min-width: 0 !important;
         height: 100% !important;
-        border-right: none !important;
-        border-bottom: none !important;
+        border-right: 1px solid var(--border-color) !important;
+        overflow: hidden !important;
     }
 
     .detail-panel {
-        display: none !important;
-        width: 100% !important;
-        height: 100% !important;
-    }
-
-    /* 激活详情模式：隐藏歌单列表，展示曲目详情 */
-    .mobile-detail-active .list-panel {
-        display: none !important;
-    }
-
-    .mobile-detail-active .detail-panel {
         display: flex !important;
+        width: 50% !important;
+        max-width: 50% !important;
+        flex: 0 0 50% !important;
+        min-width: 0 !important;
+        height: 100% !important;
+        overflow: hidden !important;
     }
 
-    /* 手机端返回按钮高亮显示 */
+    /* 左右常驻 50% 并列，无需返回按钮 */
     .btn-mobile-back {
-        display: inline-flex !important;
-        align-items: center;
-        justify-content: center;
-        height: 28px;
-        padding: 0 8px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid var(--border-color);
-        border-radius: 4px;
-        color: #fff;
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        flex-shrink: 0;
-        margin-right: 6px;
-        line-height: 1;
+        display: none !important;
     }
 
-    .btn-mobile-back:active {
-        background-color: var(--accent);
-        color: #fff;
+    /* 移动端左侧顶区 (区域 + 3大Tab) 极致紧凑 */
+    .list-nav-header {
+        padding: 6px 6px 4px 6px !important;
+        gap: 5px !important;
     }
 
+    .storefront-label {
+        font-size: 9.5px !important;
+    }
+
+    .storefront-select {
+        font-size: 10px !important;
+        padding: 2px 4px !important;
+    }
+
+    .main-tabs-row {
+        gap: 3px !important;
+    }
+
+    .main-tab-btn {
+        padding: 4px 1px !important;
+        font-size: 10px !important;
+        letter-spacing: -0.5px !important;
+    }
+
+    .list-sub-header {
+        padding: 4px 6px !important;
+    }
+
+    .list-sub-header h2 {
+        font-size: 11px !important;
+    }
+
+    .playlist-card {
+        padding: 5px 6px !important;
+    }
+
+    .playlist-name {
+        font-size: 11px !important;
+    }
+
+    .playlist-curator {
+        font-size: 9px !important;
+    }
+
+    .playlist-desc {
+        display: none !important; /* 50% 分栏下隐藏描述，保持紧凑纯文字 */
+    }
+
+    .playlist-meta-row {
+        font-size: 8.5px !important;
+    }
+
+    /* 移动端右侧曲目表排版优化 */
     .detail-header {
-        padding: 8px 10px;
+        padding: 6px 6px !important;
     }
 
     .detail-title-group h2 {
-        font-size: 13px;
-        max-width: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        font-size: 11.5px !important;
+        max-width: 120px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
     }
 
     .detail-subtitle {
-        font-size: 10px;
+        font-size: 9px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
 
-    /* 4. 移动端曲目表排版优化 */
+    .detail-actions {
+        gap: 3px !important;
+    }
+
+    .btn-action-icon {
+        width: 26px !important;
+        height: 24px !important;
+        font-size: 11px !important;
+    }
+
     .track-table th, .track-table td {
-        padding: 7px 6px;
+        padding: 5px 4px !important;
     }
 
     .track-index {
-        width: 24px;
-        font-size: 10px;
+        width: 18px !important;
+        font-size: 9px !important;
     }
 
     .track-name {
-        font-size: 11.5px;
+        font-size: 10.5px !important;
     }
 
     .track-artist {
-        font-size: 10px;
+        font-size: 9px !important;
+    }
+
+    .track-album {
+        display: none !important;
     }
 
     .track-duration {
-        display: none; /* 手机端隐藏耗时，腾出空间给操作按钮与歌名 */
+        display: none !important;
     }
 
     .track-actions-cell {
-        width: 66px;
+        width: 48px !important;
     }
 
     .btn-track-action {
-        width: 28px;
-        height: 28px;
-        font-size: 12px;
+        width: 22px !important;
+        height: 22px !important;
+        font-size: 10px !important;
     }
 
-    /* 5. 移动端播放器底栏 */
+    /* 4. 移动端播放器底栏 */
     .bottom-dock-container {
-        padding-bottom: max(4px, env(safe-area-inset-bottom, 0px));
+        flex-shrink: 0 !important;
+        width: 100% !important;
+        position: relative !important;
+        z-index: 100 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        padding-bottom: max(3px, env(safe-area-inset-bottom, 0px)) !important;
+        background-color: var(--bg-surface) !important;
+        border-top: 1px solid var(--border-color) !important;
     }
 
     .player-bar {
-        min-height: 52px;
-        padding: 5px 10px 4px 10px;
-        gap: 3px;
+        min-height: 44px !important;
+        padding: 3px 6px 2px 6px !important;
+        gap: 1px !important;
     }
 
     .player-main-row {
-        gap: 6px;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 4px !important;
     }
 
     .player-track-info {
-        width: auto;
-        flex: 1;
-        max-width: 140px;
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+        max-width: 120px !important;
+        overflow: hidden !important;
     }
 
     .player-title {
-        font-size: 11px;
+        font-size: 10.5px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
 
     .player-artist {
-        font-size: 9.5px;
+        font-size: 9px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
 
     .player-controls {
-        gap: 8px;
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+        flex-shrink: 0 !important;
     }
 
     .player-btn {
-        padding: 4px;
+        padding: 2px !important;
+    }
+
+    .player-btn svg {
+        width: 12px !important;
+        height: 12px !important;
     }
 
     .player-btn-main {
-        width: 30px;
-        height: 30px;
+        width: 26px !important;
+        height: 26px !important;
     }
 
     .player-right {
-        width: auto;
-        gap: 5px;
+        display: flex !important;
+        align-items: center !important;
+        gap: 3px !important;
+        flex-shrink: 0 !important;
     }
 
-    .player-volume {
-        display: none !important; /* 手机通过实体按键调音，隐藏滑块节省空间 */
+    /* 手机端隐藏音量调节条，确保队列与音源按钮百分之百不被挤压 */
+    .volume-container {
+        display: none !important;
+    }
+
+    .btn-compact-icon {
+        padding: 2px 5px !important;
+        font-size: 10px !important;
     }
 
     .player-progress-full {
-        margin-top: 1px;
-        gap: 6px;
+        margin-top: 1px !important;
+        gap: 4px !important;
     }
 
     .player-time {
-        font-size: 9.5px;
-        min-width: 26px;
-    }
-    }
-
-    .btn-nav-compact {
-        padding: 4px 8px;
-        font-size: 11px;
+        font-size: 8.5px !important;
+        min-width: 22px !important;
     }
 
-    /* 6. 移动端歌词栏微调 */
+    /* 5. 移动端双态歌词栏 (确保常驻并能随时点击拉伸) */
     .lyric-dock {
-        padding: 3px 10px;
-        min-height: 36px;
+        display: flex !important;
+        height: 36px !important;
+        min-height: 36px !important;
+        padding: 2px 6px !important;
+        background-color: #0c0f14 !important;
+        border-top: 1px solid var(--border-subtle) !important;
+        flex-shrink: 0 !important;
+        cursor: pointer !important;
     }
 
     .lyric-dock.expanded {
-        height: 150px;
-        max-height: 28vh;
+        height: 160px !important;
+        max-height: 38vh !important;
     }
 
     .lyric-line-current {
-        font-size: 11px;
+        font-size: 10.5px !important;
+        color: #7ee787 !important;
     }
 
     .lyric-line-next {
-        font-size: 9.5px;
+        font-size: 9px !important;
+        color: var(--text-muted) !important;
     }
 
-    /* 7. 移动端抽屉 (队列与音源) 改造为标准 Bottom Sheet */
+    /* 6. 移动端抽屉 (队列与音源) 改造为从底部向上弹出的 Bottom Sheet */
     .queue-drawer, .source-drawer {
+        position: fixed !important;
         right: 0 !important;
         left: 0 !important;
         bottom: 0 !important;
         width: 100% !important;
         max-width: 100vw !important;
-        max-height: 72vh !important;
+        max-height: 75vh !important;
         border-radius: 14px 14px 0 0 !important;
-        box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.85) !important;
-        z-index: 600 !important;
+        border: 1px solid var(--border-color) !important;
+        border-bottom: none !important;
+        box-shadow: 0 -8px 36px rgba(0, 0, 0, 0.95) !important;
+        z-index: 1000 !important;
+        transform: translateY(100%) !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease !important;
+    }
+
+    .queue-drawer.open, .source-drawer.open {
+        transform: translateY(0) !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
     }
 }
 
@@ -1651,7 +1736,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.65);
-    z-index: 200;
+    z-index: 1000;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1737,7 +1822,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.65);
-    z-index: 200;
+    z-index: 1000;
     display: flex;
     flex-direction: column;
     overflow: hidden;
