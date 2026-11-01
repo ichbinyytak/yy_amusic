@@ -1039,7 +1039,6 @@ function escapeJsString(str) {
 // DOM 元素引用
 const playerTitle = document.getElementById("playerTitle");
 const playerArtist = document.getElementById("playerArtist");
-const playerSourceTag = document.getElementById("playerSourceTag");
 const playerStatusIcon = document.getElementById("playerStatusIcon");
 const btnPlayPause = document.getElementById("btnPlayPause");
 const btnMode = document.getElementById("btnMode");
@@ -1078,10 +1077,12 @@ function formatBytes(bytes) {
 window.player.on('trackChange', ({ index, song }) => {
     const title = song.title || song.name || "未知歌曲";
     const artist = song.artist || "未知歌手";
-    playerTitle.innerText = title;
-    playerArtist.innerText = artist;
-    playerSourceTag.style.display = "inline-block";
-    playerSourceTag.innerText = "⚡ 双核音源冲刺中...";
+    const album = song.album || "";
+
+    // 第1行显示歌手与歌曲名，第2行显示歌曲信息（专辑或精选信息，不显示底层音源）
+    playerTitle.innerText = `${artist} - ${title}`;
+    playerArtist.innerText = album ? `专辑: ${album}` : "Apple Music 精选曲目";
+
     playerStatusIcon.innerText = "⏳";
     playerStatusIcon.classList.remove("playing");
     renderQueueList();
@@ -1106,16 +1107,7 @@ window.player.on('stateChange', ({ isPlaying, isResolving, song, sourceName, cos
         playerStatusIcon.classList.remove("playing");
     }
 
-    if (sourceName) {
-        const sz = bytes ? ` • ${formatBytes(bytes)}` : "";
-        const cost = costMs ? ` • ${costMs}ms` : "";
-        playerSourceTag.innerText = `${sourceName}${sz}${cost}`;
-        playerSourceTag.style.display = "inline-block";
-    }
-
     if (error) {
-        playerSourceTag.innerText = `⚠️ ${error}`;
-        playerSourceTag.style.display = "inline-block";
         showToast(`播放受阻: ${error}`);
     }
 });
@@ -1260,6 +1252,12 @@ function toggleQueueModal() {
     const btn = document.getElementById("btnQueueModal");
     btn?.classList.toggle("btn-nav-active", isOpen);
     if (isOpen) {
+        // 关闭音源抽屉避免遮挡
+        const sDrawer = document.getElementById("sourceDrawer");
+        if (sDrawer && sDrawer.classList.contains("open")) {
+            sDrawer.classList.remove("open");
+            document.getElementById("btnSourceModal")?.classList.remove("btn-nav-active");
+        }
         renderQueueList();
     }
 }
@@ -1293,11 +1291,20 @@ function renderQueueList() {
     queueListBody.innerHTML = html;
 }
 
-// 音源管理弹窗
+// 音源管理抽屉 (从底部向上平滑拉起，非弹出遮罩)
 function toggleSourceModal() {
-    const modal = document.getElementById("sourceModal");
-    const isOpen = modal.classList.toggle("open");
+    const drawer = document.getElementById("sourceDrawer");
+    if (!drawer) return;
+    const isOpen = drawer.classList.toggle("open");
+    const btn = document.getElementById("btnSourceModal");
+    btn?.classList.toggle("btn-nav-active", isOpen);
     if (isOpen) {
+        // 关闭队列抽屉避免遮挡
+        const qDrawer = document.getElementById("queueDrawer");
+        if (qDrawer && qDrawer.classList.contains("open")) {
+            qDrawer.classList.remove("open");
+            document.getElementById("btnQueueModal")?.classList.remove("btn-nav-active");
+        }
         loadSources();
     }
 }

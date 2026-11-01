@@ -141,7 +141,6 @@
                     <div class="player-title" id="playerTitle">未在播放</div>
                     <div class="player-artist-row">
                         <span class="player-artist" id="playerArtist">等待点播</span>
-                        <span class="player-source-tag" id="playerSourceTag" style="display: none;"></span>
                     </div>
                 </div>
             </div>
@@ -224,23 +223,21 @@
         </div>
     </div>
 
-    <!-- 弹窗：音源管理 Drawer -->
-    <div class="modal-overlay" id="sourceModal" onclick="closeModalOnOverlay(event, 'sourceModal')">
-        <div class="modal-content modal-sources">
-            <div class="modal-header">
-                <div>
-                    <h3>底层音源健康度监控</h3>
-                    <div class="modal-subtitle">双核并发竞速冲刺，毫秒出声，严格过滤 &lt;1.5MB 试听与假语音</div>
-                </div>
-                <div class="modal-header-actions">
-                    <button class="btn btn-sm btn-primary" onclick="testSources()" id="btnTestSources">⚡ 测速重排</button>
-                    <button class="btn btn-sm btn-outline" onclick="syncSources()" id="btnSyncSources">🔄 同步源库</button>
-                    <button class="modal-close-btn" onclick="toggleSourceModal()">✕</button>
-                </div>
+    <!-- 底部向上拉起音源管理抽屉 (非遮罩弹窗) -->
+    <div class="source-drawer" id="sourceDrawer">
+        <div class="source-drawer-header">
+            <div>
+                <span class="source-drawer-title">⚡ 底层音源健康度监控</span>
+                <div class="source-drawer-subtitle">双核并发冲刺，毫秒出声，严格过滤 &lt;1.5MB 试听</div>
             </div>
-            <div class="modal-body sources-list" id="sourcesListBody">
-                <div class="loading-state">正在获取音源列表...</div>
+            <div class="source-drawer-actions">
+                <button class="btn btn-sm btn-primary" onclick="testSources()" id="btnTestSources">⚡ 测速</button>
+                <button class="btn btn-sm btn-outline" onclick="syncSources()" id="btnSyncSources">🔄 同步</button>
+                <button class="source-drawer-close" onclick="toggleSourceModal()" title="收起音源面板">✕</button>
             </div>
+        </div>
+        <div class="source-drawer-body sources-list" id="sourcesListBody">
+            <div class="loading-state">正在获取音源列表...</div>
         </div>
     </div>
 
