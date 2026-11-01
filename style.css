@@ -38,26 +38,55 @@ body {
 .app-header {
     background-color: var(--bg-surface);
     border-bottom: 1px solid var(--border-color);
-    padding: 10px 20px;
+    padding: 8px 18px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
+    height: 52px;
 }
 
-.brand {
+.brand-group {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
+.btn-sidebar-toggle {
+    width: 34px;
+    height: 34px;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.btn-sidebar-toggle:hover {
+    background-color: var(--bg-surface-hover);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .logo-badge {
-    font-size: 22px;
+    font-size: 20px;
     line-height: 1;
 }
 
 .brand-text h1 {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.5px;
     display: inline-block;
@@ -65,18 +94,188 @@ body {
 }
 
 .brand-text .sub {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-secondary);
-    margin-left: 8px;
+    margin-left: 6px;
 }
 
-.header-controls {
+/* 顶部右侧紧凑搜索框 */
+.header-right {
     display: flex;
     align-items: center;
     gap: 10px;
 }
 
+.search-bar-compact {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.search-bar-compact input {
+    width: 280px;
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 5px 12px;
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    transition: all 0.15s ease;
+}
+
+.search-bar-compact input:focus {
+    width: 340px;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+}
+
+/* ========================================================
+   左侧抽屉导航栏 (平时隐藏，点击 ☰ 呼出)
+   ======================================================== */
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sidebar-drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 270px;
+    background-color: var(--bg-surface);
+    border-right: 1px solid var(--border-color);
+    z-index: 510;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+}
+
+.sidebar-drawer.open {
+    transform: translateX(0);
+}
+
+.sidebar-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sidebar-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.sidebar-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.sidebar-close-btn:hover {
+    color: #fff;
+    background-color: var(--bg-surface-hover);
+}
+
+.sidebar-body {
+    padding: 14px 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.sidebar-section {
+    margin-bottom: 22px;
+}
+
+.sidebar-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.sidebar-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.btn-create-tiny {
+    background: rgba(250, 45, 72, 0.15);
+    border: 1px solid rgba(250, 45, 72, 0.35);
+    color: #ff7588;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 1px 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-create-tiny:hover {
+    background: rgba(250, 45, 72, 0.3);
+    color: #fff;
+}
+
+.sidebar-nav-item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13px;
+    transition: all 0.15s ease;
+    margin-bottom: 4px;
+    user-select: none;
+}
+
+.sidebar-nav-item:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+}
+
+.sidebar-nav-item.active {
+    background-color: rgba(250, 45, 72, 0.12);
+    color: #ff7588;
+    font-weight: 600;
+}
+
+.sidebar-badge {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+
 .storefront-select {
+    width: 100%;
     background-color: var(--bg-main);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
@@ -85,47 +284,6 @@ body {
     font-size: 13px;
     outline: none;
     cursor: pointer;
-}
-
-.storefront-select:focus {
-    border-color: var(--accent);
-}
-
-/* 检索区域 */
-.search-section {
-    background-color: var(--bg-surface);
-    border-bottom: 1px solid var(--border-subtle);
-    padding: 12px 20px;
-    flex-shrink: 0;
-}
-
-.search-bar {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 0;
-}
-
-.search-bar input {
-    flex: 1;
-    background-color: var(--bg-main);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    padding: 8px 14px;
-    color: var(--text-primary);
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.15s ease;
-}
-
-.search-bar input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
-}
-
-.btn-nav-active {
-    background-color: rgba(255, 255, 255, 0.12) !important;
-    border-color: currentColor !important;
-    font-weight: 600;
 }
 
 /* 状态条 */
@@ -221,13 +379,16 @@ body {
 }
 
 .list-panel {
-    width: 45%;
+    width: 340px;
+    min-width: 280px;
+    max-width: 400px;
     border-right: 1px solid var(--border-color);
     background-color: var(--bg-main);
+    flex-shrink: 0;
 }
 
 .detail-panel {
-    width: 55%;
+    flex: 1;
     background-color: var(--bg-surface);
 }
 
@@ -517,20 +678,25 @@ body {
 }
 
 /* ========================================================
-   底部极简纯净音频播放器 (固定栏)
+   底部播控区域：播放器栏 + 智能双态歌词栏
    ======================================================== */
-.player-bar {
-    background-color: var(--bg-surface);
-    border-top: 1px solid var(--border-color);
-    padding: 8px 20px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 74px;
+.bottom-dock-container {
     flex-shrink: 0;
     position: relative;
     z-index: 100;
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.player-bar {
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-color);
+    padding: 6px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
 }
 
 .player-track-info {
@@ -542,14 +708,14 @@ body {
 }
 
 .player-art-placeholder {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     border-radius: 6px;
     background-color: #21262d;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: 18px;
     flex-shrink: 0;
     border: 1px solid var(--border-subtle);
     user-select: none;
@@ -607,35 +773,15 @@ body {
     font-family: var(--font-mono);
 }
 
-/* 播放器中部：歌词 + 播控 + 进度 */
+/* 播放器中部：播控 + 进度 */
 .player-center {
     flex: 1;
-    max-width: 600px;
+    max-width: 580px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     padding: 0 16px;
-}
-
-.player-lyric-box {
-    height: 18px;
-    overflow: hidden;
-    text-align: center;
-    width: 100%;
-}
-
-.player-lyric-text {
-    font-size: 12px;
-    color: #7ee787;
-    font-weight: 500;
-    letter-spacing: 0.2px;
-    display: inline-block;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
 }
 
 .player-controls {
@@ -745,9 +891,246 @@ body {
     cursor: pointer;
 }
 
+/* ========================================================
+   独立智能双态歌词栏 (平时 2 行 ⇄ 点击向上平滑拉升为 6 行)
+   ======================================================== */
+.lyric-dock {
+    background-color: #0f1318;
+    border-top: 1px solid var(--border-subtle);
+    padding: 6px 24px;
+    height: 52px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: height 0.28s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+    user-select: none;
+}
+
+.lyric-dock:hover {
+    background-color: #151a21;
+}
+
+.lyric-dock-header {
+    width: 100%;
+    display: none;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 6px;
+    flex-shrink: 0;
+}
+
+.lyric-dock-indicator {
+    font-size: 11px;
+    color: #7ee787;
+    font-weight: 600;
+}
+
+.lyric-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 15px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.lyric-close-btn:hover {
+    color: #fff;
+    background-color: var(--bg-surface-hover);
+}
+
+.lyric-lines-wrapper {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+}
+
+.lyric-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90%;
+    transition: all 0.2s ease;
+}
+
+.lyric-line-current {
+    font-size: 13px;
+    font-weight: 600;
+    color: #7ee787;
+    line-height: 1.4;
+}
+
+.lyric-line-next {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+    opacity: 0.75;
+}
+
+/* 展开态：显示 6 行完整歌词 */
+.lyric-dock.expanded {
+    height: 180px;
+    background-color: #0b0e12;
+    cursor: default;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.lyric-dock.expanded .lyric-dock-header {
+    display: flex;
+}
+
+.lyric-dock.expanded .lyric-lines-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.lyric-dock.expanded .lyric-line {
+    padding: 2px 8px;
+    border-radius: 4px;
+    line-height: 1.5;
+}
+
+.lyric-dock.expanded .lyric-line-prev {
+    font-size: 12px;
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.lyric-dock.expanded .lyric-line-current {
+    font-size: 15px;
+    font-weight: 700;
+    color: #7ee787;
+    background-color: rgba(126, 231, 135, 0.08);
+}
+
+.lyric-dock.expanded .lyric-line-next {
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-top: 0;
+}
+
 /* 曲目表格操作与播放态高亮 */
 .btn-play-song {
     background: #238636;
+    border: none;
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-right: 4px;
+    font-weight: 500;
+    transition: background 0.15s ease;
+}
+
+.btn-play-song:hover {
+    background: #2ea043;
+}
+
+.btn-add-to-pl {
+    background: rgba(88, 166, 255, 0.12);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    color: #58a6ff;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-right: 4px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn-add-to-pl:hover {
+    background: rgba(88, 166, 255, 0.25);
+    color: #fff;
+}
+
+.btn-remove-song {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    margin-left: 4px;
+}
+
+.btn-remove-song:hover {
+    color: #f85149;
+}
+
+/* 弹窗：添加到歌单 */
+.modal-sm {
+    max-width: 440px;
+}
+
+.add-to-song-info {
+    padding: 8px 12px;
+    background: var(--bg-main);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--accent-hover);
+    margin-bottom: 12px;
+    border: 1px solid var(--border-subtle);
+}
+
+.playlist-choice-list {
+    max-height: 220px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.playlist-choice-item {
+    padding: 9px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 0.15s ease;
+}
+
+.playlist-choice-item:hover {
+    background: var(--bg-surface-hover);
+}
+
+.create-playlist-inline {
+    display: flex;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.create-playlist-inline input {
+    flex: 1;
+    padding: 6px 12px;
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 12px;
+    outline: none;
+}
+
+.create-playlist-inline input:focus {
+    border-color: var(--accent);
+}
     border: none;
     color: #fff;
     border-radius: 4px;

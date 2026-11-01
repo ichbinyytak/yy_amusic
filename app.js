@@ -7,6 +7,9 @@ const DEFAULT_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6IldlYlBsYXlLa
 let currentStorefront = "cn";
 let currentPlaylistData = null;
 let currentTracks = [];
+let isViewingCustomPlaylist = false;
+let currentCustomPlaylistId = null;
+let pendingTrackToAdd = null;
 
 // DOM 元素引用
 const searchInput = document.getElementById("searchInput");
@@ -22,7 +25,14 @@ const detailTitle = document.getElementById("detailTitle");
 const detailSubtitle = document.getElementById("detailSubtitle");
 const detailActions = document.getElementById("detailActions");
 const detailBody = document.getElementById("detailBody");
+const btnFavCurrent = document.getElementById("btnFavCurrent");
 const toastEl = document.getElementById("toast");
+
+// 左侧抽屉元素
+const sidebarDrawer = document.getElementById("sidebarDrawer");
+const sidebarOverlay = document.getElementById("sidebarOverlay");
+const favCountBadge = document.getElementById("favCountBadge");
+const customCountBadge = document.getElementById("customCountBadge");
 
 // 初始化
 window.addEventListener("DOMContentLoaded", () => {
@@ -36,42 +46,62 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    updateBadgeCounts();
+
     // 默认加载官方最新发布 (/new)
     loadNewPage();
 });
 
-// 通用 Apple Music API 请求函数
-async function apiRequest(endpoint) {
-    const startTime = performance.now();
-    statusText.innerText = `正在向 Apple 官方服务器请求: ${endpoint.split("?")[0]} ...`;
-    speedMetric.innerText = "";
+// ========================================================
+// 抽屉导航控制
+// ========================================================
+function toggleSidebar() {
+    sidebarDrawer.classList.toggle("open");
+    sidebarOverlay.classList.toggle("open");
+}
 
+function closeSidebar() {
+    sidebarDrawer.classList.remove("open");
+    sidebarOverlay.classList.remove("open");
+}
+
+function setActiveNav(navId) {
+    document.querySelectorAll(".sidebar-nav-item").forEach(el => el.classList.remove("active"));
+    document.getElementById(navId)?.classList.add("active");
+}
+
+// ========================================================
+// 本地存储：收藏歌单 (官方镜像) & 自建歌单
+// ========================================================
+function getFavPlaylists() {
     try {
-        const response = await fetch(`${APPLE_MUSIC_API}/${currentStorefront}/${endpoint}`);
-
-        const duration = Math.round(performance.now() - startTime);
-
-        if (!response.ok) {
-            throw new Error(`Apple API 响应异常: HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        statusText.innerText = "Apple 数据库连接正常 (纯文本传输，0 图片开销)";
-        speedMetric.innerText = `⚡ ${duration} ms`;
-        return data;
-    } catch (err) {
-        const duration = Math.round(performance.now() - startTime);
-        statusText.innerText = `请求失败: ${err.message}`;
-        speedMetric.innerText = `❌ ${duration} ms`;
-        console.error("Apple Music API Error:", err);
-        throw err;
+        return JSON.parse(localStorage.getItem("amusic_fav_playlists") || "[]");
+    } catch (e) {
+        return [];
     }
 }
 
-// 导航高亮状态切换
-function setActiveNav(navId) {
-    document.getElementById("btnNavNew")?.classList.toggle("btn-nav-active", navId === "btnNavNew");
-    document.getElementById("btnNavSearchPage")?.classList.toggle("btn-nav-active", navId === "btnNavSearchPage");
+function saveFavPlaylists(list) {
+    localStorage.setItem("amusic_fav_playlists", JSON.stringify(list));
+    updateBadgeCounts();
+}
+
+function getCustomPlaylists() {
+    try {
+        return JSON.parse(localStorage.getItem("amusic_custom_playlists") || "[]");
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveCustomPlaylists(list) {
+    localStorage.setItem("amusic_custom_playlists", JSON.stringify(list));
+    updateBadgeCounts();
+}
+
+function updateBadgeCounts() {
+    if (favCountBadge) favCountBadge.innerText = getFavPlaylists().length;
+    if (customCountBadge) customCountBadge.innerText = getCustomPlaylists().length;
 }
 
 // 抓取并加载 music.apple.com/new 页面全量板块
@@ -474,6 +504,8 @@ function renderPlaylistCards(items) {
 
 // 点击歌单，查看详细曲目
 async function selectPlaylist(id, type, name, curator, url) {
+    isViewingCustomPlaylist = false;
+    currentCustomPlaylistId = null;
     currentPlaylistData = { id, type, name, curator, url };
     currentTracks = [];
 
@@ -481,6 +513,8 @@ async function selectPlaylist(id, type, name, curator, url) {
     detailSubtitle.innerText = `${curator} • 正在获取曲目清单...`;
     detailActions.style.display = "none";
     detailBody.innerHTML = '<div class="loading-state">正在向 Apple 数据库解析曲目列表...</div>';
+
+    updateFavButtonStatus();
 
     try {
         const endpoint = `${type}s/${id}`;
@@ -510,10 +544,330 @@ async function selectPlaylist(id, type, name, curator, url) {
     }
 }
 
-// 渲染曲目表格
+// 检查并更新当前歌单的“收藏”状态
+function updateFavButtonStatus() {
+    if (!btnFavCurrent) return;
+    if (isViewingCustomPlaylist || !currentPlaylistData?.id) {
+        btnFavCurrent.style.display = "none";
+        return;
+    }
+    btnFavCurrent.style.display = "inline-flex";
+    const favs = getFavPlaylists();
+    const isFav = favs.some(f => f.id === currentPlaylistData.id);
+    if (isFav) {
+        btnFavCurrent.innerText = "⭐ 已收藏";
+        btnFavCurrent.classList.add("btn-nav-active");
+    } else {
+        btnFavCurrent.innerText = "⭐ 收藏歌单";
+        btnFavCurrent.classList.remove("btn-nav-active");
+    }
+}
+
+// 收藏 / 取消收藏当前官方歌单 (歌单名为复制)
+function toggleFavCurrentPlaylist() {
+    if (!currentPlaylistData || isViewingCustomPlaylist) return;
+    let favs = getFavPlaylists();
+    const existingIdx = favs.findIndex(f => f.id === currentPlaylistData.id);
+
+    if (existingIdx >= 0) {
+        favs.splice(existingIdx, 1);
+        saveFavPlaylists(favs);
+        updateFavButtonStatus();
+        showToast(`已取消收藏歌单《${currentPlaylistData.name}》`);
+    } else {
+        const newFav = {
+            id: currentPlaylistData.id,
+            type: currentPlaylistData.type || "playlist",
+            name: currentPlaylistData.name,
+            title: currentPlaylistData.name,
+            curator: currentPlaylistData.curator || "Apple Music",
+            url: currentPlaylistData.url || "",
+            trackCount: currentTracks.length,
+            savedAt: new Date().toLocaleDateString()
+        };
+        favs.unshift(newFav);
+        saveFavPlaylists(favs);
+        updateFavButtonStatus();
+        showToast(`已收藏歌单《${currentPlaylistData.name}》到我的歌单库！`);
+    }
+}
+
+// 浏览“⭐ 收藏的歌单”
+function loadFavPlaylists() {
+    setActiveNav("btnNavFav");
+    listPanelTitle.innerText = "⭐ 收藏的歌单 (官方镜像)";
+    const favs = getFavPlaylists();
+    itemCountBadge.innerText = favs.length;
+    statusText.innerText = `当前已收藏 ${favs.length} 个官方歌单`;
+
+    if (favs.length === 0) {
+        playlistListEl.innerHTML = `
+            <div class="placeholder-box" style="padding: 40px 20px;">
+                <p>暂无收藏的歌单</p>
+                <p class="muted">在浏览 Apple 官方歌单时，点击右上角【⭐ 收藏歌单】即可保存于此。</p>
+            </div>
+        `;
+        return;
+    }
+
+    playlistListEl.innerHTML = "";
+    favs.forEach((item, idx) => {
+        const card = document.createElement("div");
+        card.className = "playlist-card";
+        card.innerHTML = `
+            <div class="playlist-title-row">
+                <span class="playlist-name">${escapeHtml(item.name || item.title)}</span>
+                <span class="playlist-curator">${escapeHtml(item.curator)}</span>
+            </div>
+            <div class="playlist-meta-row">
+                <span class="meta-tag">官方歌单</span>
+                <span class="meta-tag">共 ${item.trackCount || '?'} 首</span>
+                <span class="meta-tag" style="margin-left: auto;">${item.savedAt || ''}</span>
+            </div>
+        `;
+        card.addEventListener("click", () => {
+            document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            if (item.url && item.url.includes("/room/")) {
+                selectRoom(item.url, item.name || item.title, item.curator);
+            } else {
+                selectPlaylist(item.id, item.type || "playlist", item.name || item.title, item.curator, item.url);
+            }
+        });
+        playlistListEl.appendChild(card);
+    });
+}
+
+// 浏览“🎵 我的自建歌单”
+function loadCustomPlaylists() {
+    setActiveNav("btnNavCustom");
+    listPanelTitle.innerText = "🎵 我的自建歌单";
+    const customs = getCustomPlaylists();
+    itemCountBadge.innerText = customs.length;
+    statusText.innerText = `本地自建歌单共 ${customs.length} 个`;
+
+    if (customs.length === 0) {
+        playlistListEl.innerHTML = `
+            <div class="placeholder-box" style="padding: 40px 20px;">
+                <p>暂无自建歌单</p>
+                <p class="muted">在右侧曲目表中点击【➕ 加入歌单】，或点击抽屉中的【➕ 新建】创建自建歌单。</p>
+                <button class="btn btn-sm btn-primary" onclick="promptCreateCustomPlaylist()" style="margin-top: 12px;">➕ 立即新建歌单</button>
+            </div>
+        `;
+        return;
+    }
+
+    playlistListEl.innerHTML = "";
+    customs.forEach((pl, idx) => {
+        const card = document.createElement("div");
+        card.className = "playlist-card";
+        const trackCount = (pl.tracks || []).length;
+        card.innerHTML = `
+            <div class="playlist-title-row">
+                <span class="playlist-name">${escapeHtml(pl.title)}</span>
+                <span class="playlist-curator">自建歌单</span>
+            </div>
+            <div class="playlist-meta-row">
+                <span class="meta-tag">本地</span>
+                <span class="meta-tag">共 ${trackCount} 首</span>
+                <span class="meta-tag" style="margin-left: auto;">${pl.createdAt || ''}</span>
+            </div>
+        `;
+        card.addEventListener("click", () => {
+            document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            selectCustomPlaylist(pl.id);
+        });
+        playlistListEl.appendChild(card);
+    });
+}
+
+// 选中并展示自建歌单
+function selectCustomPlaylist(playlistId) {
+    const customs = getCustomPlaylists();
+    const pl = customs.find(c => c.id === playlistId);
+    if (!pl) return;
+
+    isViewingCustomPlaylist = true;
+    currentCustomPlaylistId = playlistId;
+    currentPlaylistData = { id: pl.id, name: pl.title, title: pl.title, curator: "我的自建歌单" };
+    currentTracks = pl.tracks || [];
+
+    detailTitle.innerText = pl.title;
+    detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
+    updateFavButtonStatus();
+    detailActions.style.display = "flex";
+
+    renderTracklist(currentTracks);
+}
+
+// 快速创建自建歌单
+function promptCreateCustomPlaylist() {
+    const name = prompt("请输入新歌单名称:", "我的精选歌单");
+    if (!name || !name.trim()) return;
+    const customs = getCustomPlaylists();
+    const newPl = {
+        id: "custom_" + Date.now(),
+        title: name.trim(),
+        createdAt: new Date().toLocaleDateString(),
+        tracks: []
+    };
+    customs.unshift(newPl);
+    saveCustomPlaylists(customs);
+    showToast(`歌单《${newPl.title}》创建成功！`);
+    loadCustomPlaylists();
+}
+
+// 删除自建歌单
+function deleteCustomPlaylist(playlistId) {
+    if (!confirm("确定要删除此自建歌单吗？")) return;
+    let customs = getCustomPlaylists();
+    customs = customs.filter(c => c.id !== playlistId);
+    saveCustomPlaylists(customs);
+    showToast("歌单已删除");
+    loadCustomPlaylists();
+    detailActions.style.display = "none";
+    detailBody.innerHTML = '<div class="loading-state">歌单已删除。请在左侧选择其他歌单。</div>';
+}
+
+// 从自建歌单中移除某首歌曲
+function removeSongFromCustom(idx) {
+    if (!isViewingCustomPlaylist || !currentCustomPlaylistId) return;
+    let customs = getCustomPlaylists();
+    const pl = customs.find(c => c.id === currentCustomPlaylistId);
+    if (!pl) return;
+
+    const removed = pl.tracks.splice(idx, 1)[0];
+    saveCustomPlaylists(customs);
+    currentTracks = pl.tracks;
+    detailSubtitle.innerText = `我的自建歌单 • 共 ${currentTracks.length} 首歌曲`;
+    renderTracklist(currentTracks);
+    showToast(`已从歌单移除: ${removed?.name || '歌曲'}`);
+}
+
+// ========================================================
+// 弹窗：将单曲添加到自建歌单 (不可加到官方收藏歌单)
+// ========================================================
+function openAddToPlaylistModal(trackIdx) {
+    const song = currentTracks[trackIdx];
+    if (!song) return;
+    pendingTrackToAdd = song;
+
+    const modal = document.getElementById("addToPlaylistModal");
+    const infoEl = document.getElementById("addToSongInfo");
+    const choiceList = document.getElementById("playlistChoiceList");
+    const input = document.getElementById("newPlaylistInput");
+
+    infoEl.innerText = `🎵 ${song.name} - ${song.artist}`;
+    input.value = "";
+
+    const customs = getCustomPlaylists();
+    if (customs.length === 0) {
+        choiceList.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 12px;">暂无自建歌单，请在下方直接输入名称新建并加入</div>';
+    } else {
+        let html = '';
+        customs.forEach(pl => {
+            const hasSong = (pl.tracks || []).some(t => t.name === song.name && t.artist === song.artist);
+            html += `
+                <div class="playlist-choice-item" onclick="addTrackToExistingPlaylist('${pl.id}')">
+                    <div>
+                        <strong>${escapeHtml(pl.title)}</strong>
+                        <span style="font-size: 11px; color: var(--text-muted); margin-left: 8px;">(${pl.tracks?.length || 0}首)</span>
+                    </div>
+                    <span style="font-size: 12px; color: ${hasSong ? '#e3b341' : 'var(--accent)'};">
+                        ${hasSong ? '已在歌单' : '➕ 加入'}
+                    </span>
+                </div>
+            `;
+        });
+        choiceList.innerHTML = html;
+    }
+
+    modal.classList.add("open");
+}
+
+function closeAddToPlaylistModal() {
+    document.getElementById("addToPlaylistModal").classList.remove("open");
+    pendingTrackToAdd = null;
+}
+
+function addTrackToExistingPlaylist(playlistId) {
+    if (!pendingTrackToAdd) return;
+    let customs = getCustomPlaylists();
+    const pl = customs.find(c => c.id === playlistId);
+    if (!pl) return;
+
+    if (!pl.tracks) pl.tracks = [];
+    const already = pl.tracks.some(t => t.name === pendingTrackToAdd.name && t.artist === pendingTrackToAdd.artist);
+    if (already) {
+        showToast(`《${pendingTrackToAdd.name}》已存在于《${pl.title}》中`);
+        closeAddToPlaylistModal();
+        return;
+    }
+
+    pl.tracks.push({
+        index: pl.tracks.length + 1,
+        name: pendingTrackToAdd.name,
+        title: pendingTrackToAdd.name,
+        artist: pendingTrackToAdd.artist,
+        album: pendingTrackToAdd.album || "",
+        durationMillis: pendingTrackToAdd.durationMillis || 0
+    });
+
+    saveCustomPlaylists(customs);
+    showToast(`已成功将《${pendingTrackToAdd.name}》加入《${pl.title}》！`);
+    closeAddToPlaylistModal();
+
+    // 如果当前正处于该自建歌单详情页，实时刷新
+    if (isViewingCustomPlaylist && currentCustomPlaylistId === playlistId) {
+        selectCustomPlaylist(playlistId);
+    }
+}
+
+function confirmCreateAndAdd() {
+    const input = document.getElementById("newPlaylistInput");
+    const name = input.value.trim();
+    if (!name) {
+        showToast("请输入歌单名称");
+        return;
+    }
+    if (!pendingTrackToAdd) return;
+
+    let customs = getCustomPlaylists();
+    const newPl = {
+        id: "custom_" + Date.now(),
+        title: name,
+        createdAt: new Date().toLocaleDateString(),
+        tracks: [{
+            index: 1,
+            name: pendingTrackToAdd.name,
+            title: pendingTrackToAdd.name,
+            artist: pendingTrackToAdd.artist,
+            album: pendingTrackToAdd.album || "",
+            durationMillis: pendingTrackToAdd.durationMillis || 0
+        }]
+    };
+
+    customs.unshift(newPl);
+    saveCustomPlaylists(customs);
+    showToast(`已新建歌单《${name}》并加入歌曲！`);
+    closeAddToPlaylistModal();
+
+    if (document.getElementById("btnNavCustom")?.classList.contains("active")) {
+        loadCustomPlaylists();
+    }
+}
+
+function handleNewPlaylistKeyDown(e) {
+    if (e.key === "Enter") {
+        confirmCreateAndAdd();
+    }
+}
+
+// 渲染曲目表格 (包含 ▶ 播放、➕ 加入歌单、复制 与 移除)
 function renderTracklist(tracks) {
     if (!tracks || tracks.length === 0) {
-        detailBody.innerHTML = '<div class="loading-state">该歌单暂无可公开查看的曲目。</div>';
+        detailBody.innerHTML = '<div class="loading-state">该歌单暂无曲目。</div>';
         return;
     }
 
@@ -541,13 +895,15 @@ function renderTracklist(tracks) {
 
         html += `
             <tr class="${rowClass}" id="track-row-${idx}">
-                <td class="track-index">${isPlayingThis ? '🔊' : t.index}</td>
+                <td class="track-index">${isPlayingThis ? '🔊' : (t.index || idx + 1)}</td>
                 <td class="track-name">${escapeHtml(t.name)}</td>
                 <td class="track-artist">${escapeHtml(t.artist)}</td>
                 <td class="track-duration">${durationStr}</td>
                 <td class="track-action">
                     <button class="btn-play-song" onclick="playSong(${idx})" title="立即播放此歌曲">▶ 播放</button>
+                    <button class="btn-add-to-pl" onclick="openAddToPlaylistModal(${idx})" title="加入我的自建歌单">➕ 歌单</button>
                     <button class="btn-copy-song" onclick="copySongText('${escapeJsString(copyText)}')" title="复制歌名与歌手">复制</button>
+                    ${isViewingCustomPlaylist ? `<button class="btn-remove-song" onclick="removeSongFromCustom(${idx})" title="从歌单移除">✕</button>` : ''}
                 </td>
             </tr>
         `;
@@ -581,14 +937,7 @@ function playSong(idx) {
     }
 }
 
-// 复制单个歌单官方直链
-function copyPlaylistUrl() {
-    if (currentPlaylistData?.url) {
-        copyUrl(currentPlaylistData.url);
-    }
-}
-
-// 复制整份歌单纯文本 (每行：歌名 - 歌手，可直接贴入播放器或做导入)
+// 复制整份歌单纯文本 (每行：歌名 - 歌手)
 function copyTracklistText() {
     if (!currentTracks || currentTracks.length === 0) {
         showToast("暂无曲目可复制");
@@ -612,15 +961,6 @@ function copySongText(text) {
     }).catch(() => {
         fallbackCopy(text);
         showToast(`已复制: ${text}`);
-    });
-}
-
-function copyUrl(url) {
-    navigator.clipboard.writeText(url).then(() => {
-        showToast("已复制 Apple Music 官方直链！可直接去 YY-music 导入");
-    }).catch(() => {
-        fallbackCopy(url);
-        showToast("已复制链接！");
     });
 }
 
@@ -677,7 +1017,6 @@ const playerTitle = document.getElementById("playerTitle");
 const playerArtist = document.getElementById("playerArtist");
 const playerSourceTag = document.getElementById("playerSourceTag");
 const playerStatusIcon = document.getElementById("playerStatusIcon");
-const playerLyricText = document.getElementById("playerLyricText");
 const btnPlayPause = document.getElementById("btnPlayPause");
 const btnMode = document.getElementById("btnMode");
 const playerCurTime = document.getElementById("playerCurTime");
@@ -688,6 +1027,16 @@ const volumeIcon = document.getElementById("volumeIcon");
 const queueCountEl = document.getElementById("queueCount");
 const queueListBody = document.getElementById("queueListBody");
 const sourcesListBody = document.getElementById("sourcesListBody");
+
+// 独立歌词栏元素
+const lyricDock = document.getElementById("lyricDock");
+const lyricCurrentLine = document.getElementById("lyricCurrentLine");
+const lyricNextLine = document.getElementById("lyricNextLine");
+const lyricLinesWrapper = document.getElementById("lyricLinesWrapper");
+
+let isLyricExpanded = false;
+let lastLyricIdx = -1;
+let currentSongLyricLines = [];
 
 // 初始化全局 Player 实例
 window.player = new MusicPlayer();
@@ -753,13 +1102,72 @@ window.player.on('timeUpdate', ({ currentTime, duration, percent, formattedCurre
     progressBarFill.style.width = `${percent}%`;
 });
 
-window.player.on('lyricUpdate', ({ currentLine, nextLine }) => {
-    if (currentLine) {
-        playerLyricText.innerText = currentLine;
-    } else {
-        playerLyricText.innerText = "♪ ...";
-    }
+// 毫秒级歌词联动
+window.player.on('lyricUpdate', ({ index, currentLine, nextLine, allLines }) => {
+    lastLyricIdx = index;
+    currentSongLyricLines = allLines || [];
+    renderLyricsView(currentLine, nextLine);
 });
+
+// 歌词视图渲染 (平时 2 行 ⇄ 展开 6 行)
+function renderLyricsView(curText, nxtText) {
+    if (!isLyricExpanded) {
+        // 常驻紧凑 2 行模式
+        lyricLinesWrapper.innerHTML = `
+            <div class="lyric-line lyric-line-current" id="lyricCurrentLine">${escapeHtml(curText || "♪ 音乐播放中...")}</div>
+            <div class="lyric-line lyric-line-next" id="lyricNextLine">${escapeHtml(nxtText || "")}</div>
+        `;
+    } else {
+        // 展开 6 行沉浸模式
+        if (!currentSongLyricLines || currentSongLyricLines.length === 0) {
+            lyricLinesWrapper.innerHTML = '<div class="lyric-line lyric-line-current">纯音乐或暂无歌词</div>';
+            return;
+        }
+
+        const cur = lastLyricIdx >= 0 ? lastLyricIdx : 0;
+        // 计算前后 6 行窗口: 包含前 2 句、当前句、后 3 句
+        const start = Math.max(0, cur - 2);
+        const end = Math.min(currentSongLyricLines.length, start + 6);
+        const windowLines = currentSongLyricLines.slice(start, end);
+
+        let html = '';
+        windowLines.forEach((item, wIdx) => {
+            const actualIdx = start + wIdx;
+            let cls = 'lyric-line';
+            if (actualIdx === cur) {
+                cls += ' lyric-line-current';
+            } else if (actualIdx < cur) {
+                cls += ' lyric-line-prev';
+            } else {
+                cls += ' lyric-line-next';
+            }
+            html += `<div class="${cls}">${escapeHtml(item.text)}</div>`;
+        });
+        lyricLinesWrapper.innerHTML = html;
+    }
+}
+
+// 展开歌词栏 (拉升显示 6 行)
+function expandLyricDock(e) {
+    if (isLyricExpanded) return;
+    isLyricExpanded = true;
+    lyricDock.classList.add("expanded");
+    lyricDock.title = "";
+    const curLine = (lastLyricIdx >= 0 && currentSongLyricLines[lastLyricIdx]) ? currentSongLyricLines[lastLyricIdx].text : "";
+    const nextLine = (lastLyricIdx + 1 < currentSongLyricLines.length) ? currentSongLyricLines[lastLyricIdx + 1].text : "";
+    renderLyricsView(curLine, nextLine);
+}
+
+// 收回歌词栏 (缩回 2 行)
+function collapseLyricDock(e) {
+    if (e) e.stopPropagation();
+    isLyricExpanded = false;
+    lyricDock.classList.remove("expanded");
+    lyricDock.title = "点击展开 6 行完整歌词";
+    const curLine = (lastLyricIdx >= 0 && currentSongLyricLines[lastLyricIdx]) ? currentSongLyricLines[lastLyricIdx].text : "";
+    const nextLine = (lastLyricIdx + 1 < currentSongLyricLines.length) ? currentSongLyricLines[lastLyricIdx + 1].text : "";
+    renderLyricsView(curLine, nextLine);
+}
 
 window.player.on('playlistChange', ({ playlist }) => {
     queueCountEl.innerText = playlist.length;

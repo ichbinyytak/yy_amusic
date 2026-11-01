@@ -3,59 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Amusic - Apple 音乐纯文本数据库浏览器</title>
+    <title>YY-Amusic - Apple 音乐纯文本数据库浏览器</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- 顶部极简导航栏 (品牌 + 右侧紧凑搜索) -->
     <header class="app-header">
-        <div class="brand">
-            <span class="logo-badge">🍎</span>
-            <div class="brand-text">
-                <h1>Amusic</h1>
-                <span class="sub">Apple Music 纯文本数据库浏览器</span>
+        <div class="brand-group">
+            <button class="btn-sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggleBtn" title="打开/收起左侧导航分类">
+                ☰
+            </button>
+            <div class="brand">
+                <span class="logo-badge">🍎</span>
+                <div class="brand-text">
+                    <h1>YY-Amusic</h1>
+                    <span class="sub">Apple Music 纯文本底座</span>
+                </div>
             </div>
         </div>
 
-        <div class="header-controls">
-            <!-- 地区选择 -->
-            <select id="storefrontSelect" class="storefront-select" title="选择 Apple Music 地区">
-                <option value="cn" selected>🇨🇳 中国大陆 (CN)</option>
-                <option value="hk">🇭🇰 中国香港 (HK)</option>
-                <option value="tw">🇹🇼 中国台湾 (TW)</option>
-                <option value="us">🇺🇸 美国 (US)</option>
-                <option value="jp">🇯🇵 日本 (JP)</option>
-                <option value="gb">🇬🇧 英国 (GB)</option>
-            </select>
-            <!-- 导航按钮组: 最新发布 (/new)、类别探索 (/search) -->
-            <button class="btn btn-secondary" onclick="loadNewPage()" id="btnNavNew" title="抓取并浏览 music.apple.com/new 官方最新推荐与新歌" style="border-color: rgba(250, 45, 72, 0.4); color: #ff7588;">
-                <span>✨ 最新发布 (/new)</span>
-            </button>
-            <button class="btn btn-secondary" onclick="loadSearchPage()" id="btnNavSearchPage" title="浏览 music.apple.com/search 官方全部分类与专区" style="border-color: rgba(88, 166, 255, 0.4); color: #79c0ff;">
-                <span>🏷️ 类别探索 (/search)</span>
-            </button>
+        <div class="header-right">
+            <div class="search-bar-compact">
+                <input type="text" id="searchInput" placeholder="搜索 Apple 歌单、专辑、歌手、风格..." onkeydown="handleSearchKeyDown(event)" />
+                <button class="btn btn-sm btn-primary" onclick="handleSearch()" id="searchBtn">
+                    <span>🔍 检索</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" onclick="clearSearch()" id="clearBtn" style="display: none;">清空</button>
+            </div>
         </div>
     </header>
 
-    <div class="search-section">
-        <div class="search-bar">
-            <input type="text" id="searchInput" placeholder="搜索 Apple 歌单、专辑、歌手、曲风 (如：摇滚、周杰伦、流行、R&B)..." onkeydown="handleSearchKeyDown(event)" autofocus />
-            <button class="btn btn-primary" onclick="handleSearch()" id="searchBtn">
-                <span>🔍 检索数据</span>
-            </button>
-            <button class="btn btn-ghost" onclick="clearSearch()" id="clearBtn" style="display: none;">清空</button>
+    <!-- 左侧抽屉导航栏 (平时隐藏，点击 ☰ 呼出) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+    <aside class="sidebar-drawer" id="sidebarDrawer">
+        <div class="sidebar-header">
+            <div class="sidebar-title">🧭 导航与歌单</div>
+            <button class="sidebar-close-btn" onclick="closeSidebar()" title="收起导航">✕</button>
         </div>
-    </div>
+
+        <div class="sidebar-body">
+            <!-- 地区选择 -->
+            <div class="sidebar-section">
+                <label class="sidebar-label">Apple Music 地区</label>
+                <select id="storefrontSelect" class="storefront-select" title="选择 Apple Music 地区">
+                    <option value="cn" selected>🇨🇳 中国大陆 (CN)</option>
+                    <option value="hk">🇭🇰 中国香港 (HK)</option>
+                    <option value="tw">🇹🇼 中国台湾 (TW)</option>
+                    <option value="us">🇺🇸 美国 (US)</option>
+                    <option value="jp">🇯🇵 日本 (JP)</option>
+                    <option value="gb">🇬🇧 英国 (GB)</option>
+                </select>
+            </div>
+
+            <!-- 主导航 -->
+            <div class="sidebar-section">
+                <label class="sidebar-label">探索板块</label>
+                <div class="sidebar-nav-item active" id="btnNavNew" onclick="loadNewPage(); closeSidebar();">
+                    <span>✨ 最新发布 (/new)</span>
+                </div>
+                <div class="sidebar-nav-item" id="btnNavSearchPage" onclick="loadSearchPage(); closeSidebar();">
+                    <span>🏷️ 类别探索 (/search)</span>
+                </div>
+            </div>
+
+            <!-- 我的收藏与自建 -->
+            <div class="sidebar-section">
+                <div class="sidebar-label-row">
+                    <span class="sidebar-label">我的音乐库</span>
+                    <button class="btn-create-tiny" onclick="promptCreateCustomPlaylist()" title="新建自建歌单">➕ 新建</button>
+                </div>
+                <div class="sidebar-nav-item" id="btnNavFav" onclick="loadFavPlaylists(); closeSidebar();">
+                    <span>⭐ 收藏的歌单</span>
+                    <span class="sidebar-badge" id="favCountBadge">0</span>
+                </div>
+                <div class="sidebar-nav-item" id="btnNavCustom" onclick="loadCustomPlaylists(); closeSidebar();">
+                    <span>🎵 我的自建歌单</span>
+                    <span class="sidebar-badge" id="customCountBadge">0</span>
+                </div>
+            </div>
+        </div>
+    </aside>
 
     <!-- 状态指示条 -->
     <div class="status-bar" id="statusBar">
-        <span id="statusText">正在连接 Apple Music 官方数据库...</span>
+        <span id="statusText">Apple 数据库与双核音源底座已就绪</span>
         <span id="speedMetric" class="speed-metric"></span>
     </div>
 
-    <!-- 主展示区：左右分栏 -->
+    <!-- 主展示区：两栏布局 (歌单列表 + 曲目明细) -->
     <main class="main-layout">
-        <!-- 左侧：歌单/搜索结果列表 -->
+        <!-- 中间栏：歌单/专辑/分类列表 -->
         <section class="panel list-panel">
             <div class="panel-header">
                 <h2 id="listPanelTitle">官方热门歌单</h2>
@@ -66,19 +104,19 @@
             </div>
         </section>
 
-        <!-- 右侧：选中的歌单曲目明细 -->
+        <!-- 右侧栏：选中的歌单曲目明细 -->
         <section class="panel detail-panel" id="detailPanel">
             <div class="panel-header detail-header">
                 <div class="detail-title-group">
                     <h2 id="detailTitle">请在左侧选择一个歌单</h2>
-                    <span class="detail-subtitle" id="detailSubtitle">点击任意歌单查看曲目详情并快速提取</span>
+                    <span class="detail-subtitle" id="detailSubtitle">点击任意歌单查看曲目详情并快速点播</span>
                 </div>
                 <div class="detail-actions" id="detailActions" style="display: none;">
                     <button class="btn btn-sm btn-primary" onclick="playCurrentAll()" title="播放当前歌单内所有曲目">
                         ▶ 播放全部
                     </button>
-                    <button class="btn btn-sm btn-outline" onclick="copyPlaylistUrl()" title="复制 Apple Music 官方网页直链">
-                        📋 复制歌单链接
+                    <button class="btn btn-sm btn-outline" id="btnFavCurrent" onclick="toggleFavCurrentPlaylist()" title="收藏此歌单">
+                        ⭐ 收藏歌单
                     </button>
                     <button class="btn btn-sm btn-outline" onclick="copyTracklistText()" title="复制纯文本歌单 (歌名 - 歌手)">
                         📑 复制歌曲文本
@@ -88,68 +126,97 @@
 
             <div class="panel-body detail-body" id="detailBody">
                 <div class="placeholder-box">
-                    <p>👈 从左侧列表点击任意歌单，在此处展开完整曲目。</p>
+                    <p>👈 从中间列表点击任意歌单，在此处展开完整曲目。</p>
                     <p class="muted">纯文字加载，无图片下载开销，秒级响应。</p>
                 </div>
             </div>
         </section>
     </main>
 
-    <!-- 底部固定播放器栏 -->
-    <footer class="player-bar" id="playerBar">
-        <div class="player-track-info">
-            <div class="player-art-placeholder" id="playerStatusIcon">🎵</div>
-            <div class="player-meta">
-                <div class="player-title" id="playerTitle">未在播放</div>
-                <div class="player-artist-row">
-                    <span class="player-artist" id="playerArtist">等待点播</span>
-                    <span class="player-source-tag" id="playerSourceTag" style="display: none;"></span>
+    <!-- 底部播控区域：播放器栏 + 智能双态歌词栏 -->
+    <div class="bottom-dock-container">
+        <!-- 1. 播放器栏 (Player Bar) -->
+        <footer class="player-bar" id="playerBar">
+            <!-- 左侧：封面动画与歌曲信息 -->
+            <div class="player-track-info">
+                <div class="player-art-placeholder" id="playerStatusIcon">🎵</div>
+                <div class="player-meta">
+                    <div class="player-title" id="playerTitle">未在播放</div>
+                    <div class="player-artist-row">
+                        <span class="player-artist" id="playerArtist">等待点播</span>
+                        <span class="player-source-tag" id="playerSourceTag" style="display: none;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 中部：播控与进度条 -->
+            <div class="player-center">
+                <div class="player-controls">
+                    <button class="player-btn" id="btnMode" onclick="handleCycleMode()" title="切换播放模式">🔁</button>
+                    <button class="player-btn" onclick="window.player?.prev()" title="上一首">⏮</button>
+                    <button class="player-btn player-btn-main" id="btnPlayPause" onclick="window.player?.togglePlay()" title="播放/暂停">▶</button>
+                    <button class="player-btn" onclick="window.player?.next()" title="下一首">⏭</button>
+                </div>
+
+                <div class="player-progress-container">
+                    <span class="player-time" id="playerCurTime">00:00</span>
+                    <div class="progress-bar-bg" id="progressBarBg" onclick="handleProgressBarClick(event)">
+                        <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+                    </div>
+                    <span class="player-time" id="playerTotalTime">00:00</span>
+                </div>
+            </div>
+
+            <!-- 右侧：队列与音量 -->
+            <div class="player-right">
+                <div class="volume-container">
+                    <span class="volume-icon" id="volumeIcon" onclick="toggleMute()">🔊</span>
+                    <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="handleVolumeChange(this.value)" />
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="toggleQueueModal()" id="btnQueueModal" title="查看当前播放队列">
+                    📑 队列 (<span id="queueCount">0</span>)
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="toggleSourceModal()" id="btnSourceModal" title="音源健康度与测速">
+                    ⚡ 音源
+                </button>
+            </div>
+        </footer>
+
+        <!-- 2. 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行) -->
+        <div class="lyric-dock" id="lyricDock" onclick="expandLyricDock(event)" title="点击展开 6 行完整歌词">
+            <div class="lyric-dock-header">
+                <span class="lyric-dock-indicator">♪ 歌词实时同步</span>
+                <button class="lyric-close-btn" id="lyricCloseBtn" onclick="collapseLyricDock(event)" title="收回为两行">✕</button>
+            </div>
+            <div class="lyric-lines-wrapper" id="lyricLinesWrapper">
+                <!-- 动态渲染当前与后续歌词 -->
+                <div class="lyric-line lyric-line-current" id="lyricCurrentLine">♪ YY-Amusic 纯文本音乐底座已就绪</div>
+                <div class="lyric-line lyric-line-next" id="lyricNextLine">点播任意歌曲，歌词毫秒级同步滚屏</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 弹窗：添加到自建歌单 -->
+    <div class="modal-overlay" id="addToPlaylistModal" onclick="closeModalOnOverlay(event, 'addToPlaylistModal')">
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3>➕ 添加到我的歌单</h3>
+                <button class="modal-close-btn" onclick="closeAddToPlaylistModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="add-to-song-info" id="addToSongInfo">歌曲名 - 歌手</div>
+                <div class="playlist-choice-list" id="playlistChoiceList">
+                    <!-- 动态自建歌单列表 -->
+                </div>
+                <div class="create-playlist-inline">
+                    <input type="text" id="newPlaylistInput" placeholder="输入新歌单名称..." onkeydown="handleNewPlaylistKeyDown(event)" />
+                    <button class="btn btn-sm btn-primary" onclick="confirmCreateAndAdd()">新建并加入</button>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="player-center">
-            <!-- 实时同步歌词行 -->
-            <div class="player-lyric-box" id="playerLyricBox">
-                <span class="player-lyric-text" id="playerLyricText">♪ Apple Music 纯文本数据库浏览器已就绪</span>
-            </div>
-
-            <div class="player-controls">
-                <button class="player-btn" id="btnMode" onclick="handleCycleMode()" title="切换播放模式">🔁</button>
-                <button class="player-btn" onclick="window.player?.prev()" title="上一首">⏮</button>
-                <button class="player-btn player-btn-main" id="btnPlayPause" onclick="window.player?.togglePlay()" title="播放/暂停">▶</button>
-                <button class="player-btn" onclick="window.player?.next()" title="下一首">⏭</button>
-            </div>
-
-            <div class="player-progress-container">
-                <span class="player-time" id="playerCurTime">00:00</span>
-                <div class="progress-bar-bg" id="progressBarBg" onclick="handleProgressBarClick(event)">
-                    <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
-                </div>
-                <span class="player-time" id="playerTotalTime">00:00</span>
-            </div>
-        </div>
-
-        <div class="player-right">
-            <!-- 音量调节 -->
-            <div class="volume-container">
-                <span class="volume-icon" id="volumeIcon" onclick="toggleMute()">🔊</span>
-                <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="handleVolumeChange(this.value)" />
-            </div>
-
-            <!-- 播放队列按钮 -->
-            <button class="btn btn-sm btn-secondary" onclick="toggleQueueModal()" id="btnQueueModal" title="查看当前播放队列">
-                📑 队列 (<span id="queueCount">0</span>)
-            </button>
-
-            <!-- 音源管理按钮 -->
-            <button class="btn btn-sm btn-secondary" onclick="toggleSourceModal()" id="btnSourceModal" title="音源健康度与测速">
-                ⚡ 音源
-            </button>
-        </div>
-    </footer>
-
-    <!-- 播放队列弹窗 Drawer -->
+    <!-- 弹窗：播放队列 Drawer -->
     <div class="modal-overlay" id="queueModal" onclick="closeModalOnOverlay(event, 'queueModal')">
         <div class="modal-content">
             <div class="modal-header">
@@ -162,7 +229,7 @@
         </div>
     </div>
 
-    <!-- 音源管理弹窗 Drawer -->
+    <!-- 弹窗：音源管理 Drawer -->
     <div class="modal-overlay" id="sourceModal" onclick="closeModalOnOverlay(event, 'sourceModal')">
         <div class="modal-content modal-sources">
             <div class="modal-header">
