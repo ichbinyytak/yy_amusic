@@ -158,19 +158,16 @@ window.Shell = (function () {
 
     function toggleMute() {
         if (!window.player) return;
-        const cur = window.player.getVolume();
-        if (cur > 0) {
-            prevVolume = cur * 100;
-            window.player.setVolume(0);
-            if (volumeSlider) volumeSlider.value = 0;
+        const isMutedNow = window.player.toggleMute();
+        if (isMutedNow) {
             updateVolumeIcon(0);
-            showToast("已静音");
+            if (volumeSlider) volumeSlider.value = 0;
+            showToast("已静音 🔇");
         } else {
-            const restored = (prevVolume || 80) / 100;
-            window.player.setVolume(restored);
-            if (volumeSlider) volumeSlider.value = prevVolume || 80;
-            updateVolumeIcon(restored);
-            showToast(`恢复音量: ${Math.round(restored * 100)}%`);
+            const v = (window.player.savedVolume !== undefined ? window.player.savedVolume : (window.player.audio.volume || 0.8));
+            updateVolumeIcon(v);
+            if (volumeSlider) volumeSlider.value = Math.round(v * 100);
+            showToast(`恢复音量: ${Math.round(v * 100)}% 🔊`);
         }
     }
 
@@ -300,20 +297,37 @@ window.Shell = (function () {
     function renderSourceList(list) {
         if (!sourcesListBody) return;
         if (!list || list.length === 0) {
-            sourcesListBody.innerHTML = '<div class="loading-state">暂无已加载音源脚本。</div>';
+            sourcesListBody.innerHTML = '<div class="loading-state">暂无已注册音源。</div>';
             return;
         }
+
+        // 优先展示就绪与可用音源
+        const sorted = [...list].sort((a, b) => {
+            const aOk = a.status === 'ok' ? 0 : (a.status === 'untested' ? 1 : 2);
+            const bOk = b.status === 'ok' ? 0 : (b.status === 'untested' ? 1 : 2);
+            return aOk - bOk;
+        });
+
         let html = '';
-        list.forEach(src => {
-            const isOk = src.status === 'ok';
+        sorted.forEach((s, idx) => {
+            const isOk = s.status === 'ok';
+            const isUntested = s.status === 'untested';
+            const statusClass = isOk ? 'source-status-ok' : (isUntested ? 'source-status-untested' : 'source-status-failed');
+            const statusLabel = isOk ? `● 就绪 (${s.latency_ms} ms)` : (isUntested ? '○ 待命备用' : '✕ 离线');
+
             html += `
                 <div class="source-card">
-                    <div>
-                        <strong>⚡ ${escapeHtml(src.name)}</strong>
-                        <div style="font-size: 9.5px; color: var(--text-muted);">${escapeHtml(src.file || '')}</div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 10px; width: 22px;">#${idx + 1}</span>
+                        <div>
+                            <div style="font-weight: 600; font-size: 11.5px; color: #fff;">⚡ ${escapeHtml(s.name)}</div>
+                            <div style="font-size: 9.5px; color: var(--text-muted);">
+                                平台: ${(s.platform || 'KW').toUpperCase()} • 命中: ${s.success_count || 0} 次 • 连败: ${s.consecutive_fails || 0}
+                            </div>
+                        </div>
                     </div>
-                    <span class="source-status-badge ${isOk ? 'source-status-ok' : 'source-status-failed'}">
-                        ${isOk ? '● 就绪' : '✕ 异常'}
+                    <span class="source-status-badge ${statusClass}">
+                        ${statusLabel}
                     </span>
                 </div>
             `;
@@ -325,9 +339,9 @@ window.Shell = (function () {
         const btn = document.getElementById("btnTestSources");
         if (btn) btn.innerText = "⏳ 测速中...";
         try {
-            const res = await fetch("/api/sources_test", { method: "POST" });
+            const res = await fetch("/api/sources/test", { method: "POST" });
             const data = await res.json();
-            loadSources();
+            renderSourceList(data);
             showToast("音源测速完成！");
         } catch (err) {
             showToast(`测速失败: ${err.message}`);
@@ -340,10 +354,10 @@ window.Shell = (function () {
         const btn = document.getElementById("btnSyncSources");
         if (btn) btn.innerText = "⏳ 同步中...";
         try {
-            const res = await fetch("/api/sources_sync", { method: "POST" });
+            const res = await fetch("/api/sources/sync", { method: "POST" });
             const data = await res.json();
-            loadSources();
-            showToast(`音源同步成功！当前生效: ${data.total_sources || 0} 个`);
+            renderSourceList(data);
+            showToast(`音源同步成功！当前生效: ${data.length || 0} 个`);
         } catch (err) {
             showToast(`同步失败: ${err.message}`);
         } finally {

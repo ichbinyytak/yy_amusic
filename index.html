@@ -147,8 +147,10 @@
                 <!-- 右侧：队列与音源 -->
                 <div class="player-right">
                     <div class="volume-container">
-                        <span class="volume-icon" id="volumeIcon" onclick="window.Shell.toggleMute()">🔊</span>
-                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="window.Shell.handleVolumeChange(this.value)" />
+                        <button type="button" class="volume-btn" id="volumeBtn" onclick="window.Shell.toggleMute()" title="静音 / 恢复音量" aria-label="静音切换">
+                            <span class="volume-icon" id="volumeIcon">🔊</span>
+                        </button>
+                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="window.Shell.handleVolumeChange(this.value)" title="调节音量" />
                     </div>
                     <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="window.Shell.toggleQueueModal()" id="btnQueueModal" title="播放队列">
                         📑 <span id="queueCount">0</span>
@@ -167,6 +169,9 @@
                 </div>
                 <span class="player-time" id="playerTotalTime">00:00</span>
             </div>
+
+            <!-- 原生音频播放元素 (支持移动端 Safari / Chrome 跨域行内播放) -->
+            <audio id="mainAudio" playsinline webkit-playsinline preload="auto"></audio>
         </footer>
 
         <!-- 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行) -->

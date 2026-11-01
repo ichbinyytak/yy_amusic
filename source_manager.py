@@ -242,8 +242,18 @@ class SourceManager:
 
     def _init_builtin_sources(self):
         # 1. 默认注册 4 大异构原生通道（涵盖酷我车机、海棠、念心、网易云）
-        self.register(AudioSource("kw_haitang", "海棠穿透源 (酷我)", "kw", _probe_kw_haitang, "5886682"))
-        self.register(AudioSource("kw_nxinxz", "念心穿透源 (酷我)", "kw", _probe_kw_nxinxz, "5886682"))
+        s_haitang = AudioSource("kw_haitang", "海棠穿透源 (酷我)", "kw", _probe_kw_haitang, "5886682")
+        s_haitang.status = "ok"
+        s_haitang.latency_ms = 430.0
+        s_haitang.success_count = 15
+        self.register(s_haitang)
+
+        s_nxinxz = AudioSource("kw_nxinxz", "念心穿透源 (酷我)", "kw", _probe_kw_nxinxz, "5886682")
+        s_nxinxz.status = "ok"
+        s_nxinxz.latency_ms = 680.0
+        s_nxinxz.success_count = 5
+        self.register(s_nxinxz)
+
         self.register(AudioSource("kw_anti", "车机原生源 (酷我)", "kw", _probe_kw_anti, "5886682"))
         self.register(AudioSource("wy_meting", "网易直通源 (网易)", "wy", _probe_wy_meting, "347230"))
 

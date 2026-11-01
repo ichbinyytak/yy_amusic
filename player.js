@@ -68,13 +68,18 @@
 
   class MusicPlayer {
     constructor() {
-      // 核心 HTML5 Audio 实例
-      this.audio = new Audio();
+      // 核心 HTML5 Audio 实例 (优先复用 DOM 上的 #mainAudio 以兼容移动端 Safari / Chrome 行内播放)
+      const domAudio = typeof document !== 'undefined' ? document.getElementById("mainAudio") : null;
+      this.audio = domAudio || new Audio();
       this.audio.preload = "auto";
+      this.unlocked = false;
+      this.savedVolume = 0.8;
+
       try {
         const savedVol = localStorage.getItem('amusic_volume');
         if (savedVol !== null) {
           this.audio.volume = Math.max(0, Math.min(1, parseFloat(savedVol)));
+          this.savedVolume = this.audio.volume;
         } else {
           this.audio.volume = 0.8;
         }
@@ -110,6 +115,20 @@
       this._bindAudioEvents();
     }
 
+    // 解锁移动端音频限制 (由用户手势触摸同步触发)
+    unlockAudio() {
+      if (this.unlocked || !this.audio) return;
+      try {
+        const p = this.audio.play();
+        if (p && p.then) {
+          p.then(() => {
+            this.audio.pause();
+            this.unlocked = true;
+          }).catch(() => {});
+        }
+      } catch (e) {}
+    }
+
     // 绑定底层音频事件
     _bindAudioEvents() {
       this.audio.addEventListener('play', () => {
@@ -142,7 +161,10 @@
       });
 
       this.audio.addEventListener('error', (e) => {
-        console.warn("音频播放异常:", e);
+        if (!this.audio.src || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
+        const code = this.audio.error ? this.audio.error.code : 0;
+        if (code === 1) return; // MEDIA_ERR_ABORTED
+        console.warn("音频播放异常, code:", code, e);
         this._emit('stateChange', { isPlaying: false, isResolving: false, error: "音频流加载异常" });
       });
     }
@@ -217,6 +239,7 @@
       if (idx < 0 || idx >= this.playlist.length) return;
       if (this.isResolving) return;
 
+      this.unlockAudio();
       this.currentIndex = idx;
       const song = this.playlist[idx];
       this.isResolving = true;
@@ -249,15 +272,29 @@
 
         if (data.success && data.url) {
           this.audio.src = data.url;
-          this.audio.play().catch(e => console.warn("自动出声受阻:", e));
-          this._emit('stateChange', {
-            isPlaying: true,
-            isResolving: false,
-            song,
-            sourceName: data.source_name,
-            costMs: cost,
-            bytes: data.bytes
-          });
+          const playPromise = this.audio.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              this._emit('stateChange', {
+                isPlaying: true,
+                isResolving: false,
+                song,
+                sourceName: data.source_name,
+                costMs: cost,
+                bytes: data.bytes
+              });
+            }).catch(e => {
+              console.warn("自动出声受限(等待用户点击播控):", e);
+              this._emit('stateChange', {
+                isPlaying: false,
+                isResolving: false,
+                song,
+                sourceName: data.source_name,
+                costMs: cost,
+                bytes: data.bytes
+              });
+            });
+          }
         } else {
           this._emit('stateChange', {
             isPlaying: false,
@@ -280,6 +317,7 @@
 
     // 播控方法
     togglePlay() {
+      this.unlockAudio();
       if (!this.audio.src) {
         if (this.playlist.length > 0) {
           this.playIndex(this.currentIndex >= 0 ? this.currentIndex : 0);
@@ -296,6 +334,7 @@
 
     next() {
       if (this.playlist.length === 0) return;
+      this.unlockAudio();
       if (this.playMode === 'shuffle') {
         const nextIdx = Math.floor(Math.random() * this.playlist.length);
         this.playIndex(nextIdx);
@@ -307,6 +346,7 @@
 
     prev() {
       if (this.playlist.length === 0) return;
+      this.unlockAudio();
       let prevIdx = this.currentIndex - 1;
       if (prevIdx < 0) prevIdx = this.playlist.length - 1;
       this.playIndex(prevIdx);
@@ -320,12 +360,29 @@
 
     setVolume(percent) {
       const v = Math.max(0, Math.min(1, percent));
-      this.audio.volume = v;
+      this.savedVolume = v;
+      try {
+        this.audio.volume = v;
+        this.audio.muted = (v === 0);
+      } catch (e) {}
       try { localStorage.setItem('amusic_volume', v.toString()); } catch (e) {}
     }
 
+    toggleMute() {
+      this.audio.muted = !this.audio.muted;
+      try {
+        if (this.audio.muted) {
+          this.savedVolume = this.audio.volume || 0.8;
+          this.audio.volume = 0;
+        } else {
+          this.audio.volume = this.savedVolume || 0.8;
+        }
+      } catch (e) {}
+      return this.audio.muted;
+    }
+
     getVolume() {
-      return this.audio.volume;
+      return this.audio.muted ? 0 : this.audio.volume;
     }
 
     // 播放外部传入的整套曲目列表 (如 Apple Music 当前歌单) 并立即从指定索引播放

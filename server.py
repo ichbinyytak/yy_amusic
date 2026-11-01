@@ -411,13 +411,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         body = self.rfile.read(length).decode('utf-8') if length > 0 else ""
 
         # 音源并发测速重排
-        if path == "/api/sources/test":
+        if path in ("/api/sources/test", "/api/sources_test"):
             data = source_hub.test_all()
             self.send_json(data)
             return
 
         # 同步 lx-hub 音源并测速
-        if path == "/api/sources/sync":
+        if path in ("/api/sources/sync", "/api/sources_sync"):
             source_hub.sync_from_lx_hub()
             data = source_hub.test_all()
             self.send_json(data)
