@@ -32,12 +32,12 @@ window.addEventListener("DOMContentLoaded", () => {
         if (query) {
             handleSearch();
         } else {
-            loadCharts();
+            loadNewPage();
         }
     });
 
-    // 默认加载官方榜单
-    loadCharts();
+    // 默认加载官方最新发布 (/new)
+    loadNewPage();
 });
 
 // 通用 Apple Music API 请求函数
@@ -395,7 +395,7 @@ async function selectCuratedCollection(title, curator, url, roomUrl, fallbackTra
 async function handleSearch() {
     const query = searchInput.value.trim();
     if (!query) {
-        loadCharts();
+        loadNewPage();
         clearBtn.style.display = "none";
         return;
     }
@@ -427,15 +427,10 @@ function handleSearchKeyDown(event) {
     }
 }
 
-function quickSearch(tag) {
-    searchInput.value = tag;
-    handleSearch();
-}
-
 function clearSearch() {
     searchInput.value = "";
     clearBtn.style.display = "none";
-    loadCharts();
+    loadNewPage();
 }
 
 // 渲染左侧歌单卡片列表
