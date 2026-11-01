@@ -225,7 +225,7 @@ function renderSearchCategories(categories) {
         card.innerHTML = `
             <div class="playlist-title-row">
                 <span class="playlist-name">
-                    <span style="color:#79c0ff; font-weight:normal; font-size:12px;">[专区]</span> 
+                    <span style="color:#79c0ff; font-weight:normal; font-size:11px;">[专区]</span> 
                     ${escapeHtml(cat.title)}
                 </span>
                 <span class="playlist-curator">Apple Music 官方</span>
@@ -381,7 +381,7 @@ function renderNewSections(sections, backToCategories = false) {
             card.innerHTML = `
                 <div class="playlist-title-row">
                     <span class="playlist-name">
-                        <span style="color:${tagColor}; font-weight:normal; font-size:12px;">${typeLabel}</span> 
+                        <span style="color:${tagColor}; font-weight:normal; font-size:11px;">${typeLabel}</span> 
                         ${escapeHtml(item.title)}
                     </span>
                     <span class="playlist-curator">${escapeHtml(item.curator || item.subtitle || 'Apple Music')}</span>
@@ -507,7 +507,7 @@ function renderPlaylistCards(items) {
         card.id = `card-${item.id}`;
         card.innerHTML = `
             <div class="playlist-title-row">
-                <span class="playlist-name"><span style="color:var(--accent); font-weight:normal; font-size:12px;">${typeLabel}</span> ${escapeHtml(name)}</span>
+                <span class="playlist-name"><span style="color:var(--accent); font-weight:normal; font-size:11px;">${typeLabel}</span> ${escapeHtml(name)}</span>
                 <span class="playlist-curator">${escapeHtml(curator)}</span>
             </div>
             <div class="playlist-desc">${escapeHtml(desc)}</div>
