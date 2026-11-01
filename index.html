@@ -138,47 +138,53 @@
     <div class="bottom-dock-container">
         <!-- 1. 播放器栏 (Player Bar) -->
         <footer class="player-bar" id="playerBar">
-            <!-- 左侧：封面动画与歌曲信息 -->
-            <div class="player-track-info">
-                <div class="player-art-placeholder" id="playerStatusIcon">🎵</div>
-                <div class="player-meta">
+            <div class="player-main-row">
+                <!-- 左侧：仅歌曲信息 (不要图标) -->
+                <div class="player-track-info">
                     <div class="player-title" id="playerTitle">未在播放</div>
                     <div class="player-artist-row">
                         <span class="player-artist" id="playerArtist">等待点播</span>
                     </div>
                 </div>
-            </div>
 
-            <!-- 中部：播控与进度条 -->
-            <div class="player-center">
+                <!-- 中部：简洁版播控按钮 -->
                 <div class="player-controls">
-                    <button class="player-btn" id="btnMode" onclick="handleCycleMode()" title="切换播放模式">🔁</button>
-                    <button class="player-btn" onclick="window.player?.prev()" title="上一首">⏮</button>
-                    <button class="player-btn player-btn-main" id="btnPlayPause" onclick="window.player?.togglePlay()" title="播放/暂停">▶</button>
-                    <button class="player-btn" onclick="window.player?.next()" title="下一首">⏭</button>
+                    <button class="player-btn" id="btnMode" onclick="handleCycleMode()" title="切换播放模式">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    </button>
+                    <button class="player-btn" onclick="window.player?.prev()" title="上一首">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                    </button>
+                    <button class="player-btn player-btn-main" id="btnPlayPause" onclick="window.player?.togglePlay()" title="播放/暂停">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button class="player-btn" onclick="window.player?.next()" title="下一首">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                    </button>
                 </div>
 
-                <div class="player-progress-container">
-                    <span class="player-time" id="playerCurTime">00:00</span>
-                    <div class="progress-bar-bg" id="progressBarBg" onclick="handleProgressBarClick(event)">
-                        <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+                <!-- 右侧：队列与音量 (无中文) -->
+                <div class="player-right">
+                    <div class="volume-container">
+                        <span class="volume-icon" id="volumeIcon" onclick="toggleMute()">🔊</span>
+                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="handleVolumeChange(this.value)" />
                     </div>
-                    <span class="player-time" id="playerTotalTime">00:00</span>
+                    <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="toggleQueueModal()" id="btnQueueModal" title="播放队列">
+                        📑 <span id="queueCount">0</span>
+                    </button>
+                    <button class="btn btn-sm btn-secondary btn-compact-icon" onclick="toggleSourceModal()" id="btnSourceModal" title="底层音源监控">
+                        ⚡
+                    </button>
                 </div>
             </div>
 
-            <!-- 右侧：队列与音量 -->
-            <div class="player-right">
-                <div class="volume-container">
-                    <span class="volume-icon" id="volumeIcon" onclick="toggleMute()">🔊</span>
-                    <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80" oninput="handleVolumeChange(this.value)" />
+            <!-- 底部：整条通栏播放进度条 (横跨歌曲信息到队列、音源下方) -->
+            <div class="player-progress-full">
+                <span class="player-time" id="playerCurTime">00:00</span>
+                <div class="progress-bar-bg" id="progressBarBg" onclick="handleProgressBarClick(event)">
+                    <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
                 </div>
-                <button class="btn btn-sm btn-secondary" onclick="toggleQueueModal()" id="btnQueueModal" title="查看当前播放队列">
-                    📑 队列 (<span id="queueCount">0</span>)
-                </button>
-                <button class="btn btn-sm btn-secondary" onclick="toggleSourceModal()" id="btnSourceModal" title="音源健康度与测速">
-                    ⚡ 音源
-                </button>
+                <span class="player-time" id="playerTotalTime">00:00</span>
             </div>
         </footer>
 

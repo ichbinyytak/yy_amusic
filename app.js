@@ -1357,7 +1357,6 @@ function escapeJsString(str) {
 // DOM 元素引用
 const playerTitle = document.getElementById("playerTitle");
 const playerArtist = document.getElementById("playerArtist");
-const playerStatusIcon = document.getElementById("playerStatusIcon");
 const btnPlayPause = document.getElementById("btnPlayPause");
 const btnMode = document.getElementById("btnMode");
 const playerCurTime = document.getElementById("playerCurTime");
@@ -1368,6 +1367,17 @@ const volumeIcon = document.getElementById("volumeIcon");
 const queueCountEl = document.getElementById("queueCount");
 const queueListBody = document.getElementById("queueListBody");
 const sourcesListBody = document.getElementById("sourcesListBody");
+
+// 模式 SVG 图标辅助
+function getModeSvg(mode) {
+    if (mode === 'single') {
+        return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="10" y="15" font-size="9" fill="currentColor" font-weight="bold">1</text></svg>`;
+    }
+    if (mode === 'shuffle') {
+        return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>`;
+    }
+    return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
+}
 
 // 独立歌词栏元素
 const lyricDock = document.getElementById("lyricDock");
@@ -1401,8 +1411,6 @@ window.player.on('trackChange', ({ index, song }) => {
     playerTitle.innerText = `${artist} - ${title}`;
     playerArtist.innerText = album ? `专辑: ${album}` : "Apple Music 精选曲目";
 
-    playerStatusIcon.innerText = "⏳";
-    playerStatusIcon.classList.remove("playing");
     renderQueueList();
 
     // 重新高亮当前查看歌单中的曲目
@@ -1412,18 +1420,9 @@ window.player.on('trackChange', ({ index, song }) => {
 });
 
 window.player.on('stateChange', ({ isPlaying, isResolving, song, sourceName, costMs, bytes, error }) => {
-    btnPlayPause.innerText = isPlaying ? "⏸" : "▶";
-
-    if (isResolving) {
-        playerStatusIcon.innerText = "⏳";
-        playerStatusIcon.classList.remove("playing");
-    } else if (isPlaying) {
-        playerStatusIcon.innerText = "🎵";
-        playerStatusIcon.classList.add("playing");
-    } else {
-        playerStatusIcon.innerText = "⏸";
-        playerStatusIcon.classList.remove("playing");
-    }
+    btnPlayPause.innerHTML = isPlaying
+        ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`
+        : `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
 
     if (error) {
         showToast(`播放受阻: ${error}`);
@@ -1513,7 +1512,7 @@ function handleCycleMode() {
     if (!window.player) return;
     const mode = window.player.cycleMode();
     const info = window.player.getModeLabel();
-    btnMode.innerText = info.icon;
+    btnMode.innerHTML = getModeSvg(mode);
     btnMode.title = `播放模式: ${info.label}`;
     showToast(`模式切换: ${info.label}`);
 }
