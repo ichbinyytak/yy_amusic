@@ -115,6 +115,115 @@ async function loadNewPage() {
     }
 }
 
+// 抓取并加载 music.apple.com/search 类别浏览全部分类专区
+async function loadSearchPage() {
+    listPanelTitle.innerText = "类别浏览与探索 (music.apple.com/search)";
+    playlistListEl.innerHTML = '<div class="loading-state">正在抓取 Apple 官方全部分类与专区列表 (/search)...</div>';
+    itemCountBadge.innerText = "...";
+    statusText.innerText = `正在抓取 music.apple.com/${currentStorefront}/search 纯文本分类数据...`;
+    const startTime = performance.now();
+
+    try {
+        const response = await fetch(`/api/apple_search_page?storefront=${currentStorefront}`);
+        const duration = Math.round(performance.now() - startTime);
+
+        if (!response.ok) {
+            throw new Error(`抓取异常: HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const categories = data?.categories || [];
+        statusText.innerText = `music.apple.com/search 抓取完成 (共 ${categories.length} 个官方分类专区，0 图片开销)`;
+        speedMetric.innerText = `⚡ ${duration} ms`;
+
+        renderSearchCategories(categories);
+    } catch (err) {
+        const duration = Math.round(performance.now() - startTime);
+        playlistListEl.innerHTML = `<div class="loading-state">❌ 抓取 /search 分类失败: ${err.message}</div>`;
+        itemCountBadge.innerText = "0";
+        statusText.innerText = `抓取失败: ${err.message}`;
+        speedMetric.innerText = `❌ ${duration} ms`;
+    }
+}
+
+// 渲染 /search 的 50 个分类专区
+function renderSearchCategories(categories) {
+    if (!categories || categories.length === 0) {
+        playlistListEl.innerHTML = '<div class="loading-state">未抓取到分类数据。</div>';
+        itemCountBadge.innerText = "0";
+        return;
+    }
+
+    itemCountBadge.innerText = `${categories.length} 个官方专区`;
+    playlistListEl.innerHTML = "";
+
+    const divHeader = document.createElement("div");
+    divHeader.className = "section-divider";
+    divHeader.innerHTML = `
+        <span>📂 Apple 官方 50 大音乐专区 (点击进入歌单池)</span>
+        <span class="section-count">${categories.length} 个</span>
+    `;
+    playlistListEl.appendChild(divHeader);
+
+    categories.forEach((cat) => {
+        const card = document.createElement("div");
+        card.className = "playlist-card";
+        card.innerHTML = `
+            <div class="playlist-title-row">
+                <span class="playlist-name">
+                    <span style="color:#79c0ff; font-weight:normal; font-size:12px;">[专区]</span> 
+                    ${escapeHtml(cat.title)}
+                </span>
+                <span class="playlist-curator">Apple Music 官方</span>
+            </div>
+            <div class="playlist-desc">点击立即查看【${escapeHtml(cat.title)}】专区收录的所有官方精选歌单与专辑</div>
+            <div class="playlist-meta-row">
+                <span>专区 ID: ${escapeHtml(cat.id)}</span>
+                <button class="btn-mini-action" onclick="event.stopPropagation(); copyUrl('${cat.url}')" title="复制专区官方直链">📋 复制链接</button>
+            </div>
+        `;
+
+        card.addEventListener("click", () => {
+            document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            openCategoryPlaylists(cat);
+        });
+
+        playlistListEl.appendChild(card);
+    });
+}
+
+// 点击某个分类专区（如“国语流行”或“摇滚”），加载该专区的全部官方歌单
+async function openCategoryPlaylists(cat) {
+    listPanelTitle.innerText = `【${cat.title}】专区歌单池`;
+    playlistListEl.innerHTML = `<div class="loading-state">正在拉取【${escapeHtml(cat.title)}】专区的官方歌单...</div>`;
+    itemCountBadge.innerText = "...";
+    statusText.innerText = `正在向 Apple 请求【${cat.title}】专区歌单...`;
+    const startTime = performance.now();
+
+    try {
+        let endpoint = `apple-curators/${cat.id}/playlists?limit=30`;
+        let data = null;
+        try {
+            data = await apiRequest(endpoint);
+        } catch (e) {
+            // 如果 curator 接口不可用，平滑回退到全库搜索该专区的歌单
+            endpoint = `search?types=playlists,albums&term=${encodeURIComponent(cat.title)}&limit=30`;
+            data = await apiRequest(endpoint);
+        }
+
+        const playlists = data?.data || data?.results?.playlists?.data || [];
+        const duration = Math.round(performance.now() - startTime);
+        statusText.innerText = `已载入【${cat.title}】专区 ${playlists.length} 个歌单`;
+        speedMetric.innerText = `⚡ ${duration} ms`;
+
+        renderPlaylistCards(playlists);
+    } catch (err) {
+        playlistListEl.innerHTML = `<div class="loading-state">❌ 加载【${escapeHtml(cat.title)}】歌单失败: ${err.message}</div>`;
+        itemCountBadge.innerText = "0";
+    }
+}
+
 // 渲染 /new 页面的多板块结构化列表 (全歌单/专辑模式，无散装单曲)
 function renderNewSections(sections) {
     if (!sections || sections.length === 0) {

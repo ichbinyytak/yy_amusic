@@ -26,9 +26,12 @@
                 <option value="jp">🇯🇵 日本 (JP)</option>
                 <option value="gb">🇬🇧 英国 (GB)</option>
             </select>
-            <!-- 最新发布 (/new) 与 榜单切换按钮 -->
+            <!-- 导航按钮组: 最新发布 (/new)、类别探索 (/search)、官方榜单 -->
             <button class="btn btn-secondary" onclick="loadNewPage()" id="btnNavNew" title="抓取并浏览 music.apple.com/new 官方最新推荐与新歌" style="border-color: rgba(250, 45, 72, 0.4); color: #ff7588;">
                 <span>✨ 最新发布 (/new)</span>
+            </button>
+            <button class="btn btn-secondary" onclick="loadSearchPage()" id="btnNavSearchPage" title="浏览 music.apple.com/search 官方全部分类与专区" style="border-color: rgba(88, 166, 255, 0.4); color: #79c0ff;">
+                <span>🏷️ 类别探索 (/search)</span>
             </button>
             <button class="btn btn-secondary" onclick="loadCharts()" id="btnNavCharts" title="浏览 Apple 官方热门榜单">
                 <span>📊 热门榜单</span>
@@ -49,12 +52,12 @@
         <div class="quick-tags" id="quickTags">
             <span class="tag-label">快捷检索：</span>
             <button class="tag" onclick="loadNewPage()" style="border-color: #fa2d48; color: #ff7588; font-weight: 600;">✨ 官方最新 (/new)</button>
+            <button class="tag" onclick="loadSearchPage()" style="border-color: #58a6ff; color: #79c0ff; font-weight: 600;">🏷️ 全部分类 (/search)</button>
             <button class="tag" onclick="quickSearch('国语流行')">国语流行</button>
             <button class="tag" onclick="quickSearch('经典摇滚')">经典摇滚</button>
             <button class="tag" onclick="quickSearch('今日热门')">今日热门</button>
             <button class="tag" onclick="quickSearch('欧美流行')">欧美流行</button>
             <button class="tag" onclick="quickSearch('周杰伦')">周杰伦</button>
-            <button class="tag" onclick="quickSearch('独立音乐')">独立音乐</button>
             <button class="tag" onclick="quickSearch('粤语经典')">粤语经典</button>
         </div>
     </div>
