@@ -308,7 +308,20 @@ window.Shell = (function () {
             return aOk - bOk;
         });
 
-        let html = '';
+        const okCount = list.filter(s => s.status === 'ok').length;
+        const untestedCount = list.filter(s => s.status === 'untested').length;
+        const failedCount = list.filter(s => s.status !== 'ok' && s.status !== 'untested').length;
+
+        let html = `
+            <div style="padding: 8px 12px; margin-bottom: 8px; background: rgba(255,255,255,0.04); border-radius: 6px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); border: 1px solid rgba(255,255,255,0.06);">
+                <span>共装载 <b style="color:#fff;">${list.length}</b> 个底层音源</span>
+                <span>
+                    <span style="color:#3fb950; font-weight:600;">● 就绪: ${okCount}</span> &nbsp;|&nbsp; 
+                    <span style="color:#58a6ff;">○ 待命: ${untestedCount}</span> &nbsp;|&nbsp; 
+                    <span style="color:#8b949e;">✕ 离线: ${failedCount}</span>
+                </span>
+            </div>
+        `;
         sorted.forEach((s, idx) => {
             const isOk = s.status === 'ok';
             const isUntested = s.status === 'untested';

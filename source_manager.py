@@ -22,6 +22,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 FAKE_AUDIO_LENGTHS = {81629, 181521}
 MIN_VALID_BYTES = 1500000  # 1.5MB（低于此大小判定为 30 秒试听截断残卷）
 
+# 标准测速基准曲目（按平台严格对齐歌曲ID与元数据，杜绝跨平台ID错配）
+TEST_TRACKS = {
+    "kw": {"id": "5886682", "songmid": "5886682", "title": "海阔天空", "artist": "Beyond"},
+    "wy": {"id": "347230", "songmid": "347230", "title": "海阔天空", "artist": "Beyond"},
+    "tx": {"id": "002WkUkN2L0dqm", "songmid": "002WkUkN2L0dqm", "title": "海阔天空", "artist": "Beyond"},
+    "kg": {"id": "95769", "songmid": "95769", "title": "海阔天空", "artist": "Beyond"},
+    "mg": {"id": "60054701923", "songmid": "60054701923", "title": "海阔天空", "artist": "Beyond"}
+}
+
 LX_HUB_URL = "https://ichbinyytak.github.io/lx-hub/data.json"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "sources_cache")
@@ -29,7 +38,7 @@ RUNNER_SCRIPT = os.path.join(BASE_DIR, "lx_runner.js")
 
 def _make_runner_probe(script_path: str, supported_platforms: list):
     """为每一个 LX 脚本源生成专属探测函数，支持传递完整歌名、歌手与目标平台"""
-    def _probe(song_info, target_platform: str = "kw", timeout: float = 2.2):
+    def _probe(song_info, target_platform: str = "kw", timeout: float = 3.5):
         if not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
             return None
         
@@ -62,12 +71,12 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
             json.dumps(payload_info)
         ]
         try:
-            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 0.6)
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 1.2)
             if p.returncode == 0 and p.stdout:
                 res = json.loads(p.stdout.strip())
                 if res.get("success") and res.get("url"):
                     target_url = res["url"]
-                    ok, sz, purl = verify_audio_url(target_url, timeout=1.8)
+                    ok, sz, purl = verify_audio_url(target_url, timeout=2.5)
                     if ok:
                         return {"url": purl, "bytes": sz, "source": f"LX_{os.path.basename(script_path)[:12]}"}
         except Exception:
@@ -190,27 +199,28 @@ class AudioSource:
         self.consecutive_fails = 0
 
     def test_health(self) -> dict:
-        """执行本地真实探活打测"""
+        """执行本地真实探活打测，严密对齐目标平台基准测试曲目（支持多平台智能降级与跨平台容灾）"""
         t0 = time.perf_counter()
-        try:
-            res = self.probe_func(self.test_track_id, self.platform, timeout=2.5)
-            ms = round((time.perf_counter() - t0) * 1000, 1)
-            if res and res.get('url'):
-                self.latency_ms = ms
-                self.status = "ok"
-                self.consecutive_fails = 0
-                return {"id": self.id, "name": self.name, "status": "ok", "latency_ms": ms}
-            else:
-                self.status = "failed"
-                self.latency_ms = 9999.0
-                self.consecutive_fails += 1
-                return {"id": self.id, "name": self.name, "status": "failed", "latency_ms": ms}
-        except Exception:
-            ms = round((time.perf_counter() - t0) * 1000, 1)
-            self.status = "failed"
-            self.latency_ms = 9999.0
-            self.consecutive_fails += 1
-            return {"id": self.id, "name": self.name, "status": "failed", "latency_ms": ms}
+        candidates = list(dict.fromkeys([self.platform] + self.platforms))
+        for plat in candidates:
+            track_info = TEST_TRACKS.get(plat, TEST_TRACKS["kw"])
+            try:
+                res = self.probe_func(track_info, plat, timeout=3.5)
+                ms = round((time.perf_counter() - t0) * 1000, 1)
+                if res and res.get('url'):
+                    self.platform = plat
+                    self.latency_ms = ms
+                    self.status = "ok"
+                    self.consecutive_fails = 0
+                    return {"id": self.id, "name": self.name, "status": "ok", "latency_ms": ms}
+            except Exception:
+                pass
+
+        ms = round((time.perf_counter() - t0) * 1000, 1)
+        self.status = "failed"
+        self.latency_ms = 9999.0
+        self.consecutive_fails += 1
+        return {"id": self.id, "name": self.name, "status": "failed", "latency_ms": ms}
 
     def record_hit(self):
         """成功取歌出声：实战奖励"""
@@ -259,6 +269,10 @@ class SourceManager:
 
         # 2. 直接从 https://ichbinyytak.github.io/lx-hub/data.json 拉取全量音源
         self.sync_from_lx_hub()
+
+        # 3. 后台异步静默测速预热：不阻塞主服务冷启动，数秒内自动点亮全量就绪音源
+        import threading
+        threading.Thread(target=self.test_all, daemon=True).start()
 
     def sync_from_lx_hub(self):
         """从用户维护的 lx-hub 动态同步并注册全部 32 个音源"""
@@ -309,7 +323,7 @@ class SourceManager:
         并发就地测试所有音源，按实测延迟与健康度重新排序
         """
         tasks = []
-        with ThreadPoolExecutor(max_workers=min(12, len(self.sources))) as executor:
+        with ThreadPoolExecutor(max_workers=min(8, len(self.sources))) as executor:
             for s in self.sources.values():
                 tasks.append(executor.submit(s.test_health))
             for f in as_completed(tasks):
