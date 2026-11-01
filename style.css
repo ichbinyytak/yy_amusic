@@ -500,8 +500,12 @@ body {
 .playlist-name {
     font-weight: 600;
     color: var(--text-primary);
-    font-size: 11.5px;
+    font-size: 11px;
     line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .playlist-curator {
@@ -704,16 +708,16 @@ body {
     color: var(--text-muted);
     font-weight: 500;
     text-align: left;
-    padding: 7px 12px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--border-color);
-    font-size: 11px;
+    font-size: 10.5px;
     position: sticky;
     top: 0;
     z-index: 2;
 }
 
 .track-table td {
-    padding: 7px 12px;
+    padding: 5px 8px;
     border-bottom: 1px solid var(--border-subtle);
     color: var(--text-secondary);
 }
@@ -724,33 +728,43 @@ body {
 }
 
 .track-index {
-    width: 36px;
+    width: 24px;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 10px;
+}
+
+.track-info-th {
+    width: auto;
+}
+
+.track-info-cell {
+    max-width: 0;
+    width: 100%;
 }
 
 .track-name {
     color: var(--text-primary);
-    font-weight: 500;
-    font-size: 12px;
+    font-weight: 600;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
 }
 
 .track-artist {
-    color: var(--text-secondary);
-    font-size: 11px;
-}
-
-.track-duration {
-    width: 55px;
-    text-align: right;
-    font-family: var(--font-mono);
-    font-size: 11px;
     color: var(--text-muted);
+    font-size: 9.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+    margin-top: 1px;
 }
 
 .track-action {
-    width: 72px;
+    width: 56px;
     text-align: right;
     white-space: nowrap;
 }
@@ -916,10 +930,24 @@ body {
 
     .list-sub-header {
         padding: 4px 6px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 4px !important;
     }
 
     .list-sub-header h2 {
         font-size: 11px !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+    }
+
+    .list-sub-header .count-badge {
+        font-size: 8.5px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 80px !important;
     }
 
     .playlist-card {
@@ -927,7 +955,12 @@ body {
     }
 
     .playlist-name {
-        font-size: 11px !important;
+        font-size: 10.5px !important;
+        display: -webkit-box !important;
+        -webkit-line-clamp: 2 !important;
+        -webkit-box-orient: vertical !important;
+        overflow: hidden !important;
+        line-height: 1.3 !important;
     }
 
     .playlist-curator {
@@ -944,19 +977,19 @@ body {
 
     /* 移动端右侧曲目表排版优化 */
     .detail-header {
-        padding: 6px 6px !important;
+        padding: 5px 6px !important;
     }
 
     .detail-title-group h2 {
-        font-size: 11.5px !important;
-        max-width: 120px !important;
+        font-size: 11px !important;
+        max-width: 110px !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         white-space: nowrap !important;
     }
 
     .detail-subtitle {
-        font-size: 9px !important;
+        font-size: 8.5px !important;
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
@@ -967,44 +1000,39 @@ body {
     }
 
     .btn-action-icon {
-        width: 26px !important;
-        height: 24px !important;
-        font-size: 11px !important;
+        width: 24px !important;
+        height: 22px !important;
+        font-size: 10.5px !important;
     }
 
     .track-table th, .track-table td {
-        padding: 5px 4px !important;
+        padding: 4px 4px !important;
     }
 
     .track-index {
-        width: 18px !important;
-        font-size: 9px !important;
+        width: 16px !important;
+        font-size: 8.5px !important;
     }
 
     .track-name {
         font-size: 10.5px !important;
+        line-height: 1.25 !important;
     }
 
     .track-artist {
-        font-size: 9px !important;
+        font-size: 8.5px !important;
+        line-height: 1.2 !important;
     }
 
-    .track-album {
-        display: none !important;
+    .track-action {
+        width: 46px !important;
     }
 
-    .track-duration {
-        display: none !important;
-    }
-
-    .track-actions-cell {
-        width: 48px !important;
-    }
-
-    .btn-track-action {
-        width: 22px !important;
-        height: 22px !important;
-        font-size: 10px !important;
+    .btn-play-song, .btn-add-to-pl, .btn-remove-song {
+        width: 20px !important;
+        height: 20px !important;
+        font-size: 9.5px !important;
+        padding: 0 !important;
     }
 
     /* 4. 移动端播放器底栏 */
@@ -1015,13 +1043,13 @@ body {
         z-index: 100 !important;
         display: flex !important;
         flex-direction: column !important;
-        padding-bottom: max(3px, env(safe-area-inset-bottom, 0px)) !important;
+        padding-bottom: max(12px, env(safe-area-inset-bottom, 12px)) !important;
         background-color: var(--bg-surface) !important;
         border-top: 1px solid var(--border-color) !important;
     }
 
     .player-bar {
-        min-height: 44px !important;
+        min-height: 42px !important;
         padding: 3px 6px 2px 6px !important;
         gap: 1px !important;
     }
@@ -1035,8 +1063,8 @@ body {
 
     .player-track-info {
         flex: 1 1 0% !important;
-        min-width: 0 !important;
-        max-width: 120px !important;
+        min-width: 85px !important;
+        max-width: 140px !important;
         overflow: hidden !important;
     }
 

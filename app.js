@@ -1250,7 +1250,7 @@ function handleNewPlaylistKeyDown(e) {
     }
 }
 
-// 渲染曲目表格 (包含 ▶ 播放、➕ 加入歌单、复制 与 移除)
+// 渲染曲目表格 (包含 ▶ 播放、➕ 加入歌单、复制 与 移除，紧凑合并歌名与歌手)
 function renderTracklist(tracks) {
     if (!tracks || tracks.length === 0) {
         detailBody.innerHTML = '<div class="loading-state">该歌单暂无曲目。</div>';
@@ -1264,9 +1264,7 @@ function renderTracklist(tracks) {
             <thead>
                 <tr>
                     <th class="track-index">#</th>
-                    <th>歌曲名称</th>
-                    <th>歌手</th>
-                    <th class="track-duration">时长</th>
+                    <th class="track-info-th">歌曲 / 歌手</th>
                     <th class="track-action">操作</th>
                 </tr>
             </thead>
@@ -1274,17 +1272,16 @@ function renderTracklist(tracks) {
     `;
 
     tracks.forEach((t, idx) => {
-        const durationStr = formatDuration(t.durationMillis);
-        const copyText = `${t.name} - ${t.artist}`;
         const isPlayingThis = curPlayingSong && (curPlayingSong.title === t.name || curPlayingSong.name === t.name) && (curPlayingSong.artist === t.artist);
         const rowClass = isPlayingThis ? 'track-row-playing' : '';
 
         html += `
             <tr class="${rowClass}" id="track-row-${idx}">
                 <td class="track-index">${isPlayingThis ? '🔊' : (t.index || idx + 1)}</td>
-                <td class="track-name">${escapeHtml(t.name)}</td>
-                <td class="track-artist">${escapeHtml(t.artist)}</td>
-                <td class="track-duration">${durationStr}</td>
+                <td class="track-info-cell">
+                    <div class="track-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
+                    <div class="track-artist" title="${escapeHtml(t.artist)}">${escapeHtml(t.artist)}</div>
+                </td>
                 <td class="track-action">
                     <button class="btn-play-song" onclick="playSong(${idx})" title="立即播放此歌曲">▶</button>
                     <button class="btn-add-to-pl" onclick="openAddToPlaylistModal(${idx})" title="加入我的自建歌单">➕</button>
