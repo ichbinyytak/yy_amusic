@@ -146,8 +146,13 @@ async function loadSearchPage() {
     }
 }
 
+let cachedCategories = [];
+
 // 渲染 /search 的 50 个分类专区
 function renderSearchCategories(categories) {
+    cachedCategories = categories || [];
+    listPanelTitle.innerText = "类别浏览与探索 (music.apple.com/search)";
+
     if (!categories || categories.length === 0) {
         playlistListEl.innerHTML = '<div class="loading-state">未抓取到分类数据。</div>';
         itemCountBadge.innerText = "0";
@@ -202,24 +207,63 @@ async function openCategoryPlaylists(cat) {
     const startTime = performance.now();
 
     try {
-        let endpoint = `apple-curators/${cat.id}/playlists?limit=30`;
-        let data = null;
+        let playlists = [];
+
+        // 1. 尝试通过 apple-curators 接口拉取 (Apple 严格限制 limit 最大为 10)
         try {
-            data = await apiRequest(endpoint);
+            const curData = await apiRequest(`apple-curators/${cat.id}/playlists?limit=10`);
+            if (curData?.data && curData.data.length > 0) {
+                playlists = curData.data;
+            }
         } catch (e) {
-            // 如果 curator 接口不可用，平滑回退到全库搜索该专区的歌单
-            endpoint = `search?types=playlists,albums&term=${encodeURIComponent(cat.title)}&limit=30`;
-            data = await apiRequest(endpoint);
+            console.log("Curator 接口未直接支持该专区 ID，准备执行全库搜索补充", e);
         }
 
-        const playlists = data?.data || data?.results?.playlists?.data || [];
+        // 2. 如果官方 curator 结果不足 5 个或无结果，补充全库专区搜索 (Apple 限制 search limit 最大为 25)
+        if (playlists.length < 5) {
+            try {
+                const searchData = await apiRequest(`search?types=playlists,albums&term=${encodeURIComponent(cat.title)}&limit=25`);
+                const pList = searchData?.results?.playlists?.data || [];
+                const aList = searchData?.results?.albums?.data || [];
+                const combined = [...pList, ...aList];
+
+                const existingIds = new Set(playlists.map(p => p.id));
+                combined.forEach(item => {
+                    if (!existingIds.has(item.id)) {
+                        playlists.push(item);
+                    }
+                });
+            } catch (errSearch) {
+                console.warn("补充专区搜索失败:", errSearch);
+            }
+        }
+
         const duration = Math.round(performance.now() - startTime);
-        statusText.innerText = `已载入【${cat.title}】专区 ${playlists.length} 个歌单`;
+        statusText.innerText = `已载入【${cat.title}】专区 ${playlists.length} 个歌单与专辑`;
         speedMetric.innerText = `⚡ ${duration} ms`;
 
         renderPlaylistCards(playlists);
+
+        // 在顶部加入“‹ 返回 50 大分类专区”导航栏
+        const divBack = document.createElement("div");
+        divBack.className = "section-divider";
+        divBack.style.cursor = "pointer";
+        divBack.style.color = "#79c0ff";
+        divBack.style.backgroundColor = "rgba(88, 166, 255, 0.12)";
+        divBack.innerHTML = `
+            <span>‹ 返回 50 大分类专区列表</span>
+            <span class="section-count">当前共 ${playlists.length} 个歌单/专辑</span>
+        `;
+        divBack.onclick = () => renderSearchCategories(cachedCategories);
+        playlistListEl.prepend(divBack);
+
     } catch (err) {
-        playlistListEl.innerHTML = `<div class="loading-state">❌ 加载【${escapeHtml(cat.title)}】歌单失败: ${err.message}</div>`;
+        playlistListEl.innerHTML = `
+            <div class="loading-state">
+                <p>❌ 加载【${escapeHtml(cat.title)}】歌单失败: ${err.message}</p>
+                <button class="btn btn-secondary" onclick="renderSearchCategories(cachedCategories)" style="margin-top:10px;">‹ 返回分类列表</button>
+            </div>
+        `;
         itemCountBadge.innerText = "0";
     }
 }
