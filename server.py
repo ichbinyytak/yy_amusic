@@ -14,9 +14,14 @@ import sys
 import json
 import time
 import re
+import threading
 import urllib.request
 import urllib.error
 import urllib.parse
+
+# 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
+from source_manager import source_hub
+from song_search import search_candidates, get_song_lyric
 
 PORT = 8088
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -362,24 +367,135 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e)
             return
 
+        # 6. 音频底层：音源健康度队列
+        if self.path == "/api/sources":
+            ordered = source_hub.get_ordered_sources()
+            data = [{
+                "id": s.id, "name": s.name, "platform": s.platform,
+                "status": s.status, "latency_ms": s.latency_ms,
+                "consecutive_fails": s.consecutive_fails,
+                "success_count": s.success_count
+            } for s in ordered]
+            self.send_json(data)
+            return
+
+        # 7. 音频底层：歌曲候选检索 (带 OpenCC 繁简转换与多维打分)
+        if self.path.startswith("/api/search_song"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            q = qs.get("q", [""])[0]
+            artist = qs.get("artist", [""])[0]
+            cands = search_candidates(q, artist)
+            self.send_json(cands)
+            return
+
+        # 8. 音频底层：歌词毫秒级时间轴直通提取
+        if self.path.startswith("/api/lyric"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            plat = qs.get("platform", ["kw"])[0]
+            sid = qs.get("id", [""])[0]
+            title = qs.get("title", [""])[0]
+            artist = qs.get("artist", [""])[0]
+            lines = get_song_lyric(plat, sid, title, artist)
+            self.send_json(lines)
+            return
+
         super().do_GET()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length).decode('utf-8') if length > 0 else ""
+
+        # 音源并发测速重排
+        if path == "/api/sources/test":
+            data = source_hub.test_all()
+            self.send_json(data)
+            return
+
+        # 同步 lx-hub 音源并测速
+        if path == "/api/sources/sync":
+            source_hub.sync_from_lx_hub()
+            data = source_hub.test_all()
+            self.send_json(data)
+            return
+
+        # 核心音频流双核并发解析：支持精准平台ID或 Apple Music 歌曲智能模糊匹配解析
+        if path == "/api/resolve":
+            cand = json.loads(body) if body else {}
+            title = (cand.get("title") or cand.get("name") or "").strip()
+            artist = (cand.get("artist") or "").strip()
+            album = cand.get("album", "")
+            duration = cand.get("duration")
+            if not duration and cand.get("durationMillis"):
+                duration = round(cand.get("durationMillis", 0) / 1000)
+
+            # 1. 如果已有确切的平台与歌曲 ID，优先直接调度
+            if cand.get("platform") and cand.get("id"):
+                res = source_hub.resolve_best_stream(cand)
+                if res and res.get("success"):
+                    self.send_json(res)
+                    return
+
+            # 2. 否则（如从 Apple Music 歌单点播的纯歌曲对象），自动启动候选搜索与全源双核冲刺
+            search_key = f"{title} {artist}".strip() if title else ""
+            if not search_key:
+                self.send_error_json("缺少有效歌名或候选信息", 400)
+                return
+
+            cands = search_candidates(search_key, target_artist=artist)
+            if not cands and artist:
+                # 备用方案：仅用标题再次尝试
+                cands = search_candidates(title, target_artist=artist)
+
+            last_err = "未找到候选歌曲"
+            for c in cands:
+                c["duration"] = c.get("duration") or duration
+                res = source_hub.resolve_best_stream(c)
+                if res and res.get("success"):
+                    res["matched_candidate"] = c
+                    res["target_title"] = title
+                    res["target_artist"] = artist
+                    self.send_json(res)
+                    return
+                elif res and res.get("error"):
+                    last_err = res["error"]
+
+            self.send_json({
+                "success": False,
+                "error": f"全源库冲刺完成，未能匹配到有效音频流: {last_err}",
+                "title": title,
+                "artist": artist
+            })
+            return
+
+        self.send_error(404, "Not Found")
 
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
     def log_message(self, format, *args):
         sys.stdout.write(f"[Amusic] {self.address_string()} - {format % args}\n")
 
+class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
 if __name__ == "__main__":
     os.chdir(DIRECTORY)
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
+    # 异步预热音源并发测速，零阻塞 HTTP 即时响应
+    threading.Thread(target=source_hub.test_all, daemon=True).start()
+
+    with ThreadingTCPServer(("0.0.0.0", PORT), Handler) as httpd:
         print(f"==================================================")
-        print(f"🍎 Amusic (Apple 音乐纯文本数据库浏览器) 已就绪！")
+        print(f"🍎 Amusic (Apple 音乐纯文本数据库浏览器 + 音频底座) 已就绪！")
         print(f"本地访问地址: http://127.0.0.1:{PORT}")
         print(f"局域网地址:   http://0.0.0.0:{PORT}")
         print(f"==================================================")

@@ -517,6 +517,8 @@ function renderTracklist(tracks) {
         return;
     }
 
+    const curPlayingSong = window.player && window.player.playlist[window.player.currentIndex];
+
     let html = `
         <table class="track-table">
             <thead>
@@ -531,16 +533,20 @@ function renderTracklist(tracks) {
             <tbody>
     `;
 
-    tracks.forEach((t) => {
+    tracks.forEach((t, idx) => {
         const durationStr = formatDuration(t.durationMillis);
         const copyText = `${t.name} - ${t.artist}`;
+        const isPlayingThis = curPlayingSong && (curPlayingSong.title === t.name || curPlayingSong.name === t.name) && (curPlayingSong.artist === t.artist);
+        const rowClass = isPlayingThis ? 'track-row-playing' : '';
+
         html += `
-            <tr>
-                <td class="track-index">${t.index}</td>
+            <tr class="${rowClass}" id="track-row-${idx}">
+                <td class="track-index">${isPlayingThis ? '🔊' : t.index}</td>
                 <td class="track-name">${escapeHtml(t.name)}</td>
                 <td class="track-artist">${escapeHtml(t.artist)}</td>
                 <td class="track-duration">${durationStr}</td>
                 <td class="track-action">
+                    <button class="btn-play-song" onclick="playSong(${idx})" title="立即播放此歌曲">▶ 播放</button>
                     <button class="btn-copy-song" onclick="copySongText('${escapeJsString(copyText)}')" title="复制歌名与歌手">复制</button>
                 </td>
             </tr>
@@ -553,6 +559,26 @@ function renderTracklist(tracks) {
     `;
 
     detailBody.innerHTML = html;
+}
+
+// 播放当前展示歌单内的全部曲目
+function playCurrentAll() {
+    if (!currentTracks || currentTracks.length === 0) {
+        showToast("当前歌单暂无可播放曲目");
+        return;
+    }
+    if (window.player) {
+        window.player.playTracklist(currentTracks, 0);
+        showToast(`已开始播放当前歌单全部 ${currentTracks.length} 首歌曲`);
+    }
+}
+
+// 点击单曲“播放”按钮
+function playSong(idx) {
+    if (!currentTracks || !currentTracks[idx]) return;
+    if (window.player) {
+        window.player.playTracklist(currentTracks, idx);
+    }
 }
 
 // 复制单个歌单官方直链
@@ -640,4 +666,287 @@ function escapeJsString(str) {
         .replace(/'/g, "\\'")
         .replace(/"/g, '\\"')
         .replace(/\n/g, "\\n");
+}
+
+/* ========================================================
+   音频播放控制器与 UI 联动引擎 (对接 music_underlying)
+   ======================================================== */
+
+// DOM 元素引用
+const playerTitle = document.getElementById("playerTitle");
+const playerArtist = document.getElementById("playerArtist");
+const playerSourceTag = document.getElementById("playerSourceTag");
+const playerStatusIcon = document.getElementById("playerStatusIcon");
+const playerLyricText = document.getElementById("playerLyricText");
+const btnPlayPause = document.getElementById("btnPlayPause");
+const btnMode = document.getElementById("btnMode");
+const playerCurTime = document.getElementById("playerCurTime");
+const playerTotalTime = document.getElementById("playerTotalTime");
+const progressBarFill = document.getElementById("progressBarFill");
+const volumeSlider = document.getElementById("volumeSlider");
+const volumeIcon = document.getElementById("volumeIcon");
+const queueCountEl = document.getElementById("queueCount");
+const queueListBody = document.getElementById("queueListBody");
+const sourcesListBody = document.getElementById("sourcesListBody");
+
+// 初始化全局 Player 实例
+window.player = new MusicPlayer();
+
+// 字节大小格式化
+function formatBytes(bytes) {
+    if (!bytes || isNaN(bytes)) return "";
+    if (bytes >= 1048576) {
+        return (bytes / 1048576).toFixed(1) + " MB";
+    }
+    return (bytes / 1024).toFixed(0) + " KB";
+}
+
+// 绑定播放器事件
+window.player.on('trackChange', ({ index, song }) => {
+    const title = song.title || song.name || "未知歌曲";
+    const artist = song.artist || "未知歌手";
+    playerTitle.innerText = title;
+    playerArtist.innerText = artist;
+    playerSourceTag.style.display = "inline-block";
+    playerSourceTag.innerText = "⚡ 双核音源冲刺中...";
+    playerStatusIcon.innerText = "⏳";
+    playerStatusIcon.classList.remove("playing");
+    renderQueueList();
+
+    // 重新高亮当前查看歌单中的曲目
+    if (currentTracks && currentTracks.length > 0) {
+        renderTracklist(currentTracks);
+    }
+});
+
+window.player.on('stateChange', ({ isPlaying, isResolving, song, sourceName, costMs, bytes, error }) => {
+    btnPlayPause.innerText = isPlaying ? "⏸" : "▶";
+
+    if (isResolving) {
+        playerStatusIcon.innerText = "⏳";
+        playerStatusIcon.classList.remove("playing");
+    } else if (isPlaying) {
+        playerStatusIcon.innerText = "🎵";
+        playerStatusIcon.classList.add("playing");
+    } else {
+        playerStatusIcon.innerText = "⏸";
+        playerStatusIcon.classList.remove("playing");
+    }
+
+    if (sourceName) {
+        const sz = bytes ? ` • ${formatBytes(bytes)}` : "";
+        const cost = costMs ? ` • ${costMs}ms` : "";
+        playerSourceTag.innerText = `${sourceName}${sz}${cost}`;
+        playerSourceTag.style.display = "inline-block";
+    }
+
+    if (error) {
+        playerSourceTag.innerText = `⚠️ ${error}`;
+        playerSourceTag.style.display = "inline-block";
+        showToast(`播放受阻: ${error}`);
+    }
+});
+
+window.player.on('timeUpdate', ({ currentTime, duration, percent, formattedCurrent, formattedDuration }) => {
+    playerCurTime.innerText = formattedCurrent;
+    playerTotalTime.innerText = formattedDuration;
+    progressBarFill.style.width = `${percent}%`;
+});
+
+window.player.on('lyricUpdate', ({ currentLine, nextLine }) => {
+    if (currentLine) {
+        playerLyricText.innerText = currentLine;
+    } else {
+        playerLyricText.innerText = "♪ ...";
+    }
+});
+
+window.player.on('playlistChange', ({ playlist }) => {
+    queueCountEl.innerText = playlist.length;
+    renderQueueList();
+});
+
+// 模式切换处理
+function handleCycleMode() {
+    if (!window.player) return;
+    const mode = window.player.cycleMode();
+    const info = window.player.getModeLabel();
+    btnMode.innerText = info.icon;
+    btnMode.title = `播放模式: ${info.label}`;
+    showToast(`模式切换: ${info.label}`);
+}
+
+// 进度条拖拽/点击
+function handleProgressBarClick(e) {
+    if (!window.player) return;
+    const bar = document.getElementById("progressBarBg");
+    const rect = bar.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    const pct = Math.max(0, Math.min(1, clickX / width));
+    window.player.seek(pct);
+}
+
+// 音量控制
+let lastNonZeroVolume = 0.8;
+function handleVolumeChange(val) {
+    const v = val / 100;
+    if (window.player) {
+        window.player.setVolume(v);
+    }
+    if (v > 0) lastNonZeroVolume = v;
+    updateVolumeIcon(v);
+}
+
+function toggleMute() {
+    if (!window.player) return;
+    const curVol = window.player.getVolume();
+    if (curVol > 0) {
+        lastNonZeroVolume = curVol;
+        window.player.setVolume(0);
+        volumeSlider.value = 0;
+        updateVolumeIcon(0);
+    } else {
+        const target = lastNonZeroVolume || 0.8;
+        window.player.setVolume(target);
+        volumeSlider.value = Math.round(target * 100);
+        updateVolumeIcon(target);
+    }
+}
+
+function updateVolumeIcon(v) {
+    if (v === 0) volumeIcon.innerText = "🔇";
+    else if (v < 0.5) volumeIcon.innerText = "🔉";
+    else volumeIcon.innerText = "🔊";
+}
+
+// 播放队列弹窗
+function toggleQueueModal() {
+    const modal = document.getElementById("queueModal");
+    const isOpen = modal.classList.toggle("open");
+    if (isOpen) {
+        renderQueueList();
+    }
+}
+
+function renderQueueList() {
+    if (!window.player) return;
+    const list = window.player.playlist || [];
+    const curIdx = window.player.currentIndex;
+
+    if (list.length === 0) {
+        queueListBody.innerHTML = '<div class="loading-state">当前播放队列为空</div>';
+        return;
+    }
+
+    let html = '';
+    list.forEach((item, idx) => {
+        const isActive = idx === curIdx;
+        const title = item.title || item.name || "未知歌曲";
+        const artist = item.artist || "未知歌手";
+        html += `
+            <div class="queue-item ${isActive ? 'active' : ''}" onclick="window.player.playIndex(${idx})">
+                <div>
+                    <span style="font-family: var(--font-mono); margin-right: 8px; opacity: 0.7;">${idx + 1}.</span>
+                    <strong>${escapeHtml(title)}</strong>
+                    <span style="opacity: 0.7; font-size: 12px; margin-left: 8px;">${escapeHtml(artist)}</span>
+                </div>
+                <span>${isActive ? '🔊 播放中' : ''}</span>
+            </div>
+        `;
+    });
+    queueListBody.innerHTML = html;
+}
+
+// 音源管理弹窗
+function toggleSourceModal() {
+    const modal = document.getElementById("sourceModal");
+    const isOpen = modal.classList.toggle("open");
+    if (isOpen) {
+        loadSources();
+    }
+}
+
+async function loadSources() {
+    sourcesListBody.innerHTML = '<div class="loading-state">正在获取底层音源队列...</div>';
+    try {
+        const res = await fetch("/api/sources");
+        const list = await res.json();
+        renderSourceList(list);
+    } catch (err) {
+        sourcesListBody.innerHTML = `<div class="loading-state">❌ 获取音源失败: ${err.message}</div>`;
+    }
+}
+
+async function testSources() {
+    const btn = document.getElementById("btnTestSources");
+    btn.disabled = true;
+    btn.innerText = "⏳ 测速中...";
+    sourcesListBody.innerHTML = '<div class="loading-state">⚡ 正在并发就地测速所有 36+ 音源并重排队列...</div>';
+    try {
+        const res = await fetch("/api/sources/test", { method: "POST" });
+        const list = await res.json();
+        renderSourceList(list);
+        showToast("音源测速完成，已按健康度重新排序！");
+    } catch (err) {
+        sourcesListBody.innerHTML = `<div class="loading-state">❌ 测速失败: ${err.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "⚡ 测速重排";
+    }
+}
+
+async function syncSources() {
+    const btn = document.getElementById("btnSyncSources");
+    btn.disabled = true;
+    btn.innerText = "⏳ 同步中...";
+    sourcesListBody.innerHTML = '<div class="loading-state">🔄 正在从 lx-hub 同步最新源并测速...</div>';
+    try {
+        const res = await fetch("/api/sources/sync", { method: "POST" });
+        const list = await res.json();
+        renderSourceList(list);
+        showToast("已成功从 lx-hub 同步并重新排班！");
+    } catch (err) {
+        sourcesListBody.innerHTML = `<div class="loading-state">❌ 同步失败: ${err.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerText = "🔄 同步源库";
+    }
+}
+
+function renderSourceList(list) {
+    if (!list || list.length === 0) {
+        sourcesListBody.innerHTML = '<div class="loading-state">暂无已注册音源</div>';
+        return;
+    }
+
+    let html = '';
+    list.forEach((s, idx) => {
+        const isOk = s.status === "ok";
+        const statusClass = isOk ? "source-status-ok" : "source-status-failed";
+        const latencyText = isOk ? `${s.latency_ms} ms` : "离线/超时";
+        html += `
+            <div class="source-card">
+                <div class="source-card-info">
+                    <span style="font-family: var(--font-mono); color: var(--text-muted); width: 24px;">#${idx + 1}</span>
+                    <div>
+                        <div style="font-weight: 600; font-size: 13px;">${escapeHtml(s.name)}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">
+                            平台: ${s.platform.toUpperCase()} • 命中: ${s.success_count || 0} 次 • 连败: ${s.consecutive_fails || 0}
+                        </div>
+                    </div>
+                </div>
+                <div class="source-status-badge ${statusClass}">
+                    ● ${isOk ? '可用' : '不可用'} (${latencyText})
+                </div>
+            </div>
+        `;
+    });
+    sourcesListBody.innerHTML = html;
+}
+
+function closeModalOnOverlay(e, modalId) {
+    if (e.target.id === modalId) {
+        document.getElementById(modalId).classList.remove("open");
+    }
 }
