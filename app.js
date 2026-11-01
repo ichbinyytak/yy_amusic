@@ -68,24 +68,15 @@ async function apiRequest(endpoint) {
     }
 }
 
-// 加载官方榜单歌单
-async function loadCharts() {
-    listPanelTitle.innerText = "官方精选 & 热门歌单";
-    playlistListEl.innerHTML = '<div class="loading-state">正在拉取 Apple 官方榜单数据...</div>';
-    itemCountBadge.innerText = "...";
-
-    try {
-        const data = await apiRequest("charts?types=playlists&limit=25");
-        const playlists = data?.results?.playlists?.[0]?.data || [];
-        renderPlaylistCards(playlists);
-    } catch (err) {
-        playlistListEl.innerHTML = `<div class="loading-state">❌ 获取榜单失败: ${err.message}</div>`;
-        itemCountBadge.innerText = "0";
-    }
+// 导航高亮状态切换
+function setActiveNav(navId) {
+    document.getElementById("btnNavNew")?.classList.toggle("btn-nav-active", navId === "btnNavNew");
+    document.getElementById("btnNavSearchPage")?.classList.toggle("btn-nav-active", navId === "btnNavSearchPage");
 }
 
 // 抓取并加载 music.apple.com/new 页面全量板块
 async function loadNewPage() {
+    setActiveNav("btnNavNew");
     listPanelTitle.innerText = "Apple 官方最新发布 (/new)";
     playlistListEl.innerHTML = '<div class="loading-state">正在深度抓取 Apple 官方最新发布板块 (/new)...</div>';
     itemCountBadge.innerText = "...";
@@ -117,6 +108,7 @@ async function loadNewPage() {
 
 // 抓取并加载 music.apple.com/search 类别浏览全部分类专区
 async function loadSearchPage() {
+    setActiveNav("btnNavSearchPage");
     listPanelTitle.innerText = "类别浏览与探索 (music.apple.com/search)";
     playlistListEl.innerHTML = '<div class="loading-state">正在抓取 Apple 官方全部分类与专区列表 (/search)...</div>';
     itemCountBadge.innerText = "...";
@@ -400,6 +392,7 @@ async function handleSearch() {
         return;
     }
 
+    setActiveNav("");
     clearBtn.style.display = "inline-block";
     listPanelTitle.innerText = `搜索结果: "${query}"`;
     playlistListEl.innerHTML = `<div class="loading-state">正在检索数据库中包含 "${escapeHtml(query)}" 的歌单与专辑...</div>`;
