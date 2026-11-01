@@ -113,7 +113,7 @@ body {
 }
 
 .search-bar-compact input {
-    width: 280px;
+    width: 260px;
     background-color: var(--bg-main);
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -125,165 +125,199 @@ body {
 }
 
 .search-bar-compact input:focus {
-    width: 340px;
+    width: 320px;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }
 
+.btn-search-icon {
+    padding: 4px 8px !important;
+    font-size: 13px !important;
+}
+
 /* ========================================================
-   左侧抽屉导航栏 (平时隐藏，点击 ☰ 呼出)
+   左侧常驻导航控制顶区 (根据手绘图：Apple区域 + 3大Tab)
    ======================================================== */
-.sidebar-overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(2px);
-    z-index: 500;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-}
-
-.sidebar-overlay.open {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.sidebar-drawer {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 270px;
+.list-nav-header {
+    padding: 10px 12px 10px 12px;
     background-color: var(--bg-surface);
-    border-right: 1px solid var(--border-color);
-    z-index: 510;
-    transform: translateX(-100%);
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     flex-direction: column;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    gap: 8px;
+    flex-shrink: 0;
 }
 
-.sidebar-drawer.open {
-    transform: translateX(0);
-}
-
-.sidebar-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-subtle);
+.storefront-group {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
 }
 
-.sidebar-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #fff;
-}
-
-.sidebar-close-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 15px;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.sidebar-close-btn:hover {
-    color: #fff;
-    background-color: var(--bg-surface-hover);
-}
-
-.sidebar-body {
-    padding: 12px 14px;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.sidebar-section {
-    margin-bottom: 20px;
-}
-
-.sidebar-label {
-    font-size: 10px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 600;
-    margin-bottom: 7px;
-    display: block;
-}
-
-.sidebar-label-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 7px;
-}
-
-.btn-create-tiny {
-    background: rgba(250, 45, 72, 0.15);
-    border: 1px solid rgba(250, 45, 72, 0.35);
-    color: #ff7588;
-    border-radius: 4px;
-    font-size: 10.5px;
-    padding: 1px 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.btn-create-tiny:hover {
-    background: rgba(250, 45, 72, 0.3);
-    color: #fff;
-}
-
-.sidebar-nav-item {
-    padding: 7px 10px;
-    border-radius: 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
+.storefront-label {
+    font-size: 11px;
     color: var(--text-secondary);
-    font-size: 12px;
-    transition: all 0.15s ease;
-    margin-bottom: 4px;
-    user-select: none;
-}
-
-.sidebar-nav-item:hover {
-    background-color: var(--bg-surface-hover);
-    color: var(--text-primary);
-}
-
-.sidebar-nav-item.active {
-    background-color: rgba(250, 45, 72, 0.12);
-    color: #ff7588;
     font-weight: 600;
-}
-
-.sidebar-badge {
-    background-color: rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-family: var(--font-mono);
+    white-space: nowrap;
 }
 
 .storefront-select {
-    width: 100%;
+    flex: 1;
     background-color: var(--bg-main);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 12px;
+    padding: 4px 8px;
+    font-size: 11.5px;
     outline: none;
     cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.storefront-select:focus {
+    border-color: var(--accent);
+}
+
+.main-tabs-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+}
+
+.main-tab-btn {
+    background-color: var(--bg-main);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 7px 4px;
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.main-tab-btn:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.main-tab-btn.active {
+    background-color: rgba(250, 45, 72, 0.12);
+    color: #ff7588;
+    border-color: rgba(250, 45, 72, 0.45);
+    font-weight: 600;
+}
+
+.list-nav-divider {
+    height: 1px;
+    background-color: var(--border-color);
+    flex-shrink: 0;
+}
+
+.list-sub-header {
+    padding: 7px 12px;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+/* 方案A：音乐库/分类胶囊栏 */
+.category-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background-color: var(--bg-main);
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    flex-shrink: 0;
+}
+
+.category-filter-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.cat-pill {
+    padding: 2px 8px;
+    font-size: 10.5px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+}
+
+.cat-pill:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.cat-pill.active {
+    background: rgba(88, 166, 255, 0.15);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.btn-add-playlist-pill {
+    background: rgba(250, 45, 72, 0.15);
+    border: 1px solid rgba(250, 45, 72, 0.4);
+    color: #ff7588;
+    font-weight: 600;
+    margin-left: auto;
+    cursor: pointer;
+    padding: 2px 8px;
+    font-size: 10.5px;
+    border-radius: 12px;
+    flex-shrink: 0;
+}
+
+.btn-add-playlist-pill:hover {
+    background: rgba(250, 45, 72, 0.3);
+    color: #fff;
+}
+
+.btn-card-del {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    opacity: 0.65;
+    padding: 0 4px;
+    transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.btn-card-del:hover {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+.cat-badge {
+    background: rgba(88, 166, 255, 0.12);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9.5px;
+    cursor: pointer;
+}
+
+.cat-badge:hover {
+    background: rgba(88, 166, 255, 0.25);
+}
+
+/* 兼容保留抽屉与遮罩的无害占位 */
+.sidebar-overlay, .sidebar-drawer {
+    display: none;
 }
 
 /* 状态条 */

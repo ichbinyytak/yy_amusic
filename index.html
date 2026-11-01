@@ -8,17 +8,13 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- 顶部极简导航栏 (品牌 + 右侧紧凑搜索) -->
+    <!-- 顶部极简导航栏 (品牌 YY-Amusic + 右侧紧凑搜索) -->
     <header class="app-header">
         <div class="brand-group">
-            <button class="btn-sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggleBtn" title="打开/收起左侧导航分类">
-                ☰
-            </button>
             <div class="brand">
                 <span class="logo-badge">🍎</span>
                 <div class="brand-text">
                     <h1>YY-Amusic</h1>
-                    <span class="sub">Apple Music 纯文本底座</span>
                 </div>
             </div>
         </div>
@@ -26,64 +22,13 @@
         <div class="header-right">
             <div class="search-bar-compact">
                 <input type="text" id="searchInput" placeholder="搜索 Apple 歌单、专辑、歌手、风格..." onkeydown="handleSearchKeyDown(event)" />
-                <button class="btn btn-sm btn-primary" onclick="handleSearch()" id="searchBtn">
-                    <span>🔍 检索</span>
+                <button class="btn btn-sm btn-primary btn-search-icon" onclick="handleSearch()" id="searchBtn" title="搜索 Apple 音乐库">
+                    <span>🔍</span>
                 </button>
-                <button class="btn btn-sm btn-ghost" onclick="clearSearch()" id="clearBtn" style="display: none;">清空</button>
+                <button class="btn btn-sm btn-ghost" onclick="clearSearch()" id="clearBtn" style="display: none;" title="清空搜索">✕</button>
             </div>
         </div>
     </header>
-
-    <!-- 左侧抽屉导航栏 (平时隐藏，点击 ☰ 呼出) -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
-    <aside class="sidebar-drawer" id="sidebarDrawer">
-        <div class="sidebar-header">
-            <div class="sidebar-title">🧭 导航与歌单</div>
-            <button class="sidebar-close-btn" onclick="closeSidebar()" title="收起导航">✕</button>
-        </div>
-
-        <div class="sidebar-body">
-            <!-- 地区选择 -->
-            <div class="sidebar-section">
-                <label class="sidebar-label">Apple Music 地区</label>
-                <select id="storefrontSelect" class="storefront-select" title="选择 Apple Music 地区">
-                    <option value="cn" selected>🇨🇳 中国大陆 (CN)</option>
-                    <option value="hk">🇭🇰 中国香港 (HK)</option>
-                    <option value="tw">🇹🇼 中国台湾 (TW)</option>
-                    <option value="us">🇺🇸 美国 (US)</option>
-                    <option value="jp">🇯🇵 日本 (JP)</option>
-                    <option value="gb">🇬🇧 英国 (GB)</option>
-                </select>
-            </div>
-
-            <!-- 主导航 -->
-            <div class="sidebar-section">
-                <label class="sidebar-label">探索板块</label>
-                <div class="sidebar-nav-item active" id="btnNavNew" onclick="loadNewPage(); closeSidebar();">
-                    <span>✨ 最新发布 (/new)</span>
-                </div>
-                <div class="sidebar-nav-item" id="btnNavSearchPage" onclick="loadSearchPage(); closeSidebar();">
-                    <span>🏷️ 类别探索 (/search)</span>
-                </div>
-            </div>
-
-            <!-- 我的收藏与自建 -->
-            <div class="sidebar-section">
-                <div class="sidebar-label-row">
-                    <span class="sidebar-label">我的音乐库</span>
-                    <button class="btn-create-tiny" onclick="promptCreateCustomPlaylist()" title="新建自建歌单">➕ 新建</button>
-                </div>
-                <div class="sidebar-nav-item" id="btnNavFav" onclick="loadFavPlaylists(); closeSidebar();">
-                    <span>⭐ 收藏的歌单</span>
-                    <span class="sidebar-badge" id="favCountBadge">0</span>
-                </div>
-                <div class="sidebar-nav-item" id="btnNavCustom" onclick="loadCustomPlaylists(); closeSidebar();">
-                    <span>🎵 我的自建歌单</span>
-                    <span class="sidebar-badge" id="customCountBadge">0</span>
-                </div>
-            </div>
-        </div>
-    </aside>
 
     <!-- 状态指示条 -->
     <div class="status-bar" id="statusBar">
@@ -93,14 +38,42 @@
 
     <!-- 主展示区：两栏布局 (歌单列表 + 曲目明细，手机端单栏平滑联动切换) -->
     <main class="main-layout" id="mainLayout">
-        <!-- 中间栏：歌单/专辑/分类列表 -->
+        <!-- 左侧栏：常驻顶区 (Apple区域 + 3大Tab) + 歌单/专辑/分类列表 (根据手绘草图) -->
         <section class="panel list-panel" id="listPanel">
-            <div class="panel-header">
-                <h2 id="listPanelTitle">官方热门歌单</h2>
+            <!-- 顶区：Apple 区域选择 + 3大核心横排 Tab 卡片 -->
+            <div class="list-nav-header">
+                <div class="storefront-group">
+                    <label class="storefront-label" for="storefrontSelect">Apple 区域</label>
+                    <select id="storefrontSelect" class="storefront-select" title="选择 Apple Music 地区">
+                        <option value="cn" selected>🇨🇳 中国大陆 (CN)</option>
+                        <option value="hk">🇭🇰 中国香港 (HK)</option>
+                        <option value="tw">🇹🇼 中国台湾 (TW)</option>
+                        <option value="us">🇺🇸 美国 (US)</option>
+                        <option value="jp">🇯🇵 日本 (JP)</option>
+                        <option value="gb">🇬🇧 英国 (GB)</option>
+                    </select>
+                </div>
+
+                <div class="main-tabs-row">
+                    <button class="main-tab-btn active" id="btnTabNew" onclick="switchMainTab('new')">最新发布</button>
+                    <button class="main-tab-btn" id="btnTabCategories" onclick="switchMainTab('categories')">类别探索</button>
+                    <button class="main-tab-btn" id="btnTabLibrary" onclick="switchMainTab('library')">我的音乐库</button>
+                </div>
+            </div>
+
+            <!-- 水平分割线 -->
+            <div class="list-nav-divider"></div>
+
+            <!-- 列表栏小标题与数量统计 -->
+            <div class="panel-header list-sub-header">
+                <h2 id="listPanelTitle">最新发布</h2>
                 <span class="count-badge" id="itemCountBadge">0</span>
             </div>
-            <!-- 歌单分类筛选栏 (仅在收藏/自建歌单时动态激活) -->
+
+            <!-- 方案A：音乐库/分类胶囊筛选栏 (在“我的音乐库”时展示，包含 全部 | 收藏 | 自建 | 分类 胶囊 + ➕新建) -->
             <div class="category-filter-bar" id="categoryFilterBar" style="display: none;"></div>
+
+            <!-- 列表主体容器 -->
             <div class="panel-body" id="playlistList">
                 <div class="loading-state">加载中...</div>
             </div>

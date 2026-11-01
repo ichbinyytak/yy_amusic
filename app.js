@@ -60,6 +60,10 @@ function closeAllDrawers() {
     document.getElementById("drawerBackdrop")?.classList.remove("open");
 }
 
+// 核心三 Tab 状态: 'new' | 'categories' | 'library'
+let currentMainTab = "new";
+let currentLibraryFilter = "全部";
+
 // 初始化
 window.addEventListener("DOMContentLoaded", () => {
     storefrontSelect.addEventListener("change", (e) => {
@@ -74,8 +78,34 @@ window.addEventListener("DOMContentLoaded", () => {
 
     updateBadgeCounts();
 
-    // 默认加载官方最新发布 (/new)
+    // 默认左侧列表加载最新发布 (/new)
     loadNewPage();
+
+    // 检查并恢复上一次记忆的歌单
+    const lastPlRaw = localStorage.getItem("amusic_last_playlist");
+    let hasRestored = false;
+    if (lastPlRaw) {
+        try {
+            const lastPl = JSON.parse(lastPlRaw);
+            if (lastPl.kind === 'custom' && lastPl.id) {
+                const customs = getCustomPlaylists();
+                if (customs.some(c => c.id === lastPl.id)) {
+                    selectCustomPlaylist(lastPl.id);
+                    hasRestored = true;
+                }
+            } else if (lastPl.id && lastPl.type) {
+                selectPlaylist(lastPl.id, lastPl.type, lastPl.name, lastPl.curator, lastPl.url);
+                hasRestored = true;
+            }
+        } catch (e) {
+            console.warn("恢复上一次歌单失败", e);
+        }
+    }
+
+    if (!hasRestored) {
+        // 首次打开无歌单，确保移动端显示左侧视图
+        mobileBackToList();
+    }
 });
 
 // ========================================================
@@ -222,21 +252,49 @@ async function apiRequest(endpoint, etag = '') {
     }
 }
 
-// 抽屉导航控制
 // ========================================================
-function toggleSidebar() {
-    sidebarDrawer.classList.toggle("open");
-    sidebarOverlay.classList.toggle("open");
-}
+// 核心三 Tab 切换导航机制 (最新发布 | 类别探索 | 我的音乐库)
+// ========================================================
+function switchMainTab(tab) {
+    currentMainTab = tab;
+    document.querySelectorAll(".main-tab-btn").forEach(btn => btn.classList.remove("active"));
+    const activeBtn = document.getElementById(
+        tab === 'new' ? 'btnTabNew' : 
+        tab === 'categories' ? 'btnTabCategories' : 'btnTabLibrary'
+    );
+    if (activeBtn) activeBtn.classList.add("active");
 
-function closeSidebar() {
-    sidebarDrawer.classList.remove("open");
-    sidebarOverlay.classList.remove("open");
+    if (tab === 'new') {
+        loadNewPage();
+    } else if (tab === 'categories') {
+        loadSearchPage();
+    } else if (tab === 'library') {
+        loadLibraryPage();
+    }
 }
 
 function setActiveNav(navId) {
-    document.querySelectorAll(".sidebar-nav-item").forEach(el => el.classList.remove("active"));
-    document.getElementById(navId)?.classList.add("active");
+    document.querySelectorAll(".main-tab-btn").forEach(el => el.classList.remove("active"));
+    if (navId === 'btnNavNew' || navId === 'new') {
+        currentMainTab = 'new';
+        document.getElementById("btnTabNew")?.classList.add("active");
+    } else if (navId === 'btnNavSearchPage' || navId === 'categories') {
+        currentMainTab = 'categories';
+        document.getElementById("btnTabCategories")?.classList.add("active");
+    } else if (navId === 'btnNavFav' || navId === 'btnNavCustom' || navId === 'library') {
+        currentMainTab = 'library';
+        document.getElementById("btnTabLibrary")?.classList.add("active");
+    }
+}
+
+function toggleSidebar() {
+    sidebarDrawer?.classList.toggle("open");
+    sidebarOverlay?.classList.toggle("open");
+}
+
+function closeSidebar() {
+    sidebarDrawer?.classList.remove("open");
+    sidebarOverlay?.classList.remove("open");
 }
 
 // ========================================================
@@ -278,7 +336,7 @@ async function loadNewPage() {
     setActiveNav("btnNavNew");
     if (categoryFilterBar) categoryFilterBar.style.display = "none";
     mobileBackToList();
-    listPanelTitle.innerText = "Apple 官方最新发布 (/new)";
+    listPanelTitle.innerText = "最新发布";
 
     const cacheKey = `new_page_${currentStorefront}`;
 
@@ -315,7 +373,7 @@ async function loadSearchPage() {
     setActiveNav("btnNavSearchPage");
     if (categoryFilterBar) categoryFilterBar.style.display = "none";
     mobileBackToList();
-    listPanelTitle.innerText = "类别浏览与探索 (music.apple.com/search)";
+    listPanelTitle.innerText = "类别探索";
 
     const cacheKey = `search_categories_${currentStorefront}`;
 
@@ -706,6 +764,18 @@ async function selectPlaylist(id, type, name, curator, url) {
     currentPlaylistData = { id, type, name, curator, url };
     currentTracks = [];
 
+    // 记忆上一次选中的歌单
+    try {
+        localStorage.setItem("amusic_last_playlist", JSON.stringify({
+            kind: 'apple',
+            id,
+            type,
+            name,
+            curator,
+            url
+        }));
+    } catch (e) {}
+
     mobileShowDetail();
 
     detailTitle.innerText = name;
@@ -814,53 +884,143 @@ function toggleFavCurrentPlaylist() {
     }
 }
 
-// 统一分类筛选条渲染器
-function renderCategoryFilterBar(type, list) {
-    if (!categoryFilterBar) return;
-    categoryFilterBar.style.display = "flex";
-    
-    // 提取全部已知分类
-    const distinctCats = ["全部", ...Array.from(new Set(list.map(item => item.category || "默认")))];
-    const currentCat = type === 'fav' ? currentFavCategory : currentCustomCategory;
-    if (!distinctCats.includes(currentCat)) {
-        if (type === 'fav') currentFavCategory = "全部";
-        else currentCustomCategory = "全部";
+// ========================================================
+// 方案A：我的音乐库 (并列展示：收藏歌单 + 自建歌单 + 分类胶囊筛选)
+// ========================================================
+function loadLibraryPage(filter = currentLibraryFilter) {
+    currentLibraryFilter = filter;
+    setActiveNav("library");
+    mobileBackToList();
+    listPanelTitle.innerText = "我的音乐库";
+
+    const favs = getFavPlaylists().map(f => ({ ...f, _kind: 'fav' }));
+    const customs = getCustomPlaylists().map(c => ({ ...c, _kind: 'custom', name: c.title }));
+    const all = [...favs, ...customs];
+
+    itemCountBadge.innerText = all.length;
+    statusText.innerText = `我的音乐库 (共 ${all.length} 个歌单: 收藏 ${favs.length} • 自建 ${customs.length})`;
+
+    if (all.length === 0) {
+        if (categoryFilterBar) categoryFilterBar.style.display = "none";
+        playlistListEl.innerHTML = `
+            <div class="placeholder-box" style="padding: 40px 20px;">
+                <p>音乐库暂无歌单</p>
+                <p class="muted">在右侧曲目表中点击【⭐ 收藏歌单】，或在此处点击新建自建歌单。</p>
+                <button class="btn btn-sm btn-primary" onclick="promptCreateCustomPlaylist()" style="margin-top: 12px;">➕ 新建自建歌单</button>
+            </div>
+        `;
+        return;
     }
 
-    let html = '';
-    distinctCats.forEach(cat => {
-        const isActive = cat === (type === 'fav' ? currentFavCategory : currentCustomCategory);
-        html += `<span class="cat-pill ${isActive ? 'active' : ''}" onclick="selectCategoryFilter('${type}', '${escapeHtml(cat)}')">${escapeHtml(cat)}</span>`;
+    renderLibraryFilterBar(favs, customs);
+
+    let filtered = all;
+    if (currentLibraryFilter === "fav") {
+        filtered = all.filter(item => item._kind === 'fav');
+    } else if (currentLibraryFilter === "custom") {
+        filtered = all.filter(item => item._kind === 'custom');
+    } else if (currentLibraryFilter !== "全部") {
+        filtered = all.filter(item => (item.category || "默认") === currentLibraryFilter);
+    }
+
+    playlistListEl.innerHTML = "";
+    if (filtered.length === 0) {
+        playlistListEl.innerHTML = `
+            <div class="placeholder-box" style="padding: 30px 16px;">
+                <p>分类【${escapeHtml(currentLibraryFilter)}】下暂无歌单</p>
+                <button class="btn btn-sm btn-outline" onclick="selectLibraryFilter('全部')" style="margin-top: 10px;">查看全部歌单</button>
+            </div>
+        `;
+        return;
+    }
+
+    filtered.forEach((item) => {
+        const card = document.createElement("div");
+        card.className = "playlist-card";
+        const isFav = item._kind === 'fav';
+        const catName = item.category || "默认";
+        const trackCount = isFav ? (item.trackCount || '?') : ((item.tracks || []).length);
+        const subLabel = isFav ? `⭐ 收藏 • ${escapeHtml(item.curator || 'Apple 官方')}` : `🎵 我的自建歌单`;
+
+        card.innerHTML = `
+            <div class="playlist-title-row">
+                <span class="playlist-name">${escapeHtml(item.name || item.title)}</span>
+                <span class="playlist-curator">${subLabel}</span>
+            </div>
+            <div class="playlist-meta-row">
+                <span class="cat-badge" onclick="event.stopPropagation(); promptChangeCategory('${item._kind}', '${escapeHtml(item.id)}')" title="点击修改所属分类">🏷️ ${escapeHtml(catName)}</span>
+                <span class="meta-tag">共 ${trackCount} 首</span>
+                <span class="meta-tag" style="margin-left: 4px;">${item.savedAt || item.createdAt || ''}</span>
+                <button class="btn-card-del" onclick="event.stopPropagation(); deleteLibraryItem('${item._kind}', '${escapeHtml(item.id)}')" title="${isFav ? '取消收藏' : '删除歌单'}">🗑️</button>
+            </div>
+        `;
+
+        card.addEventListener("click", () => {
+            document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            if (isFav) {
+                selectPlaylist(item.id, item.type || "playlist", item.name || item.title, item.curator, item.url);
+            } else {
+                selectCustomPlaylist(item.id);
+            }
+        });
+
+        playlistListEl.appendChild(card);
     });
-    html += `<span class="cat-pill cat-pill-add" onclick="promptCreateCategory('${type}')">➕ 新建分类</span>`;
+}
+
+// 方案A 专属胶囊分类导航条
+function renderLibraryFilterBar(favs, customs) {
+    if (!categoryFilterBar) return;
+    categoryFilterBar.style.display = "flex";
+
+    const all = [...favs, ...customs];
+    const customCats = Array.from(new Set(all.map(item => item.category || "默认")));
+
+    let html = `
+        <span class="cat-pill ${currentLibraryFilter === '全部' ? 'active' : ''}" onclick="selectLibraryFilter('全部')">全部 (${all.length})</span>
+        <span class="cat-pill ${currentLibraryFilter === 'fav' ? 'active' : ''}" onclick="selectLibraryFilter('fav')">⭐ 收藏 (${favs.length})</span>
+        <span class="cat-pill ${currentLibraryFilter === 'custom' ? 'active' : ''}" onclick="selectLibraryFilter('custom')">🎵 自建 (${customs.length})</span>
+    `;
+
+    customCats.forEach(cat => {
+        if (cat !== '默认') {
+            const count = all.filter(item => (item.category || "默认") === cat).length;
+            const isActive = currentLibraryFilter === cat;
+            html += `<span class="cat-pill ${isActive ? 'active' : ''}" onclick="selectLibraryFilter('${escapeHtml(cat)}')">🏷️ ${escapeHtml(cat)} (${count})</span>`;
+        }
+    });
+
+    html += `<span class="cat-pill" onclick="promptCreateCategory('library')" title="新建自定义分类">➕ 分类</span>`;
+    html += `<button class="btn-add-playlist-pill" onclick="promptCreateCustomPlaylist()" title="新建自建歌单">➕ 新建自建歌单</button>`;
 
     categoryFilterBar.innerHTML = html;
 }
 
-function selectCategoryFilter(type, cat) {
-    if (type === 'fav') {
-        currentFavCategory = cat;
-        loadFavPlaylists();
+function selectLibraryFilter(filter) {
+    currentLibraryFilter = filter;
+    loadLibraryPage();
+}
+
+function deleteLibraryItem(kind, id) {
+    if (kind === 'fav') {
+        removeFavPlaylist(id);
     } else {
-        currentCustomCategory = cat;
-        loadCustomPlaylists();
+        deleteCustomPlaylist(id);
     }
 }
 
+// 统一创建分类
 function promptCreateCategory(type) {
     const name = prompt("请输入新分类名称 (例如: 华语流行 / 摇滚 / 车载 / 睡眠 / 工作):");
     if (!name || !name.trim()) return;
     const trimmed = name.trim();
-    if (type === 'fav') {
-        currentFavCategory = trimmed;
-        loadFavPlaylists();
-    } else {
-        currentCustomCategory = trimmed;
-        loadCustomPlaylists();
-    }
+    currentLibraryFilter = trimmed;
+    loadLibraryPage(trimmed);
     showToast(`已切换至新分类: ${trimmed}`);
 }
 
+// 统一修改歌单所属分类
 function promptChangeCategory(type, id) {
     const isFav = type === 'fav';
     const list = isFav ? getFavPlaylists() : getCustomPlaylists();
@@ -872,74 +1032,11 @@ function promptChangeCategory(type, id) {
     target.category = newCat.trim() || "默认";
     if (isFav) {
         saveFavPlaylists(list);
-        loadFavPlaylists();
     } else {
         saveCustomPlaylists(list);
-        loadCustomPlaylists();
     }
+    loadLibraryPage();
     showToast(`已移动到分类: ${target.category}`);
-}
-
-// 浏览“⭐ 收藏的歌单”
-function loadFavPlaylists() {
-    setActiveNav("btnNavFav");
-    mobileBackToList();
-    listPanelTitle.innerText = "⭐ 收藏的歌单";
-    const favs = getFavPlaylists();
-    itemCountBadge.innerText = favs.length;
-    statusText.innerText = `当前已收藏 ${favs.length} 个官方歌单`;
-
-    if (favs.length === 0) {
-        if (categoryFilterBar) categoryFilterBar.style.display = "none";
-        playlistListEl.innerHTML = `
-            <div class="placeholder-box" style="padding: 40px 20px;">
-                <p>暂无收藏的歌单</p>
-                <p class="muted">在浏览 Apple 官方歌单时，点击右上角【⭐ 收藏歌单】即可保存于此。</p>
-            </div>
-        `;
-        return;
-    }
-
-    renderCategoryFilterBar('fav', favs);
-
-    const filteredFavs = currentFavCategory === "全部" 
-        ? favs 
-        : favs.filter(f => (f.category || "默认") === currentFavCategory);
-
-    playlistListEl.innerHTML = "";
-    if (filteredFavs.length === 0) {
-        playlistListEl.innerHTML = `
-            <div class="placeholder-box" style="padding: 30px 16px;">
-                <p>分类【${escapeHtml(currentFavCategory)}】下暂无收藏歌单</p>
-                <button class="btn btn-sm btn-outline" onclick="currentFavCategory='全部'; loadFavPlaylists();" style="margin-top: 10px;">查看全部分类</button>
-            </div>
-        `;
-        return;
-    }
-
-    filteredFavs.forEach((item) => {
-        const card = document.createElement("div");
-        card.className = "playlist-card";
-        const catName = item.category || "默认";
-        card.innerHTML = `
-            <div class="playlist-title-row">
-                <span class="playlist-name">${escapeHtml(item.name || item.title)}</span>
-                <span class="playlist-curator">${escapeHtml(item.curator)}</span>
-            </div>
-            <div class="playlist-meta-row">
-                <span class="cat-badge" onclick="event.stopPropagation(); promptChangeCategory('fav', '${escapeHtml(item.id)}')" title="点击修改分类">🏷️ ${escapeHtml(catName)}</span>
-                <span class="meta-tag">共 ${item.trackCount || '?'} 首</span>
-                <span class="meta-tag" style="margin-left: 4px;">${item.savedAt || ''}</span>
-                <button class="btn-card-del" onclick="event.stopPropagation(); removeFavPlaylist('${escapeHtml(item.id)}')" title="取消收藏">🗑️</button>
-            </div>
-        `;
-        card.addEventListener("click", () => {
-            document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
-            card.classList.add("active");
-            selectPlaylist(item.id, item.type || "playlist", item.name || item.title, item.curator, item.url);
-        });
-        playlistListEl.appendChild(card);
-    });
 }
 
 // 取消收藏歌单
@@ -951,71 +1048,16 @@ function removeFavPlaylist(id) {
     saveFavPlaylists(favs);
     updateFavButtonStatus();
     showToast(`已移除收藏歌单《${target ? target.name || target.title : ''}》`);
-    loadFavPlaylists();
+    loadLibraryPage();
 }
 
-// 浏览“🎵 我的自建歌单”
+// 兼容原有接口，全部平滑指向统一音乐库
+function loadFavPlaylists() {
+    loadLibraryPage('fav');
+}
+
 function loadCustomPlaylists() {
-    setActiveNav("btnNavCustom");
-    mobileBackToList();
-    listPanelTitle.innerText = "🎵 我的自建歌单";
-    const customs = getCustomPlaylists();
-    itemCountBadge.innerText = customs.length;
-    statusText.innerText = `本地自建歌单共 ${customs.length} 个`;
-
-    if (customs.length === 0) {
-        if (categoryFilterBar) categoryFilterBar.style.display = "none";
-        playlistListEl.innerHTML = `
-            <div class="placeholder-box" style="padding: 40px 20px;">
-                <p>暂无自建歌单</p>
-                <p class="muted">在右侧曲目表中点击【➕ 加入歌单】，或点击抽屉中的【➕ 新建】创建自建歌单。</p>
-                <button class="btn btn-sm btn-primary" onclick="promptCreateCustomPlaylist()" style="margin-top: 12px;">➕ 立即新建歌单</button>
-            </div>
-        `;
-        return;
-    }
-
-    renderCategoryFilterBar('custom', customs);
-
-    const filteredCustoms = currentCustomCategory === "全部" 
-        ? customs 
-        : customs.filter(c => (c.category || "默认") === currentCustomCategory);
-
-    playlistListEl.innerHTML = "";
-    if (filteredCustoms.length === 0) {
-        playlistListEl.innerHTML = `
-            <div class="placeholder-box" style="padding: 30px 16px;">
-                <p>分类【${escapeHtml(currentCustomCategory)}】下暂无自建歌单</p>
-                <button class="btn btn-sm btn-outline" onclick="currentCustomCategory='全部'; loadCustomPlaylists();" style="margin-top: 10px;">查看全部分类</button>
-            </div>
-        `;
-        return;
-    }
-
-    filteredCustoms.forEach((pl) => {
-        const card = document.createElement("div");
-        card.className = "playlist-card";
-        const trackCount = (pl.tracks || []).length;
-        const catName = pl.category || "默认";
-        card.innerHTML = `
-            <div class="playlist-title-row">
-                <span class="playlist-name">${escapeHtml(pl.title)}</span>
-                <span class="playlist-curator">自建歌单</span>
-            </div>
-            <div class="playlist-meta-row">
-                <span class="cat-badge" onclick="event.stopPropagation(); promptChangeCategory('custom', '${escapeHtml(pl.id)}')" title="点击修改分类">🏷️ ${escapeHtml(catName)}</span>
-                <span class="meta-tag">共 ${trackCount} 首</span>
-                <span class="meta-tag" style="margin-left: 4px;">${pl.createdAt || ''}</span>
-                <button class="btn-card-del" onclick="event.stopPropagation(); deleteCustomPlaylist('${escapeHtml(pl.id)}')" title="删除歌单">🗑️</button>
-            </div>
-        `;
-        card.addEventListener("click", () => {
-            document.querySelectorAll(".playlist-card").forEach(c => c.classList.remove("active"));
-            card.classList.add("active");
-            selectCustomPlaylist(pl.id);
-        });
-        playlistListEl.appendChild(card);
-    });
+    loadLibraryPage('custom');
 }
 
 // 选中并展示自建歌单
@@ -1028,6 +1070,15 @@ function selectCustomPlaylist(playlistId) {
     currentCustomPlaylistId = playlistId;
     currentPlaylistData = { id: pl.id, name: pl.title, title: pl.title, curator: "我的自建歌单" };
     currentTracks = pl.tracks || [];
+
+    // 记忆上一次选中的自建歌单
+    try {
+        localStorage.setItem("amusic_last_playlist", JSON.stringify({
+            kind: 'custom',
+            id: pl.id,
+            name: pl.title
+        }));
+    } catch (e) {}
 
     mobileShowDetail();
 
