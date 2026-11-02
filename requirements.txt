@@ -1,2 +1,2 @@
-# Amusic Serverless API
-# 100% 纯 Python 标准库构建，零第三方 pip 依赖
+# Amusic Serverless API Dependencies
+urllib3>=2.0.0

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 api/index.py - Vercel Serverless Function 统一入口
@@ -23,18 +22,20 @@ class handler(Handler):
     继承自 server.Handler，兼容 Vercel 请求头与 URL 路由
     """
     def __init__(self, *args, **kwargs):
-        # Vercel 调用时不强制要求本地静态目录
-        super(Handler, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def _resolve_real_path(self):
         # 兼容 Vercel 重写后的真实路径
-        real_path = (
-            self.headers.get("x-forwarded-uri")
-            or self.headers.get("x-matched-path")
-            or self.path
-        )
-        if real_path:
-            self.path = real_path
+        parsed = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(parsed.query)
+        if "__route__" in qs:
+            route = qs.pop("__route__")[0]
+            remaining_query = urllib.parse.urlencode(qs, doseq=True)
+            self.path = f"/api/{route}" + (f"?{remaining_query}" if remaining_query else "")
+        elif self.headers.get("x-forwarded-uri"):
+            self.path = self.headers.get("x-forwarded-uri")
+        elif self.headers.get("x-matched-path"):
+            self.path = self.headers.get("x-matched-path")
 
     def do_GET(self):
         self._resolve_real_path()
