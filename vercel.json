@@ -7,8 +7,8 @@
   },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api?__route__=$1"
+      "source": "/api/(.+)",
+      "destination": "/api/?__route__=$1"
     }
   ],
   "headers": [
