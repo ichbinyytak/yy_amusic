@@ -174,19 +174,17 @@
     vertical-align: middle;
 }
 
-/* 悬停或处于全局多选模式时，显现复选框并隐藏序号 */
-.track-table tr:hover .track-index-num {
-    display: none;
-}
-.track-table tr:hover .track-checkbox {
-    display: inline-block;
-}
-
+/* 仅在多选模式激活时显现首列复选框，非多选模式保持纯数字序号防误触 */
 .multi-select-mode .track-index-num {
     display: none !important;
 }
 .multi-select-mode .track-checkbox {
     display: inline-block !important;
+}
+
+/* 选中行柔和背景高亮 */
+.track-row-selected {
+    background-color: rgba(88, 166, 255, 0.08) !important;
 }
 
 /* 第二列：歌曲名与歌手自适应布局 (flex-wrap)
@@ -282,21 +280,22 @@
 }
 
 /* ========================================================
-   浮动批量操作栏 (当已选数 > 0 时于右下角浮起)
+   浮动批量操作栏 (当进入多选模式且已选数 > 0 时于底部居中浮起)
    ======================================================== */
 .floating-batch-bar {
     position: fixed;
     bottom: 84px;
-    right: 18px;
+    left: 50%;
+    transform: translateX(-50%);
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
-    border-radius: 20px;
-    padding: 6px 14px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    border-radius: 24px;
+    padding: 6px 16px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.7);
     display: none;
     align-items: center;
-    gap: 10px;
-    z-index: 100;
+    gap: 12px;
+    z-index: 900;
     animation: batchSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -307,11 +306,11 @@
 @keyframes batchSlideUp {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translate(-50%, 12px);
     }
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translate(-50%, 0);
     }
 }
 

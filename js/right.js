@@ -288,7 +288,6 @@ window.RightPanel = (function () {
                         <th class="track-info-th">歌曲 / 歌手</th>
                         <th class="track-album-col">专辑</th>
                         <th class="track-duration-col">时长</th>
-                        <th class="track-action-col">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -304,7 +303,7 @@ window.RightPanel = (function () {
             const displayNum = idx + 1 < 10 ? `0${idx + 1}` : `${idx + 1}`;
 
             html += `
-                <tr class="${rowClass}" id="track-row-${idx}">
+                <tr class="${rowClass} ${isSelected ? 'track-row-selected' : ''}" id="track-row-${idx}" data-idx="${idx}">
                     <td class="track-index-col">
                         <span class="track-index-num">${isPlayingThis ? '🔊' : displayNum}</span>
                         <input type="checkbox" class="track-checkbox" data-idx="${idx}" ${isSelected ? 'checked' : ''} onchange="window.RightPanel.handleCheckboxChange(event, ${idx})">
@@ -321,13 +320,6 @@ window.RightPanel = (function () {
                     <td class="track-duration-col">
                         ${formatTime(t.durationMillis)}
                     </td>
-                    <td class="track-action-col">
-                        <button class="btn-track-action play-song" onclick="window.RightPanel.playSong(${idx})" title="单曲播放">▶</button>
-                        <button class="btn-track-action" onclick="window.RightPanel.openAddToPlaylistModal(${idx})" title="加入自建歌单">＋</button>
-                        ${isViewingCustomPlaylist ? `
-                            <button class="btn-track-action del-song" onclick="window.RightPanel.removeSongFromCustom(${idx})" title="从歌单移除">✕</button>
-                        ` : ''}
-                    </td>
                 </tr>
             `;
         });
@@ -338,7 +330,105 @@ window.RightPanel = (function () {
         `;
 
         detailBody.innerHTML = html;
+
+        // 绑定行交互：方案B（平时单击无反应防误触）+ 组合1（长按 500ms / 右键激活多选模式）
+        bindTrackRowsInteraction();
         updateFloatingBatchBar();
+    }
+
+    /**
+     * 行交互绑定：
+     * 1. 方案B：非多选模式下单击彻底无反应 (防误触/防滑动误切歌)
+     * 2. 组合1：触屏长按 500ms 或鼠标右键，激活多选模式并勾选该行
+     * 3. 多选模式下：轻触单击任意行即可快速连选/反选
+     */
+    function bindTrackRowsInteraction() {
+        const rows = detailBody.querySelectorAll("tr[data-idx]");
+        rows.forEach(row => {
+            const idx = parseInt(row.getAttribute("data-idx"), 10);
+
+            // 单击行事件处理
+            row.addEventListener("click", (e) => {
+                if (e.target.tagName === "INPUT") return; // 复选框原生 change 事件处理
+                if (selectedTrackIndices.size > 0) {
+                    toggleTrackSelection(idx);
+                }
+                // 非多选模式：彻底无反应 (方案B，防误触)
+            });
+
+            // 长按与右键处理 (组合1)
+            let touchTimer = null;
+            let startX = 0;
+            let startY = 0;
+            let isLongPress = false;
+
+            row.addEventListener("touchstart", (e) => {
+                if (e.touches.length !== 1) return;
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                isLongPress = false;
+
+                touchTimer = setTimeout(() => {
+                    isLongPress = true;
+                    if (navigator.vibrate) {
+                        try { navigator.vibrate(30); } catch (err) {}
+                    }
+                    enterMultiSelectWithTrack(idx);
+                }, 500);
+            }, { passive: true });
+
+            row.addEventListener("touchmove", (e) => {
+                if (!touchTimer) return;
+                const touch = e.touches[0];
+                const dist = Math.hypot(touch.clientX - startX, touch.clientY - startY);
+                if (dist > 10) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+            }, { passive: true });
+
+            row.addEventListener("touchend", (e) => {
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+                if (isLongPress) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            });
+
+            row.addEventListener("touchcancel", () => {
+                if (touchTimer) {
+                    clearTimeout(touchTimer);
+                    touchTimer = null;
+                }
+            });
+
+            row.addEventListener("contextmenu", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                enterMultiSelectWithTrack(idx);
+            });
+        });
+    }
+
+    function enterMultiSelectWithTrack(idx) {
+        if (!selectedTrackIndices.has(idx)) {
+            selectedTrackIndices.add(idx);
+        }
+        syncMultiSelectUI();
+        window.Shell?.showToast?.("已激活多选模式，轻触可连续选择");
+    }
+
+    function toggleTrackSelection(idx) {
+        if (selectedTrackIndices.has(idx)) {
+            selectedTrackIndices.delete(idx);
+        } else {
+            selectedTrackIndices.add(idx);
+        }
+        syncMultiSelectUI();
     }
 
     /**
@@ -370,8 +460,10 @@ window.RightPanel = (function () {
 
     function syncMultiSelectUI() {
         const table = document.getElementById("trackTableEl");
+        const hasSelection = selectedTrackIndices.size > 0;
+
         if (table) {
-            if (selectedTrackIndices.size > 0) {
+            if (hasSelection) {
                 table.classList.add("multi-select-mode");
             } else {
                 table.classList.remove("multi-select-mode");
@@ -379,7 +471,16 @@ window.RightPanel = (function () {
 
             table.querySelectorAll('.track-checkbox[data-idx]').forEach(box => {
                 const idx = parseInt(box.getAttribute("data-idx"), 10);
-                box.checked = selectedTrackIndices.has(idx);
+                const isChecked = selectedTrackIndices.has(idx);
+                box.checked = isChecked;
+                const row = document.getElementById(`track-row-${idx}`);
+                if (row) {
+                    if (isChecked) {
+                        row.classList.add("track-row-selected");
+                    } else {
+                        row.classList.remove("track-row-selected");
+                    }
+                }
             });
 
             const checkAllBox = document.getElementById("checkAllBox");

@@ -16,8 +16,8 @@
 
     /* 4级标准整数统一字号阶梯 (Unified 4-Tier Typography Scale) */
     --fs-t1: 16px; /* T1 头部大标题 */
-    --fs-t2: 12px; /* T2 主标题与核心文本 */
-    --fs-t3: 12px; /* T3 次级信息与副标题 */
+    --fs-t2: 11px; /* T2 主标题与核心文本 */
+    --fs-t3: 11px; /* T3 次级信息与副标题 */
     --fs-t4: 11px; /* T4 辅助微型字与角标 */
 }
 
@@ -667,4 +667,70 @@ body {
     .player-right { gap: 6px; }
     .search-bar-compact input { width: 120px; font-size: 11px; }
     .btn-header-source { width: 24px; height: 24px; font-size: 12px !important; }
+}
+
+/* ========================================================
+   全局轻量上下文菜单 (Context Menu)
+   ======================================================== */
+.context-menu-popup {
+    position: fixed;
+    z-index: 10000;
+    background-color: #161b22;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+    padding: 4px;
+    min-width: 130px;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.context-menu-popup.open {
+    display: flex;
+}
+
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: var(--fs-t3);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.context-menu-item:hover {
+    background-color: var(--bg-surface-hover);
+    color: #ffffff;
+}
+
+.context-menu-item.danger {
+    color: #ff7588;
+}
+
+.context-menu-item.danger:hover {
+    background-color: rgba(255, 117, 136, 0.15);
+    color: #ff8598;
+}
+
+.context-menu-icon {
+    font-size: var(--fs-t2);
+    width: 14px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.context-menu-separator {
+    height: 1px;
+    background-color: var(--border-subtle);
+    margin: 3px 0;
 }

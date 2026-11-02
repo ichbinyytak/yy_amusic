@@ -191,6 +191,24 @@
         </div>
     </div>
 
+    <!-- 弹窗：移动歌单到分组 (遵照 SITE_ARCHITECTURE.md 规范) -->
+    <div class="modal-overlay" id="moveCategoryModal" onclick="if(event.target===this) window.Shell.closeMoveCategoryModal()">
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3>⇄ 移动至分组</h3>
+                <button class="modal-close-btn" onclick="window.Shell.closeMoveCategoryModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="add-to-song-info" id="moveModalPlaylistInfo" style="font-size:var(--fs-t4); margin-bottom:8px; color:var(--accent);">歌单名称</div>
+                <div class="playlist-choice-list" id="moveCategoryChoiceList" style="max-height:160px; overflow-y:auto; margin-bottom:8px;"></div>
+                <div class="create-playlist-inline" style="display:flex; gap:4px;">
+                    <input type="text" id="newMoveCategoryInput" placeholder="新建分组并移动至此..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Shell.confirmCreateCategoryAndMove()" />
+                    <button class="btn btn-sm btn-primary" onclick="window.Shell.confirmCreateCategoryAndMove()">新建并移入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 弹窗：批量打包下载确认 (遵照 SITE_ARCHITECTURE.md 规范) -->
     <div class="modal-overlay" id="batchDownloadModal" onclick="if(event.target===this) window.Shell.closeBatchDownloadModal()">
         <div class="modal-content modal-sm">
@@ -248,6 +266,7 @@
     <script src="js/storage.js?v=4.8"></script>
     <script src="js/download.js?v=4.8"></script>
     <script src="js/backup.js?v=4.8"></script>
+    <script src="js/context_menu.js?v=4.9"></script>
     <script src="js/library.js?v=4.8"></script>
     <script src="js/region.js?v=4.8"></script>
     <script src="js/left.js?v=4.8"></script>

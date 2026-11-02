@@ -79,10 +79,10 @@ window.LibraryPanel = (function () {
         const isOpen = expandedLibraryGroups.has(secId);
 
         const hdr = document.createElement("div");
-        hdr.className = "sub-accordion-hdr";
+        hdr.className = `sub-accordion-hdr ${isOpen ? 'open' : ''}`;
         hdr.innerHTML = `
             <div class="sub-accordion-left">
-                <span class="sub-accordion-arrow">${isOpen ? iconArrowExpanded : iconArrowCollapsed}</span>
+                <span class="sub-accordion-arrow ${isOpen ? 'open' : ''}">${isOpen ? iconArrowExpanded : iconArrowCollapsed}</span>
                 <span>${escapeHtml(title)}</span>
             </div>
             <div style="display:flex; align-items:center; gap:6px;">
@@ -104,11 +104,17 @@ window.LibraryPanel = (function () {
             if (expandedLibraryGroups.has(secId)) {
                 expandedLibraryGroups.delete(secId);
                 body.classList.remove("open");
-                hdr.querySelector(".sub-accordion-arrow").innerHTML = iconArrowCollapsed;
+                hdr.classList.remove("open");
+                const arrow = hdr.querySelector(".sub-accordion-arrow");
+                arrow.classList.remove("open");
+                arrow.innerHTML = iconArrowCollapsed;
             } else {
                 expandedLibraryGroups.add(secId);
                 body.classList.add("open");
-                hdr.querySelector(".sub-accordion-arrow").innerHTML = iconArrowExpanded;
+                hdr.classList.add("open");
+                const arrow = hdr.querySelector(".sub-accordion-arrow");
+                arrow.classList.add("open");
+                arrow.innerHTML = iconArrowExpanded;
             }
         };
 
@@ -155,7 +161,7 @@ window.LibraryPanel = (function () {
         groupDiv.id = groupSecId;
 
         const groupRow = document.createElement("div");
-        groupRow.className = "library-group-row";
+        groupRow.className = `library-group-row ${isGroupOpen ? 'open' : ''}`;
 
         // 【未分组】不渲染 ✎ 与 ✕；自定义分组有 ✎ 与 ✕；我的歌单可在组内新建歌单（＋）
         let actionsHtml = "";
@@ -171,7 +177,7 @@ window.LibraryPanel = (function () {
 
         groupRow.innerHTML = `
             <div class="library-group-left">
-                <span class="sub-accordion-arrow">${isGroupOpen ? iconArrowExpanded : iconArrowCollapsed}</span>
+                <span class="sub-accordion-arrow ${isGroupOpen ? 'open' : ''}">${isGroupOpen ? iconArrowExpanded : iconArrowCollapsed}</span>
                 <span>${escapeHtml(catName)}</span>
                 <span class="count-badge">${items.length}</span>
             </div>
@@ -188,11 +194,17 @@ window.LibraryPanel = (function () {
             if (expandedLibraryGroups.has(groupSecId)) {
                 expandedLibraryGroups.delete(groupSecId);
                 groupBody.classList.remove("open");
-                groupRow.querySelector(".sub-accordion-arrow").innerHTML = iconArrowCollapsed;
+                groupRow.classList.remove("open");
+                const arrow = groupRow.querySelector(".sub-accordion-arrow");
+                arrow.classList.remove("open");
+                arrow.innerHTML = iconArrowCollapsed;
             } else {
                 expandedLibraryGroups.add(groupSecId);
                 groupBody.classList.add("open");
-                groupRow.querySelector(".sub-accordion-arrow").innerHTML = iconArrowExpanded;
+                groupRow.classList.add("open");
+                const arrow = groupRow.querySelector(".sub-accordion-arrow");
+                arrow.classList.add("open");
+                arrow.innerHTML = iconArrowExpanded;
             }
         };
 

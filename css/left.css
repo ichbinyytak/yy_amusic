@@ -75,6 +75,12 @@
     justify-content: center;
     width: 12px;
     color: var(--text-muted);
+    transition: color 0.15s ease;
+}
+
+.top-accordion-hdr.open .top-accordion-arrow,
+.top-accordion-arrow.open {
+    color: var(--accent-apple) !important;
 }
 
 .top-accordion-right {
@@ -175,6 +181,12 @@
     justify-content: center;
     width: 10px;
     color: var(--text-muted);
+    transition: color 0.15s ease;
+}
+
+.sub-accordion-hdr.open .sub-accordion-arrow,
+.sub-accordion-arrow.open {
+    color: var(--accent-apple) !important;
 }
 
 .sub-accordion-body {
@@ -367,6 +379,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.library-group-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 10px;
+    color: var(--text-muted);
+    transition: color 0.15s ease;
+}
+
+.library-group-row.open .library-group-arrow,
+.library-group-arrow.open {
+    color: var(--accent-apple) !important;
 }
 
 .library-group-actions {

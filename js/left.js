@@ -107,10 +107,10 @@ window.LeftPanel = (function () {
         const isOpen = expandedTopAccordions.has(id);
 
         const hdr = document.createElement("div");
-        hdr.className = "top-accordion-hdr";
+        hdr.className = `top-accordion-hdr ${isOpen ? 'open' : ''}`;
         hdr.innerHTML = `
             <div class="top-accordion-left">
-                <span class="top-accordion-arrow">${isOpen ? iconArrowExpanded : iconArrowCollapsed}</span>
+                <span class="top-accordion-arrow ${isOpen ? 'open' : ''}">${isOpen ? iconArrowExpanded : iconArrowCollapsed}</span>
                 <span>${escapeHtml(title)}</span>
             </div>
             <div class="top-accordion-right">
@@ -125,11 +125,17 @@ window.LeftPanel = (function () {
             if (expandedTopAccordions.has(id)) {
                 expandedTopAccordions.delete(id);
                 body.classList.remove("open");
-                hdr.querySelector(".top-accordion-arrow").innerHTML = iconArrowCollapsed;
+                hdr.classList.remove("open");
+                const arrow = hdr.querySelector(".top-accordion-arrow");
+                arrow.classList.remove("open");
+                arrow.innerHTML = iconArrowCollapsed;
             } else {
                 expandedTopAccordions.add(id);
                 body.classList.add("open");
-                hdr.querySelector(".top-accordion-arrow").innerHTML = iconArrowExpanded;
+                hdr.classList.add("open");
+                const arrow = hdr.querySelector(".top-accordion-arrow");
+                arrow.classList.add("open");
+                arrow.innerHTML = iconArrowExpanded;
             }
         };
 
@@ -145,6 +151,8 @@ window.LeftPanel = (function () {
 
     /**
      * 全局统一脱水卡片构造器 (100% 遵照 SITE_ARCHITECTURE.md 规范)
+     * 1. 彻底取消行内按钮，100% 满宽留给标题
+     * 2. 统一绑定 ContextMenu (长按 500ms 或鼠标右键呼出操作)
      */
     function createPlaylistCard(item, options = {}) {
         const isCustom = !!options.isCustom;
@@ -156,7 +164,8 @@ window.LeftPanel = (function () {
         const kind = item.kind || item.type || (item.attributes ? (item.type === "albums" ? "album" : "playlist") : "playlist");
         const isAlbum = kind === "album" || kind === "albums";
         const typeLabel = isCustom ? "[自建]" : (isCurated ? "[精选]" : (isAlbum ? "[专辑]" : "[歌单]"));
-        const tagColor = isCustom ? "var(--accent)" : (isCurated ? "var(--accent-apple)" : (isAlbum ? "#e3b341" : "#58a6ff"));
+        // 遵循色彩规范：仅大标题红，卡片内标签采用标准中性/副色，杜绝红字
+        const tagColor = isCustom ? "var(--accent)" : (isAlbum ? "#e3b341" : "var(--text-secondary)");
 
         const name = item.title || item.name || item.attributes?.name || "未知标题";
         const rawCurator = item.curator || item.subtitle || item.attributes?.curatorName || item.attributes?.artistName || "";
@@ -170,29 +179,15 @@ window.LeftPanel = (function () {
         card.className = "playlist-card";
         if (item.id) card.id = `card-${item.id}`;
 
-        let actionsHtml = "";
-        if (isCustom) {
-            actionsHtml = `
-                <div class="playlist-card-actions">
-                    <button class="btn-card-action" data-action="rename" title="改名">✎</button>
-                    <button class="btn-card-action btn-del" data-action="del" title="删除">✕</button>
-                </div>
-            `;
-        } else if (isFav) {
-            actionsHtml = `
-                <div class="playlist-card-actions">
-                    <button class="btn-card-action btn-del" data-action="del" title="移除收藏">✕</button>
-                </div>
-            `;
-        }
+        const sf = window.RegionPanel?.getStorefront?.() || "cn";
+        const url = item.url || item.attributes?.url || `https://music.apple.com/${sf}/${isAlbum ? 'album' : 'playlist'}/${item.id || ''}`;
 
         card.innerHTML = `
             <div class="playlist-card-row1">
-                <div class="playlist-card-title-group">
+                <div class="playlist-card-title-group" style="width:100%;">
                     <span class="playlist-type-tag" style="color: ${tagColor};">${typeLabel}</span>
                     <span class="playlist-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
                 </div>
-                ${actionsHtml}
             </div>
             <div class="playlist-card-row2">
                 <span class="playlist-curator" title="${escapeHtml(cleanCurator)}">${escapeHtml(cleanCurator)}</span>
@@ -200,22 +195,142 @@ window.LeftPanel = (function () {
             </div>
         `;
 
-        // 按钮事件绑定 (左侧卡片取消全部播放/收藏/下载，仅保留自建改名与删除)
-        const btnRename = card.querySelector('[data-action="rename"]');
-        if (btnRename) {
-            btnRename.onclick = (e) => {
-                e.stopPropagation();
-                if (onRename) onRename();
-            };
-        }
-
-        const btnDel = card.querySelector('[data-action="del"]');
-        if (btnDel) {
-            btnDel.onclick = (e) => {
-                e.stopPropagation();
-                if (onDelete) onDelete();
-            };
-        }
+        // 统一长按 500ms / 鼠标右键轻量上下文菜单绑定
+        window.ContextMenu?.bind(card, () => {
+            if (isCustom) {
+                return [
+                    {
+                        icon: "⇄",
+                        label: "移动至分组",
+                        onClick: () => {
+                            window.Shell?.openMoveCategoryModal?.('custom', item.id, item.category || '未分组');
+                        }
+                    },
+                    {
+                        icon: "✎",
+                        label: "重命名歌单",
+                        onClick: () => {
+                            if (onRename) onRename();
+                        }
+                    },
+                    {
+                        icon: "✕",
+                        label: "删除歌单",
+                        danger: true,
+                        onClick: () => {
+                            if (onDelete) onDelete();
+                        }
+                    },
+                    { separator: true },
+                    {
+                        icon: "▶",
+                        label: "播放全部",
+                        onClick: () => {
+                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
+                                window.RightPanel?.playCurrentAll?.();
+                            });
+                        }
+                    },
+                    {
+                        icon: "🔗",
+                        label: "复制歌单名",
+                        onClick: () => {
+                            navigator.clipboard.writeText(name).then(() => {
+                                window.Shell?.showToast?.("已复制歌单名到剪贴板");
+                            });
+                        }
+                    }
+                ];
+            } else if (isFav) {
+                return [
+                    {
+                        icon: "⇄",
+                        label: "移动至分组",
+                        onClick: () => {
+                            window.Shell?.openMoveCategoryModal?.('fav', item.id, item.category || '未分组');
+                        }
+                    },
+                    {
+                        icon: "✕",
+                        label: "移除收藏",
+                        danger: true,
+                        onClick: () => {
+                            if (onDelete) onDelete();
+                        }
+                    },
+                    { separator: true },
+                    {
+                        icon: "▶",
+                        label: "播放全部",
+                        onClick: () => {
+                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
+                                window.RightPanel?.playCurrentAll?.();
+                            });
+                        }
+                    },
+                    {
+                        icon: "🔗",
+                        label: "复制官方链接",
+                        onClick: () => {
+                            if (url) {
+                                navigator.clipboard.writeText(url).then(() => {
+                                    window.Shell?.showToast?.("已复制官方链接到剪贴板");
+                                });
+                            }
+                        }
+                    }
+                ];
+            } else {
+                // Apple专区 (官方精选 / 榜单 / 专辑 / 歌单)
+                return [
+                    {
+                        icon: "★",
+                        label: "收藏到分类",
+                        onClick: () => {
+                            const plData = {
+                                id: item.id,
+                                type: item.type || (item.kind === "album" ? "album" : "playlist"),
+                                name: name,
+                                title: name,
+                                curator: cleanCurator,
+                                url: url,
+                                trackCount: item.trackCount || 0
+                            };
+                            window.Shell?.openAddToFavModal?.(plData);
+                        }
+                    },
+                    {
+                        icon: "▶",
+                        label: "播放全部",
+                        onClick: () => {
+                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
+                                window.RightPanel?.playCurrentAll?.();
+                            });
+                        }
+                    },
+                    {
+                        icon: "🔗",
+                        label: "复制官方直链",
+                        onClick: () => {
+                            if (url) {
+                                navigator.clipboard.writeText(url).then(() => {
+                                    window.Shell?.showToast?.("已复制直链到剪贴板");
+                                });
+                            }
+                        }
+                    },
+                    {
+                        icon: "↓",
+                        label: "打包下载全部",
+                        onClick: () => {
+                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
+                                window.RightPanel?.downloadCurrentPlaylist?.();
+                            });
+                        }
+                    }
+                ];
+            }
+        });
 
         // 卡片点击展开至右侧
         card.onclick = () => {

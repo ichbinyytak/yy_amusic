@@ -334,8 +334,11 @@ window.Shell = (function () {
 
         let html = '';
         sources.forEach((s) => {
-            const isOk = s.status === "ok" || s.latency > 0;
-            const latencyText = s.latency ? `${s.latency}ms` : (isOk ? "在线" : "离线");
+            const latVal = (s.latency_ms !== undefined && s.latency_ms !== null) ? s.latency_ms : s.latency;
+            const isOk = s.status === "ok" || (latVal !== undefined && latVal > 0);
+            const latencyText = (latVal !== undefined && latVal !== null && latVal > 0)
+                ? `${latVal}ms`
+                : (isOk ? "在线" : "离线");
             html += `
                 <div class="source-card">
                     <div>
@@ -480,6 +483,83 @@ window.Shell = (function () {
         window.LibraryPanel?.renderLibrary?.();
     }
 
+    /* -------------------- 弹窗：移动歌单到分组 -------------------- */
+    let pendingMoveData = null; // { kind, id, curCat }
+
+    function openMoveCategoryModal(kind, playlistId, curCat) {
+        if (!playlistId) return;
+        pendingMoveData = { kind, id: playlistId, curCat: curCat || "未分组" };
+
+        const modal = document.getElementById("moveCategoryModal");
+        const infoEl = document.getElementById("moveModalPlaylistInfo");
+        const choiceList = document.getElementById("moveCategoryChoiceList");
+        const input = document.getElementById("newMoveCategoryInput");
+
+        if (input) input.value = "";
+
+        let plName = "当前歌单";
+        if (kind === 'fav') {
+            const item = window.StorageManager.getFavPlaylists().find(f => f.id === playlistId);
+            if (item) plName = item.name || item.title || plName;
+        } else {
+            const item = window.StorageManager.getCustomPlaylists().find(c => c.id === playlistId);
+            if (item) plName = item.title || plName;
+        }
+
+        if (infoEl) {
+            infoEl.innerHTML = `<span>移动歌单：<strong>${escapeHtml(plName)}</strong> <span style="opacity:0.7; font-size:var(--fs-t4);">(当前: ${escapeHtml(curCat || '未分组')})</span></span>`;
+        }
+
+        if (choiceList) {
+            const cats = window.StorageManager.getRegisteredCategories(kind);
+            let html = '';
+            cats.forEach(c => {
+                const isCurrent = (curCat || '未分组') === c;
+                html += `
+                    <div class="playlist-choice-item" onclick="window.Shell.selectMoveCategory('${escapeHtml(c)}')" style="${isCurrent ? 'background:rgba(88,166,255,0.15); border-left:2px solid var(--accent);' : ''}">
+                        <div>
+                            <strong>${escapeHtml(c)}</strong>
+                            ${isCurrent ? '<span style="color:var(--accent); font-size:var(--fs-t4); margin-left:6px;">(当前分组)</span>' : ''}
+                        </div>
+                        <span class="meta-tag">${isCurrent ? '已在此组' : '移至此组'}</span>
+                    </div>
+                `;
+            });
+            choiceList.innerHTML = html;
+        }
+
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeMoveCategoryModal() {
+        const modal = document.getElementById("moveCategoryModal");
+        if (modal) modal.classList.remove("open");
+        pendingMoveData = null;
+    }
+
+    function selectMoveCategory(catName) {
+        if (!pendingMoveData) return;
+        window.StorageManager.changePlaylistCategory(pendingMoveData.kind, pendingMoveData.id, catName);
+        showToast(`已移动至【${catName}】`);
+        closeMoveCategoryModal();
+        window.LibraryPanel?.renderLibrary?.();
+    }
+
+    function confirmCreateCategoryAndMove() {
+        if (!pendingMoveData) return;
+        const input = document.getElementById("newMoveCategoryInput");
+        const name = input ? input.value.trim() : "";
+        if (!name) {
+            showToast("请输入新分组名称");
+            return;
+        }
+        window.StorageManager.addCategory(pendingMoveData.kind, name);
+        window.StorageManager.changePlaylistCategory(pendingMoveData.kind, pendingMoveData.id, name);
+        showToast(`已创建分组【${name}】并移动至此`);
+        closeMoveCategoryModal();
+        window.LibraryPanel?.renderLibrary?.();
+    }
+
     /* -------------------- 弹窗：添加到自建歌单 -------------------- */
     function openAddToCustomModal(songInfoText) {
         const modal = document.getElementById("addToPlaylistModal");
@@ -609,6 +689,10 @@ window.Shell = (function () {
         selectFavCategory,
         confirmCreateCategoryAndFav,
         unfavCurrentFromModal,
+        openMoveCategoryModal,
+        closeMoveCategoryModal,
+        selectMoveCategory,
+        confirmCreateCategoryAndMove,
         openAddToCustomModal,
         closeAddToCustomModal,
         confirmCreateAndAdd,

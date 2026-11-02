@@ -84,8 +84,11 @@ async function run() {
             }
         }
         if (msg.method === 'Runtime.exceptionThrown') {
-            const desc = msg.params.exceptionDetails?.exception?.description || msg.params.exceptionDetails?.text;
-            consoleErrors.push(`EXCEPTION: ${desc}`);
+            const details = msg.params.exceptionDetails;
+            const desc = details?.exception?.description || details?.text;
+            const loc = `${details?.url || 'inline'}:${details?.lineNumber}:${details?.columnNumber}`;
+            console.log(`[Exception Details] ${loc} -> ${desc}`);
+            consoleErrors.push(`EXCEPTION at ${loc}: ${desc}`);
         }
     };
 
@@ -115,8 +118,8 @@ async function run() {
 
     console.log("\n--- 开始验证 1: 基础框架与字号阶梯 ---");
     const t2Fs = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--fs-t2').trim()`);
-    console.log(`--fs-t2 字号: "${t2Fs}" (期望 "12px")`);
-    if (t2Fs !== '12px') throw new Error(`--fs-t2 应为 12px，实际为 ${t2Fs}`);
+    console.log(`--fs-t2 字号: "${t2Fs}" (期望 "11px")`);
+    if (t2Fs !== '11px') throw new Error(`--fs-t2 应为 11px，实际为 ${t2Fs}`);
 
     console.log("\n--- 开始验证 2: 顶部导航栏与数据管理迁移 ---");
     const exportBtn = await evaluate(`!!document.getElementById('btnExportBackup')`);
@@ -138,6 +141,28 @@ async function run() {
     const expectedValues = ['cn', 'hk', 'tw', 'us'];
     const actualValues = await evaluate(`Array.from(document.querySelectorAll('#regionMicroSelect option')).map(o => o.value)`);
     if (JSON.stringify(actualValues) !== JSON.stringify(expectedValues)) throw new Error(`地区选项值不符合规范: ${actualValues}`);
+
+    // 检查专区下属角标不包含“板块”或“专区”文字
+    const newBadge = await evaluate(`document.getElementById('badgeNewSections')?.innerText || ''`);
+    const expBadge = await evaluate(`document.getElementById('badgeExploreCategories')?.innerText || ''`);
+    console.log(`最新发布角标: "${newBadge}", 类别探索角标: "${expBadge}"`);
+    if (newBadge.includes("板块") || expBadge.includes("专区")) {
+        throw new Error("角标内仍残留有'板块'或'专区'字样！");
+    }
+
+    console.log("\n--- 开始验证 3.1: 音源健康度与测速数字显示 ---");
+    // 打开音源抽屉测试测速数值
+    await evaluate(`window.Shell.toggleSourceModal()`);
+    await sleep(800);
+    const sourceStatusBadges = await evaluate(`Array.from(document.querySelectorAll('.source-status-badge')).map(b => b.innerText.trim())`);
+    console.log(`音源抽屉测速徽章采样:`, sourceStatusBadges.slice(0, 3));
+    const hasMsNumber = sourceStatusBadges.some(t => /\d+(\.\d+)?ms/.test(t));
+    console.log(`是否存在毫秒测速数值: ${hasMsNumber}`);
+    if (!hasMsNumber && sourceStatusBadges.length > 0) {
+        throw new Error("音源抽屉中未正确展示延迟毫秒数！");
+    }
+    await evaluate(`window.Shell.closeAllDrawers()`);
+    await sleep(300);
 
     console.log("\n--- 开始验证 4: 分组规则与【未分组】常驻 ---");
     const favUngrouped = await evaluate(`document.getElementById('lib_favs_cat_未分组') !== null`);
@@ -175,35 +200,39 @@ async function run() {
     console.log(`右侧加载曲目数: ${trackRowCount}`);
     if (trackRowCount < 2) throw new Error(`歌单曲目加载不足 2 首: ${trackRowCount}`);
 
-    const songRowDownloadBtnCount = await evaluate(`document.querySelectorAll('.track-action-col button[title*="下载"]').length`);
-    console.log(`曲目行内的下载按钮数量: ${songRowDownloadBtnCount} (应为 0)`);
-    if (songRowDownloadBtnCount > 0) throw new Error("曲目行内仍残留下载按钮！");
+    const actionColExists = await evaluate(`document.querySelectorAll('.track-action-col').length > 0`);
+    console.log(`曲目表格已精简为标准 4 列 (彻底移除第 5 列操作栏): ${!actionColExists}`);
+    if (actionColExists) throw new Error("曲目表格仍残留第 5 列操作栏！");
+
+    // 测试方案B：未激活多选时，单击曲目行彻底无反应（防误触）
+    console.log("测试方案B：单击曲目行验证防误触...");
+    await evaluate(`document.querySelector('.track-table tbody tr:nth-child(1)').click()`);
+    await sleep(200);
+    const selectionAfterClick = await evaluate(`document.querySelectorAll('.track-row-selected').length`);
+    console.log(`单击后勾选数量 (应为 0): ${selectionAfterClick}`);
+    if (selectionAfterClick !== 0) throw new Error("方案B失败：非多选模式单击曲目行不应产生勾选！");
 
     const headerDownloadBtnInitially = await evaluate(`!!document.querySelector('.detail-actions button[title*="下载"]')`);
     console.log(`未勾选时实体总览栏不显现下载按钮: ${!headerDownloadBtnInitially}`);
     if (headerDownloadBtnInitially) throw new Error("未勾选时实体总览栏不应显现下载按钮！");
 
-    // 勾选第 1 首歌
-    console.log("勾选第 1 首歌曲...");
+    // 测试组合1：触发长按/右键进入多选模式
+    console.log("测试组合1：右键触发长按多选激活...");
     await evaluate(`
-        const cb = document.querySelector('.track-table tbody tr:nth-child(1) .track-checkbox');
-        cb.checked = true;
-        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        const tr1 = document.querySelector('.track-table tbody tr:nth-child(1)');
+        tr1.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     `);
-    await sleep(400);
+    await sleep(300);
 
-    const headerDownloadBtnAfter1 = await evaluate(`!!document.querySelector('.detail-actions button[title*="下载"]')`);
-    console.log(`勾选 1 首歌后实体总览栏动态显现下载按钮: ${headerDownloadBtnAfter1}`);
-    if (!headerDownloadBtnAfter1) throw new Error("勾选歌曲后实体总览栏未出现下载按钮！");
+    const isMultiMode = await evaluate(`document.getElementById('trackTableEl')?.classList.contains('multi-select-mode')`);
+    const floatingBarShow = await evaluate(`document.getElementById('floatingBatchBar')?.classList.contains('show')`);
+    console.log(`多选模式已激活: ${isMultiMode}, 悬浮批量栏已浮出: ${floatingBarShow}`);
+    if (!isMultiMode || !floatingBarShow) throw new Error("组合1失败：长按/右键未能激活多选模式与悬浮批量栏！");
 
     // 勾选第 2 首歌
-    console.log("勾选第 2 首歌曲（触发批量多选模式）...");
-    await evaluate(`
-        const cb2 = document.querySelector('.track-table tbody tr:nth-child(2) .track-checkbox');
-        cb2.checked = true;
-        cb2.dispatchEvent(new Event('change', { bubbles: true }));
-    `);
-    await sleep(400);
+    console.log("多选模式下轻触勾选第 2 首歌曲...");
+    await evaluate(`document.querySelector('.track-table tbody tr:nth-child(2)').click()`);
+    await sleep(300);
 
     console.log("点击下载按钮，测试多首下载清单确认弹窗...");
     await evaluate(`document.querySelector('.detail-actions button[title*="下载"]').click()`);
