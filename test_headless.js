@@ -216,6 +216,10 @@ async function run() {
     console.log(`未勾选时实体总览栏不显现下载按钮: ${!headerDownloadBtnInitially}`);
     if (headerDownloadBtnInitially) throw new Error("未勾选时实体总览栏不应显现下载按钮！");
 
+    const favBtnText = await evaluate(`document.getElementById('btnFavCurrent')?.innerText?.trim()`);
+    console.log(`默认未勾选时收藏图标统一为 ＋: ${favBtnText === '＋'}`);
+    if (favBtnText && favBtnText !== '＋') throw new Error(`收藏图标未统一为 ＋，当前为 ${favBtnText}`);
+
     // 测试组合1：触发长按/右键进入多选模式
     console.log("测试组合1：右键触发长按多选激活...");
     await evaluate(`
@@ -225,16 +229,22 @@ async function run() {
     await sleep(300);
 
     const isMultiMode = await evaluate(`document.getElementById('trackTableEl')?.classList.contains('multi-select-mode')`);
-    const floatingBarShow = await evaluate(`document.getElementById('floatingBatchBar')?.classList.contains('show')`);
+    const floatingBarExists = await evaluate(`document.getElementById('floatingBatchBar') !== null`);
     const contextMenuOpen = await evaluate(`!!document.getElementById('globalContextMenu')?.classList.contains('show')`);
-    console.log(`多选模式已激活: ${isMultiMode}, 悬浮批量栏已浮出: ${floatingBarShow}`);
+    const headerHasBatchActions = await evaluate(`
+        (() => {
+            const btns = Array.from(document.querySelectorAll('.detail-actions button'));
+            return btns.length === 4 && btns.some(b => b.innerText.includes('✕'));
+        })()
+    `);
+    console.log(`多选模式已激活: ${isMultiMode}`);
+    console.log(`底部悬浮窗口已彻底移除: ${!floatingBarExists}`);
     console.log(`歌曲长按不弹出冗余选项菜单: ${!contextMenuOpen}`);
-    if (!isMultiMode || !floatingBarShow) throw new Error("组合1失败：长按/右键未能激活多选模式与悬浮批量栏！");
+    console.log(`头部集中承载多选操作栏(▶, ＋, ↓, ✕): ${headerHasBatchActions}`);
+    if (!isMultiMode) throw new Error("长按/右键未能激活多选模式！");
+    if (floatingBarExists) throw new Error("底部悬浮窗口未彻底移除！");
     if (contextMenuOpen) throw new Error("歌曲长按不应弹出冗余操作菜单！");
-
-    const favBtnText = await evaluate(`document.getElementById('btnFavCurrent')?.innerText?.trim()`);
-    console.log(`收藏图标统一为 ＋: ${favBtnText === '＋'}`);
-    if (favBtnText && favBtnText !== '＋') throw new Error(`收藏图标未统一为 ＋，当前为 ${favBtnText}`);
+    if (!headerHasBatchActions) throw new Error("歌单头部未能集中承载多选操作栏！");
 
     // 勾选第 2 首歌
     console.log("多选模式下轻触勾选第 2 首歌曲...");

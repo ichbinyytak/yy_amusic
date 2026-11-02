@@ -243,25 +243,39 @@ window.RightPanel = (function () {
         const isFav = currentPlaylistData?.id && window.StorageManager.isPlaylistFaved(currentPlaylistData.id);
         const selCount = selectedTrackIndices.size;
 
-        detailActions.innerHTML = `
-            <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
-                ▶
-            </button>
-            ${isViewingCustomPlaylist ? `
-                <button class="btn-action-icon" onclick="window.RightPanel.deleteCurrentCustomPlaylist()" title="删除此自建歌单">
-                    ✕
+        if (selCount > 0) {
+            // 多选激活状态：歌单头部右侧集中承载批量操作，彻底无需底部悬浮弹窗
+            detailActions.innerHTML = `
+                <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playBatchSelected()" title="播放所选 (${selCount} 首)">
+                    ▶
                 </button>
-            ` : (currentPlaylistData?.id ? `
-                <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.toggleFavCurrentPlaylist()" title="${isFav ? '取消收藏' : '收藏到分类'}">
+                <button class="btn-action-icon" onclick="window.RightPanel.openBatchAddToPlaylistModal()" title="加入自建歌单 (${selCount} 首)">
                     ＋
                 </button>
-            ` : '')}
-            ${selCount > 0 ? `
-                <button class="btn-action-icon" onclick="window.RightPanel.downloadSelectedTracks()" title="下载所选歌曲 (${selCount} 首)">
+                <button class="btn-action-icon" onclick="window.RightPanel.downloadSelectedTracks()" title="下载所选 (${selCount} 首)">
                     ↓
                 </button>
-            ` : ''}
-        `;
+                <button class="btn-action-icon" onclick="window.RightPanel.clearSelection()" title="取消多选">
+                    ✕
+                </button>
+            `;
+        } else {
+            // 默认未勾选状态：播放全部 / 收藏或删除歌单
+            detailActions.innerHTML = `
+                <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
+                    ▶
+                </button>
+                ${isViewingCustomPlaylist ? `
+                    <button class="btn-action-icon" onclick="window.RightPanel.deleteCurrentCustomPlaylist()" title="删除此自建歌单">
+                        ✕
+                    </button>
+                ` : (currentPlaylistData?.id ? `
+                    <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.toggleFavCurrentPlaylist()" title="${isFav ? '取消收藏' : '收藏到分类'}">
+                        ＋
+                    </button>
+                ` : '')}
+            `;
+        }
     }
 
     /**
@@ -333,7 +347,6 @@ window.RightPanel = (function () {
 
         // 绑定行交互：方案B（平时单击无反应防误触）+ 组合1（长按 500ms / 右键激活多选模式）
         bindTrackRowsInteraction();
-        updateFloatingBatchBar();
     }
 
     /**
@@ -489,18 +502,6 @@ window.RightPanel = (function () {
             }
         }
         renderHeaderActions();
-        updateFloatingBatchBar();
-    }
-
-    function updateFloatingBatchBar() {
-        if (!floatingBatchBar) return;
-        const count = selectedTrackIndices.size;
-        if (count > 0) {
-            floatingBatchBar.classList.add("show");
-            if (batchCountText) batchCountText.innerText = `已选 ${count} 首`;
-        } else {
-            floatingBatchBar.classList.remove("show");
-        }
     }
 
     // 播放全部
