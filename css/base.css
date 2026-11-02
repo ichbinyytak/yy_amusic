@@ -13,6 +13,12 @@
     --success: #3fb950;
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+    /* 4级标准整数统一字号阶梯 (Unified 4-Tier Typography Scale) */
+    --fs-t1: 16px; /* T1 头部大标题 */
+    --fs-t2: 13px; /* T2 主标题与核心文本 */
+    --fs-t3: 12px; /* T3 次级信息与副标题 */
+    --fs-t4: 11px; /* T4 辅助微型字与角标 */
 }
 
 * {
@@ -26,7 +32,7 @@ body {
     color: var(--text-primary);
     font-family: var(--font-sans);
     line-height: 1.5;
-    font-size: 13px;
+    font-size: var(--fs-t2);
     height: 100vh;
     height: 100dvh;
     display: flex;
@@ -82,12 +88,12 @@ body {
 }
 
 .logo-badge {
-    font-size: 18px;
+    font-size: var(--fs-t1);
     line-height: 1;
 }
 
 .brand-text h1 {
-    font-size: 14px;
+    font-size: var(--fs-t2);
     font-weight: 700;
     color: #fff;
     white-space: nowrap;
@@ -113,7 +119,7 @@ body {
     border-radius: 6px;
     padding: 4px 8px;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: var(--fs-t3);
     outline: none;
     transition: all 0.15s ease;
 }
@@ -124,14 +130,14 @@ body {
 
 .btn-search-icon {
     padding: 4px 8px !important;
-    font-size: 12px !important;
+    font-size: var(--fs-t3) !important;
 }
 
 .btn-header-source {
     width: 26px;
     height: 26px;
     padding: 0 !important;
-    font-size: 13px !important;
+    font-size: var(--fs-t2) !important;
     font-weight: 600;
     color: var(--accent) !important;
     border-color: rgba(63, 185, 80, 0.4) !important;
@@ -259,7 +265,7 @@ body {
 }
 
 .player-title {
-    font-size: 11px;
+    font-size: var(--fs-t2);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -269,7 +275,7 @@ body {
 }
 
 .player-artist {
-    font-size: 9.5px;
+    font-size: var(--fs-t3);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -312,10 +318,10 @@ body {
     flex-shrink: 0;
 }
 
-.volume-container {
+.volume-wrapper {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 2px;
 }
 .volume-btn {
     background: transparent;
@@ -326,8 +332,8 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 28px;
+    min-height: 28px;
     border-radius: 4px;
     outline: none;
     touch-action: manipulation;
@@ -336,7 +342,7 @@ body {
     background-color: var(--bg-surface-hover);
 }
 .volume-icon {
-    font-size: 14px;
+    font-size: var(--fs-t2);
     user-select: none;
     -webkit-user-select: none;
     display: inline-flex;
@@ -352,9 +358,31 @@ body {
 .volume-btn:active .volume-icon {
     transform: scale(1.15);
 }
-.volume-slider {
-    width: 44px;
-    height: 4px;
+.volume-popup {
+    display: none;
+    position: absolute;
+    bottom: 34px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    z-index: 1000;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.volume-popup.open {
+    display: flex;
+}
+.volume-vertical-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    -webkit-appearance: slider-vertical;
+    width: 6px;
+    height: 80px;
     accent-color: var(--accent-apple);
     cursor: pointer;
 }
@@ -378,7 +406,7 @@ body {
 }
 
 .player-time {
-    font-size: 9px;
+    font-size: var(--fs-t4);
     color: var(--text-muted);
     font-family: var(--font-mono);
     min-width: 24px;
@@ -428,7 +456,7 @@ body {
     margin-bottom: 4px;
     flex-shrink: 0;
 }
-.lyric-dock-indicator { font-size: 10.5px; color: #7ee787; font-weight: 600; }
+.lyric-dock-indicator { font-size: var(--fs-t4); color: #7ee787; font-weight: 600; }
 .lyric-close-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; }
 
 .lyric-lines-wrapper {
@@ -448,14 +476,14 @@ body {
 }
 
 .lyric-line-current {
-    font-size: 10.5px;
+    font-size: var(--fs-t3);
     font-weight: 600;
     color: #7ee787;
     line-height: 1.35;
 }
 
 .lyric-line-next {
-    font-size: 9px;
+    font-size: var(--fs-t4);
     color: var(--text-muted);
     margin-top: 1px;
     opacity: 0.8;
@@ -468,7 +496,7 @@ body {
 }
 .lyric-dock.expanded .lyric-dock-header { display: flex; }
 .lyric-dock.expanded .lyric-lines-wrapper { flex: 1; overflow-y: auto; justify-content: flex-start; gap: 4px; padding: 2px 0; }
-.lyric-dock.expanded .lyric-line-current { font-size: 12px; background: rgba(126, 231, 135, 0.08); padding: 2px 6px; border-radius: 4px; }
+.lyric-dock.expanded .lyric-line-current { font-size: var(--fs-t3); background: rgba(126, 231, 135, 0.08); padding: 2px 6px; border-radius: 4px; }
 
 /* 底部向上拉起抽屉 (队列与音源) */
 .drawer-backdrop {
@@ -518,9 +546,9 @@ body {
     align-items: center;
     background-color: var(--bg-main);
 }
-.queue-drawer-title, .source-drawer-title { font-size: 12px; font-weight: 600; color: #fff; }
-.source-drawer-subtitle { font-size: 9.5px; color: var(--text-muted); }
-.queue-drawer-close, .source-drawer-close { background: transparent; border: none; color: var(--text-muted); font-size: 14px; cursor: pointer; padding: 2px 6px; }
+.queue-drawer-title, .source-drawer-title { font-size: var(--fs-t2); font-weight: 600; color: #fff; }
+.source-drawer-subtitle { font-size: var(--fs-t4); color: var(--text-muted); }
+.queue-drawer-close, .source-drawer-close { background: transparent; border: none; color: var(--text-muted); font-size: var(--fs-t2); cursor: pointer; padding: 2px 6px; }
 
 .queue-drawer-body, .source-drawer-body {
     flex: 1;
@@ -535,7 +563,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 11px;
+    font-size: var(--fs-t3);
     cursor: pointer;
 }
 .queue-item:hover { background: var(--bg-surface-hover); }
@@ -550,9 +578,9 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 11px;
+    font-size: var(--fs-t4);
 }
-.source-status-badge { font-size: 10px; font-family: var(--font-mono); font-weight: 500; }
+.source-status-badge { font-size: var(--fs-t4); font-family: var(--font-mono); font-weight: 500; }
 .source-status-ok { color: var(--success, #2ea043); }
 .source-status-untested { color: #58a6ff; }
 .source-status-failed { color: #8b949e; }
@@ -585,9 +613,9 @@ body {
     justify-content: space-between;
     align-items: center;
 }
-.modal-header h3 { font-size: 12px; font-weight: 600; }
+.modal-header h3 { font-size: var(--fs-t2); font-weight: 600; }
 .modal-close-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 2px 6px; }
-.modal-body { padding: 10px 12px; }
+.modal-body { padding: 10px 12px; font-size: var(--fs-t3); }
 
 .playlist-choice-list {
     display: flex;
@@ -603,7 +631,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 11px;
+    font-size: var(--fs-t3);
     color: var(--text-primary);
     transition: all 0.15s ease;
 }
@@ -612,7 +640,7 @@ body {
     border-color: var(--border-color);
 }
 .playlist-choice-item .meta-tag {
-    font-size: 9px;
+    font-size: var(--fs-t4);
     color: var(--text-muted);
     font-family: var(--font-mono);
 }

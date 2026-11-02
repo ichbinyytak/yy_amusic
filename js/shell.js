@@ -1,10 +1,17 @@
 /**
  * ========================================================
- * js/shell.js - 主页框架控制器 (播放器底栏、双态歌词与抽屉管理)
+ * js/shell.js - 主页外壳控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 职责：
+ * 1. 顶部紧凑搜索栏：输入后直接将结果路由到右侧详情区域
+ * 2. 底部全局播放器播控与双行时间轴歌词
+ * 3. 垂直音量直立滑块弹窗 (🔊 纯图标点击向上弹出，滑到底为 0，无静音按钮)
+ * 4. 抽屉与收藏弹窗管理
  * ========================================================
  */
 
 window.Shell = (function () {
+    'use strict';
+
     // DOM 元素引用
     const playerTitle = document.getElementById("playerTitle");
     const playerArtist = document.getElementById("playerArtist");
@@ -23,18 +30,38 @@ window.Shell = (function () {
     const drawerBackdrop = document.getElementById("drawerBackdrop");
     const queueListBody = document.getElementById("queueListBody");
     const sourcesListBody = document.getElementById("sourcesListBody");
-    const volumeSlider = document.getElementById("volumeSlider");
-    const volumeIcon = document.getElementById("volumeIcon");
+    const volumePopup = document.getElementById("volumePopup");
+    const volumeVerticalSlider = document.getElementById("volumeVerticalSlider");
+    const searchInput = document.getElementById("searchInput");
+    const clearBtn = document.getElementById("clearBtn");
+    const toast = document.getElementById("toast");
 
-    let isMuted = false;
-    let prevVolume = 80;
+    let toastTimer = null;
     let isLyricExpanded = false;
     let lastLyricIdx = -1;
     let currentSongLyricLines = [];
 
+    function escapeHtml(str) {
+        if (!str) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function formatDuration(ms) {
+        if (!ms || isNaN(ms)) return "00:00";
+        const totalSec = Math.floor(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+    }
+
     function init() {
         if (!window.player) {
-            console.error("Player engine not loaded!");
+            console.error("[Shell] 播放引擎未就绪");
             return;
         }
 
@@ -53,17 +80,15 @@ window.Shell = (function () {
             updatePlayPauseButton(true);
             updateQueueCount();
 
-            // 重新高亮右侧当前正在播放的曲目
-            if (window.RightPanel && window.RightPanel.highlightPlayingTrack) {
-                window.RightPanel.highlightPlayingTrack();
-            }
+            // 重新高亮右侧当前正在播放的行
+            document.querySelectorAll(".track-table tr").forEach(tr => tr.classList.remove("track-row-playing"));
+            const playingRow = document.getElementById(`track-row-${index}`);
+            if (playingRow) playingRow.classList.add("track-row-playing");
         });
 
-        window.player.on("stateChange", ({ isPlaying, isResolving, error }) => {
+        window.player.on("stateChange", ({ isPlaying, error }) => {
             updatePlayPauseButton(isPlaying);
-            if (error) {
-                showToast(`播放提示: ${error}`);
-            }
+            if (error) showToast(`播放提示: ${error}`);
         });
 
         window.player.on("timeUpdate", ({ currentTime, duration, percent, formattedCurrent, formattedDuration }) => {
@@ -89,15 +114,58 @@ window.Shell = (function () {
             renderQueueList();
         });
 
-        // 初始化音量与播放模式图标
-        if (volumeSlider) {
-            volumeSlider.value = (window.player.audio.volume * 100) || 80;
+        // 初始化音量滑块
+        if (volumeVerticalSlider) {
+            const currentVol = (window.player.audio.volume * 100) || 80;
+            volumeVerticalSlider.value = currentVol;
         }
-        if (btnMode) {
-            btnMode.innerHTML = getModeSvg(window.player.playMode || "loop");
+
+        // 点击页面任意外部关闭音量弹窗
+        document.addEventListener("click", (e) => {
+            if (volumePopup && !e.target.closest(".volume-wrapper")) {
+                volumePopup.classList.remove("open");
+            }
+        });
+
+        // 搜索框回车监听
+        if (searchInput) {
+            searchInput.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    handleSearch();
+                }
+            });
+            searchInput.addEventListener("input", (e) => {
+                if (clearBtn) {
+                    clearBtn.style.display = e.target.value ? "inline-flex" : "none";
+                }
+            });
         }
     }
 
+    /* -------------------- 顶栏搜索交互 -------------------- */
+    function handleSearch() {
+        const query = searchInput ? searchInput.value.trim() : "";
+        if (!query) return;
+        window.RightPanel?.handleSearch?.(query);
+    }
+
+    function clearSearch() {
+        if (searchInput) searchInput.value = "";
+        if (clearBtn) clearBtn.style.display = "none";
+    }
+
+    /* -------------------- 音量直立弹窗交互 -------------------- */
+    function toggleVolumePopup() {
+        if (!volumePopup) return;
+        volumePopup.classList.toggle("open");
+    }
+
+    function handleVerticalVolumeChange(val) {
+        const v = Math.max(0, Math.min(100, val)) / 100;
+        if (window.player) window.player.setVolume(v);
+    }
+
+    /* -------------------- 播控与进度条 -------------------- */
     function updatePlayPauseButton(isPlaying) {
         if (!btnPlayPause) return;
         if (isPlaying) {
@@ -115,7 +183,6 @@ window.Shell = (function () {
         }
     }
 
-    // 进度条拖拽/点击跳转 (0 ~ 1 比例)
     function handleProgressBarClick(e) {
         if (!window.player) return;
         const bar = document.getElementById("progressBarBg");
@@ -126,7 +193,6 @@ window.Shell = (function () {
         window.player.seek(pct);
     }
 
-    // 播放模式切换
     function handleCycleMode() {
         if (!window.player) return;
         const mode = window.player.cycleMode();
@@ -148,43 +214,13 @@ window.Shell = (function () {
         return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
     }
 
-    // 音量与静音
-    function handleVolumeChange(val) {
-        const v = Math.max(0, Math.min(100, val)) / 100;
-        if (window.player) window.player.setVolume(v);
-        isMuted = (v === 0);
-        updateVolumeIcon(v);
-    }
-
-    function toggleMute() {
-        if (!window.player) return;
-        const isMutedNow = window.player.toggleMute();
-        if (isMutedNow) {
-            updateVolumeIcon(0);
-            if (volumeSlider) volumeSlider.value = 0;
-            showToast("已静音 🔇");
-        } else {
-            const v = (window.player.savedVolume !== undefined ? window.player.savedVolume : (window.player.audio.volume || 0.8));
-            updateVolumeIcon(v);
-            if (volumeSlider) volumeSlider.value = Math.round(v * 100);
-            showToast(`恢复音量: ${Math.round(v * 100)}% 🔊`);
-        }
-    }
-
-    function updateVolumeIcon(v) {
-        if (!volumeIcon) return;
-        if (v === 0) volumeIcon.innerText = "🔇";
-        else if (v < 0.5) volumeIcon.innerText = "🔉";
-        else volumeIcon.innerText = "🔊";
-    }
-
-    // 歌词渲染 (平时 2 行 ⇄ 点击拉伸为 6 行)
+    /* -------------------- 歌词系统 -------------------- */
     function renderLyricsView(curText, nxtText) {
         if (!lyricLinesWrapper) return;
         if (!isLyricExpanded) {
             lyricLinesWrapper.innerHTML = `
-                <div class="lyric-line lyric-line-current">${escapeHtml(curText || "♪ 纯文本底座已就绪")}</div>
-                <div class="lyric-line lyric-line-next">${escapeHtml(nxtText || "点播歌曲，歌词毫秒级同步")}</div>
+                <div class="lyric-line lyric-line-current">${escapeHtml(curText || "♪ YY-Amusic 纯文本底座已就绪")}</div>
+                <div class="lyric-line lyric-line-next">${escapeHtml(nxtText || "点播任意歌曲，歌词毫秒级同步")}</div>
             `;
         } else {
             if (!currentSongLyricLines || currentSongLyricLines.length === 0) {
@@ -228,7 +264,7 @@ window.Shell = (function () {
         renderLyricsView(curLine, nextLine);
     }
 
-    // 抽屉管理：队列与音源
+    /* -------------------- 抽屉与音源管理 -------------------- */
     function toggleQueueModal() {
         if (!queueDrawer) return;
         const isOpen = queueDrawer.classList.toggle("open");
@@ -252,18 +288,12 @@ window.Shell = (function () {
         }
 
         let html = '';
-        list.forEach((item, idx) => {
-            const isActive = idx === curIdx;
-            const title = item.title || item.name || "未知歌曲";
-            const artist = item.artist || "未知歌手";
+        list.forEach((t, idx) => {
+            const isPlaying = idx === curIdx;
             html += `
-                <div class="queue-item ${isActive ? 'active' : ''}" onclick="window.player.playIndex(${idx}); window.Shell.toggleQueueModal();">
-                    <div>
-                        <span style="font-family: var(--font-mono); margin-right: 6px; opacity: 0.7;">${idx + 1}.</span>
-                        <strong>${escapeHtml(title)}</strong>
-                        <span style="opacity: 0.7; font-size: 10px; margin-left: 6px;">${escapeHtml(artist)}</span>
-                    </div>
-                    <span>${isActive ? '🔊 播放中' : ''}</span>
+                <div class="queue-item ${isPlaying ? 'active' : ''}" onclick="window.player.playIndex(${idx})">
+                    <span>${isPlaying ? '🔊 ' : (idx + 1) + '. '}${escapeHtml(t.name || t.title)} - ${escapeHtml(t.artist)}</span>
+                    <span style="font-family:var(--font-mono); font-size:var(--fs-t4); opacity:0.7;">${formatDuration(t.durationMillis)}</span>
                 </div>
             `;
         });
@@ -276,72 +306,43 @@ window.Shell = (function () {
         if (isOpen) {
             if (queueDrawer) queueDrawer.classList.remove("open");
             if (drawerBackdrop) drawerBackdrop.classList.add("open");
-            loadSources();
+            loadSourcesList();
         } else {
             if (drawerBackdrop) drawerBackdrop.classList.remove("open");
         }
     }
 
-    async function loadSources() {
+    async function loadSourcesList() {
         if (!sourcesListBody) return;
-        sourcesListBody.innerHTML = '<div class="loading-state">正在获取底层音源状态...</div>';
+        sourcesListBody.innerHTML = '<div class="loading-state">正在检测音源...</div>';
         try {
             const res = await fetch("/api/sources");
-            const list = await res.json();
-            renderSourceList(list);
+            const data = await res.json();
+            renderSourceList(data);
         } catch (err) {
-            sourcesListBody.innerHTML = `<div class="loading-state">❌ 获取音源失败: ${err.message}</div>`;
+            sourcesListBody.innerHTML = `<div class="loading-state">获取音源失败: ${escapeHtml(err.message)}</div>`;
         }
     }
 
-    function renderSourceList(list) {
+    function renderSourceList(data) {
         if (!sourcesListBody) return;
-        if (!list || list.length === 0) {
-            sourcesListBody.innerHTML = '<div class="loading-state">暂无已注册音源。</div>';
+        const sources = Array.isArray(data) ? data : (data.sources || []);
+        if (sources.length === 0) {
+            sourcesListBody.innerHTML = '<div class="loading-state">暂无可用的音源</div>';
             return;
         }
 
-        // 优先展示就绪与可用音源
-        const sorted = [...list].sort((a, b) => {
-            const aOk = a.status === 'ok' ? 0 : (a.status === 'untested' ? 1 : 2);
-            const bOk = b.status === 'ok' ? 0 : (b.status === 'untested' ? 1 : 2);
-            return aOk - bOk;
-        });
-
-        const okCount = list.filter(s => s.status === 'ok').length;
-        const untestedCount = list.filter(s => s.status === 'untested').length;
-        const failedCount = list.filter(s => s.status !== 'ok' && s.status !== 'untested').length;
-
-        let html = `
-            <div style="padding: 8px 12px; margin-bottom: 8px; background: rgba(255,255,255,0.04); border-radius: 6px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); border: 1px solid rgba(255,255,255,0.06);">
-                <span>共装载 <b style="color:#fff;">${list.length}</b> 个底层音源</span>
-                <span>
-                    <span style="color:#3fb950; font-weight:600;">● 就绪: ${okCount}</span> &nbsp;|&nbsp; 
-                    <span style="color:#58a6ff;">○ 待命: ${untestedCount}</span> &nbsp;|&nbsp; 
-                    <span style="color:#8b949e;">✕ 离线: ${failedCount}</span>
-                </span>
-            </div>
-        `;
-        sorted.forEach((s, idx) => {
-            const isOk = s.status === 'ok';
-            const isUntested = s.status === 'untested';
-            const statusClass = isOk ? 'source-status-ok' : (isUntested ? 'source-status-untested' : 'source-status-failed');
-            const statusLabel = isOk ? `● 就绪 (${s.latency_ms} ms)` : (isUntested ? '○ 待命备用' : '✕ 离线');
-
+        let html = '';
+        sources.forEach((s) => {
+            const isOk = s.status === "ok" || s.latency > 0;
+            const latencyText = s.latency ? `${s.latency}ms` : (isOk ? "在线" : "离线");
             html += `
                 <div class="source-card">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-family: var(--font-mono); color: var(--text-muted); font-size: 10px; width: 22px;">#${idx + 1}</span>
-                        <div>
-                            <div style="font-weight: 600; font-size: 11.5px; color: #fff;">⚡ ${escapeHtml(s.name)}</div>
-                            <div style="font-size: 9.5px; color: var(--text-muted);">
-                                平台: ${(s.platform || 'KW').toUpperCase()} • 命中: ${s.success_count || 0} 次 • 连败: ${s.consecutive_fails || 0}
-                            </div>
-                        </div>
+                    <div>
+                        <strong>${escapeHtml(s.name || s.id)}</strong>
+                        <div style="font-size:var(--fs-t4); color:var(--text-muted);">${escapeHtml(s.type || '内置音源')}</div>
                     </div>
-                    <span class="source-status-badge ${statusClass}">
-                        ${statusLabel}
-                    </span>
+                    <span class="source-status-badge ${isOk ? 'source-status-ok' : 'source-status-failed'}">${latencyText}</span>
                 </div>
             `;
         });
@@ -384,7 +385,7 @@ window.Shell = (function () {
         if (drawerBackdrop) drawerBackdrop.classList.remove("open");
     }
 
-    /* -------------------- 收藏到分类弹窗管理 -------------------- */
+    /* -------------------- 弹窗：添加到收藏分类 -------------------- */
     let pendingFavPlaylist = null;
 
     function openAddToFavModal(playlistData) {
@@ -411,9 +412,9 @@ window.Shell = (function () {
         if (infoEl) {
             infoEl.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span>${escapeHtml(name)} <span style="opacity:0.7; font-size:10px;">• ${escapeHtml(curator)}</span></span>
+                    <span>${escapeHtml(name)} <span style="opacity:0.7; font-size:var(--fs-t4);">• ${escapeHtml(curator)}</span></span>
                     ${isFaved ? `
-                        <button class="btn btn-sm btn-ghost" style="color:#ff7588; font-size:10px; padding:1px 5px; cursor:pointer;" onclick="window.Shell.unfavCurrentFromModal()" title="取消收藏">✕ 取消收藏</button>
+                        <button class="btn btn-sm btn-ghost" style="color:#ff7588; font-size:var(--fs-t4); padding:1px 5px; cursor:pointer;" onclick="window.Shell.unfavCurrentFromModal()" title="取消收藏">✕ 取消收藏</button>
                     ` : ''}
                 </div>
             `;
@@ -429,8 +430,8 @@ window.Shell = (function () {
                 html += `
                     <div class="playlist-choice-item" onclick="window.Shell.selectFavCategory('${escapeHtml(c)}')" style="${isCurrent ? 'background:rgba(88,166,255,0.15); border-left:2px solid var(--accent);' : ''}">
                         <div>
-                            <strong>📁 ${escapeHtml(c)}</strong>
-                            ${isCurrent ? '<span style="color:var(--accent); font-size:9.5px; margin-left:6px;">(当前分类)</span>' : ''}
+                            <strong>${escapeHtml(c)}</strong>
+                            ${isCurrent ? '<span style="color:var(--accent); font-size:var(--fs-t4); margin-left:6px;">(当前分类)</span>' : ''}
                         </div>
                         <span class="meta-tag">共 ${count} 个歌单</span>
                     </div>
@@ -451,14 +452,9 @@ window.Shell = (function () {
     function selectFavCategory(catName) {
         if (!pendingFavPlaylist) return;
         window.StorageManager.favPlaylistWithCategory(pendingFavPlaylist, catName);
-        showToast(`⭐ 已将歌单收藏至【${catName}】！`);
+        showToast(`已收藏至【${catName}】`);
         closeAddToFavModal();
-        if (window.RightPanel && window.RightPanel.updateFavButtonStatus) {
-            window.RightPanel.updateFavButtonStatus();
-        }
-        if (window.LeftPanel && window.LeftPanel.loadLibraryPage) {
-            window.LeftPanel.loadLibraryPage();
-        }
+        window.LibraryPanel?.renderLibrary?.();
     }
 
     function confirmCreateCategoryAndFav() {
@@ -471,35 +467,89 @@ window.Shell = (function () {
         }
         window.StorageManager.addCategory('fav', name);
         window.StorageManager.favPlaylistWithCategory(pendingFavPlaylist, name);
-        showToast(`⭐ 已创建分类【${name}】并成功收藏！`);
+        showToast(`已创建分类【${name}】并收藏`);
         closeAddToFavModal();
-        if (window.RightPanel && window.RightPanel.updateFavButtonStatus) {
-            window.RightPanel.updateFavButtonStatus();
-        }
-        if (window.LeftPanel && window.LeftPanel.loadLibraryPage) {
-            window.LeftPanel.loadLibraryPage();
-        }
+        window.LibraryPanel?.renderLibrary?.();
     }
 
     function unfavCurrentFromModal() {
         if (!pendingFavPlaylist) return;
         window.StorageManager.unfavPlaylist(pendingFavPlaylist.id);
-        showToast(`已从收藏夹中移除《${pendingFavPlaylist.name || pendingFavPlaylist.title}》`);
+        showToast(`已取消收藏《${pendingFavPlaylist.name || pendingFavPlaylist.title}》`);
         closeAddToFavModal();
-        if (window.RightPanel && window.RightPanel.updateFavButtonStatus) {
-            window.RightPanel.updateFavButtonStatus();
+        window.LibraryPanel?.renderLibrary?.();
+    }
+
+    /* -------------------- 弹窗：添加到自建歌单 -------------------- */
+    function openAddToCustomModal(songInfoText) {
+        const modal = document.getElementById("addToPlaylistModal");
+        const infoEl = document.getElementById("addToSongInfo");
+        const choiceList = document.getElementById("playlistChoiceList");
+        const input = document.getElementById("newPlaylistInput");
+
+        if (input) input.value = "";
+        if (infoEl) infoEl.innerText = songInfoText || "已选择歌曲";
+
+        if (choiceList) {
+            const customs = window.StorageManager.getCustomPlaylists();
+            if (customs.length === 0) {
+                choiceList.innerHTML = '<div style="padding:8px; font-size:var(--fs-t4); color:var(--text-muted);">暂无自建歌单，请在下方直接输入名称新建</div>';
+            } else {
+                let html = '';
+                customs.forEach(pl => {
+                    const count = pl.tracks ? pl.tracks.length : 0;
+                    html += `
+                        <div class="playlist-choice-item" onclick="window.RightPanel.confirmAddPendingToPlaylist('${escapeHtml(pl.id)}')">
+                            <strong>${escapeHtml(pl.title)}</strong>
+                            <span class="meta-tag">共 ${count} 首歌</span>
+                        </div>
+                    `;
+                });
+                choiceList.innerHTML = html;
+            }
         }
-        if (window.LeftPanel && window.LeftPanel.loadLibraryPage) {
-            window.LeftPanel.loadLibraryPage();
+
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeAddToCustomModal() {
+        const modal = document.getElementById("addToPlaylistModal");
+        if (modal) modal.classList.remove("open");
+    }
+
+    function confirmCreateAndAdd() {
+        const input = document.getElementById("newPlaylistInput");
+        const title = input ? input.value.trim() : "";
+        if (!title) {
+            showToast("请输入新歌单名称");
+            return;
         }
+        const newPl = window.StorageManager.createCustomPlaylist(title, "默认");
+        if (newPl) {
+            window.RightPanel.confirmAddPendingToPlaylist(newPl.id);
+            window.LibraryPanel?.renderLibrary?.();
+        }
+    }
+
+    /* -------------------- 全局 Toast 提示 -------------------- */
+    function showToast(msg) {
+        if (!toast) return;
+        toast.innerText = msg;
+        toast.classList.add("show");
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            toast.classList.remove("show");
+        }, 2200);
     }
 
     return {
         init,
+        handleSearch,
+        clearSearch,
+        toggleVolumePopup,
+        handleVerticalVolumeChange,
         handleProgressBarClick,
         handleCycleMode,
-        handleVolumeChange,
-        toggleMute,
         expandLyricDock,
         collapseLyricDock,
         toggleQueueModal,
@@ -511,6 +561,10 @@ window.Shell = (function () {
         closeAddToFavModal,
         selectFavCategory,
         confirmCreateCategoryAndFav,
-        unfavCurrentFromModal
+        unfavCurrentFromModal,
+        openAddToCustomModal,
+        closeAddToCustomModal,
+        confirmCreateAndAdd,
+        showToast
     };
 })();

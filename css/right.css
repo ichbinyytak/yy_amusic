@@ -1,5 +1,5 @@
 /* ========================================================
-   右侧框架样式 (Right Column: 50% 歌单曲目明细与点播)
+   css/right.css - 右侧曲目表格、响应式自适应排版与浮动批量操作 (遵照 SITE_ARCHITECTURE.md)
    ======================================================== */
 
 .detail-panel {
@@ -12,38 +12,41 @@
     flex-direction: column;
     overflow: hidden;
     height: 100%;
+    position: relative;
 }
 
+/* 实体总览栏 (当前选中的 歌单 或 专辑) */
 .detail-header {
-    padding: 5px 8px;
+    padding: 8px 12px;
     background-color: var(--bg-surface);
     border-bottom: 1px solid var(--border-subtle);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 4px;
+    gap: 8px;
     flex-shrink: 0;
 }
 
 .detail-title-group {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
     min-width: 0;
     flex: 1;
 }
 
 .detail-title-group h2 {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--fs-t1);
+    font-weight: 700;
     color: #fff;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.3;
 }
 
 .detail-subtitle {
-    font-size: 8.5px;
+    font-size: var(--fs-t3);
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -53,47 +56,84 @@
 .detail-actions {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     flex-shrink: 0;
 }
 
 .btn-action-icon {
-    width: 24px;
-    height: 22px;
+    width: 28px;
+    height: 26px;
     padding: 0 !important;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 10.5px;
+    font-size: var(--fs-t3);
     border-radius: 4px;
     cursor: pointer;
+    background: var(--bg-surface-hover);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    transition: all 0.15s ease;
 }
-.btn-action-icon:hover { transform: scale(1.06); }
 
-/* 歌曲表格：超高密度 3 列 (# | 歌名/歌手 | 操作) */
+.btn-action-icon:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: scale(1.05);
+}
+
+.btn-action-icon.btn-play-all {
+    background-color: var(--accent-apple);
+    border-color: var(--accent-apple);
+    color: #fff;
+}
+
+.btn-action-icon.btn-play-all:hover {
+    opacity: 0.9;
+    color: #fff;
+}
+
+/* 详情主体滚动区 */
+.detail-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+/* ========================================================
+   曲目列表表格：纯图标、自适应流式排版、序号/Checkbox切换
+   ======================================================== */
 .track-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: var(--fs-t2);
 }
 
 .track-table th {
-    background-color: rgba(0, 0, 0, 0.2);
+    background-color: rgba(0, 0, 0, 0.25);
     color: var(--text-muted);
     font-weight: 500;
     text-align: left;
-    padding: 5px 6px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--border-color);
-    font-size: 10px;
+    font-size: var(--fs-t4);
     position: sticky;
     top: 0;
     z-index: 2;
 }
 
 .track-table td {
-    padding: 4px 6px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--border-subtle);
     color: var(--text-secondary);
+    vertical-align: middle;
+}
+
+.track-table tr {
+    transition: background-color 0.12s ease;
 }
 
 .track-table tr:hover td {
@@ -104,73 +144,225 @@
 .track-row-playing td {
     background-color: rgba(126, 231, 135, 0.08) !important;
 }
+
 .track-row-playing .track-name {
     color: #7ee787 !important;
     font-weight: 700;
 }
 
-.track-index {
-    width: 18px;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: 8.5px;
+/* 第一列：序号 / 复选框 切换列 */
+.track-index-col {
+    width: 32px;
+    min-width: 32px;
     text-align: center;
+    position: relative;
 }
 
-.track-info-th {
-    width: auto;
+.track-index-num {
+    font-family: var(--font-mono);
+    font-size: var(--fs-t4);
+    color: var(--text-muted);
+    display: inline-block;
 }
 
+.track-checkbox {
+    display: none;
+    cursor: pointer;
+    accent-color: var(--accent-apple);
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+}
+
+/* 悬停或处于全局多选模式时，显现复选框并隐藏序号 */
+.track-table tr:hover .track-index-num {
+    display: none;
+}
+.track-table tr:hover .track-checkbox {
+    display: inline-block;
+}
+
+.multi-select-mode .track-index-num {
+    display: none !important;
+}
+.multi-select-mode .track-checkbox {
+    display: inline-block !important;
+}
+
+/* 第二列：歌曲名与歌手自适应布局 (flex-wrap)
+   默认同行：歌曲名 · 歌手名
+   宽度不足或超长时：歌手名自然下沉折行到正下方 */
 .track-info-cell {
-    max-width: 0;
     width: 100%;
 }
 
+.track-title-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 6px;
+    line-height: 1.35;
+}
+
 .track-name {
-    color: var(--text-primary);
+    font-size: var(--fs-t2);
     font-weight: 600;
-    font-size: 10.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.25;
+    color: var(--text-primary);
+    word-break: break-word;
 }
 
 .track-artist {
+    font-size: var(--fs-t3);
     color: var(--text-muted);
-    font-size: 8.5px;
+    word-break: break-word;
+}
+
+/* 专辑列 */
+.track-album-col {
+    font-size: var(--fs-t3);
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.2;
-    margin-top: 1px;
+    max-width: 160px;
 }
 
-.track-action {
-    width: 46px;
+@media (max-width: 768px) {
+    .track-album-col {
+        display: none;
+    }
+}
+
+/* 时长列 */
+.track-duration-col {
+    width: 45px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-t4);
+    color: var(--text-muted);
     text-align: right;
     white-space: nowrap;
 }
 
-.btn-play-song, .btn-add-to-pl, .btn-remove-song {
+/* 操作列 */
+.track-action-col {
+    width: 72px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.btn-track-action {
     background: transparent;
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 10px;
-    width: 20px;
-    height: 20px;
+    font-size: var(--fs-t3);
+    width: 22px;
+    height: 22px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 3px;
+    transition: all 0.12s ease;
 }
-.btn-play-song { color: var(--success); }
-.btn-play-song:hover { background: rgba(63, 185, 80, 0.15); }
-.btn-add-to-pl:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
-.btn-remove-song:hover { background: rgba(248, 81, 73, 0.15); color: #f85149; }
 
-/* 占位提示与加载 */
+.btn-track-action:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.btn-track-action.play-song {
+    color: var(--success);
+}
+.btn-track-action.play-song:hover {
+    background-color: rgba(63, 185, 80, 0.15);
+}
+
+.btn-track-action.del-song:hover {
+    color: #ff7588;
+}
+
+/* ========================================================
+   浮动批量操作栏 (当已选数 > 0 时于右下角浮起)
+   ======================================================== */
+.floating-batch-bar {
+    position: fixed;
+    bottom: 84px;
+    right: 18px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 6px 14px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    z-index: 100;
+    animation: batchSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.floating-batch-bar.show {
+    display: flex;
+}
+
+@keyframes batchSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.batch-count-text {
+    font-size: var(--fs-t3);
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.batch-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-batch-action {
+    background-color: var(--bg-surface-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: var(--fs-t3);
+    padding: 4px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s ease;
+}
+
+.btn-batch-action:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-batch-action.btn-batch-play {
+    background-color: var(--accent-apple);
+    border-color: var(--accent-apple);
+    color: #fff;
+}
+
+.btn-batch-action.btn-batch-cancel {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+}
+.btn-batch-action.btn-batch-cancel:hover {
+    color: var(--text-primary);
+}
+
+/* 占位与空状态 */
 .placeholder-box {
     display: flex;
     flex-direction: column;
@@ -180,40 +372,13 @@
     color: var(--text-muted);
     text-align: center;
     gap: 6px;
-    padding: 20px;
-    font-size: 11px;
+    padding: 24px;
+    font-size: var(--fs-t3);
 }
 
 .loading-state {
     padding: 24px;
     text-align: center;
     color: var(--text-muted);
-    font-size: 11px;
-}
-
-.muted {
-    font-size: 10px;
-    color: var(--text-muted);
-}
-
-/* Toast 提示条 */
-.toast {
-    position: fixed;
-    bottom: 60px;
-    left: 50%;
-    transform: translateX(-50%) translateY(10px);
-    background-color: #1f6feb;
-    color: #fff;
-    padding: 6px 14px;
-    border-radius: 6px;
-    font-size: 11.5px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-    opacity: 0;
-    pointer-events: none;
-    transition: all 0.2s ease;
-    z-index: 1200;
-}
-.toast.show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    font-size: var(--fs-t3);
 }

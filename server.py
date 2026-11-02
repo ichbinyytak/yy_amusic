@@ -95,7 +95,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 3. 专区官方主页真实板块抓取 (与官网 100% 对齐)
-        if self.path.startswith("/api/apple_curator_page"):
+        if self.path.startswith("/api/apple_curator_page") or self.path.startswith("/api/apple_curator"):
             parsed = urllib.parse.urlparse(self.path)
             curator_url = urllib.parse.parse_qs(parsed.query).get("url", [""])[0]
             if not curator_url:
