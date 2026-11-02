@@ -276,7 +276,10 @@ class SourceManager:
 
     def sync_from_lx_hub(self):
         """从用户维护的 lx-hub 动态同步并注册全部 32 个音源"""
-        os.makedirs(CACHE_DIR, exist_ok=True)
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+        except Exception:
+            pass
         cached_files = os.listdir(CACHE_DIR) if os.path.exists(CACHE_DIR) else []
         try:
             req = urllib.request.Request(LX_HUB_URL, headers={'User-Agent': 'Mozilla/5.0 (YY-Music-Core)'})

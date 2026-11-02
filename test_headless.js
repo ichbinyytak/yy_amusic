@@ -121,6 +121,10 @@ async function run() {
     console.log(`--fs-t2 字号: "${t2Fs}" (期望 "11px")`);
     if (t2Fs !== '11px') throw new Error(`--fs-t2 应为 11px，实际为 ${t2Fs}`);
 
+    const pageTitle = await evaluate(`document.title`);
+    console.log(`网页标题: "${pageTitle}" (期望 "YY_Amusic")`);
+    if (pageTitle !== 'YY_Amusic') throw new Error(`页面标题应为 YY_Amusic，实际为 ${pageTitle}`);
+
     console.log("\n--- 开始验证 2: 顶部导航栏与数据管理迁移 ---");
     const exportBtn = await evaluate(`!!document.getElementById('btnExportBackup')`);
     const importBtn = await evaluate(`!!document.getElementById('btnImportBackup')`);

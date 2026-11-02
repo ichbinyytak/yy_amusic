@@ -44,8 +44,8 @@ DEFAULT_TOKEN = (
 )
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=DIRECTORY, **kwargs)
+    def __init__(self, *args, directory=DIRECTORY, **kwargs):
+        super().__init__(*args, directory=directory, **kwargs)
 
     def send_json(self, data, status=200):
         """统一 JSON 响应辅助函数，支持 ETag 与 HTTP 304 快速协商（客户端主导缓存）"""
