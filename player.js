@@ -248,8 +248,8 @@
       }, 1200); // 歌曲起播 1.2 秒后平稳静默预取
     }
 
-    // 播放指定索引的曲目 (支持秒级预解析直链秒开与无源优雅顺延)
-    async playIndex(idx, isAutoSkip = false) {
+    // 播放指定索引的曲目 (首曲支持最长 5 秒寻链缓冲，中间曲目支持秒级预解析与快速顺延)
+    async playIndex(idx, isAutoSkip = false, isPlaylistFirstTrack = false) {
       if (idx < 0 || idx >= this.playlist.length) return;
       if (!isAutoSkip) {
         this.autoSkipCount = 0;
@@ -306,28 +306,53 @@
       this.isResolving = true;
       this._emit('stateChange', { isPlaying: false, isResolving: true, song });
 
-      try {
-        const t0 = performance.now();
-        const payload = {
-          title: song.title || song.name || "",
-          name: song.name || song.title || "",
-          artist: song.artist || "",
-          album: song.album || "",
-          id: song.id || "",
-          platform: song.platform || "",
-          durationMillis: song.durationMillis,
-          duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined)
-        };
-        const res = await fetch('/api/resolve', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (this.resolveToken !== currentToken) return;
-        const cost = (performance.now() - t0).toFixed(0);
+      const startTime = performance.now();
+      const maxWaitMs = isPlaylistFirstTrack ? 5000 : 0;
+      let data = null;
+      let cost = 0;
 
-        if (data.success && data.url) {
+      while (true) {
+        if (this.resolveToken !== currentToken) return;
+        try {
+          const t0 = performance.now();
+          const payload = {
+            title: song.title || song.name || "",
+            name: song.name || song.title || "",
+            artist: song.artist || "",
+            album: song.album || "",
+            id: song.id || "",
+            platform: song.platform || "",
+            durationMillis: song.durationMillis,
+            duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined)
+          };
+          const res = await fetch('/api/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          data = await res.json();
+          cost = (performance.now() - t0).toFixed(0);
+          if (data && data.success && data.url) {
+            break; // 成功解析出有效音频流！
+          }
+        } catch (err) {
+          // 捕获网络或瞬态异常
+        }
+
+        // 仅对歌单首曲启用最长 5 秒缓冲等待与重试窗口
+        const elapsed = performance.now() - startTime;
+        if (isPlaylistFirstTrack && elapsed < maxWaitMs) {
+          const remain = maxWaitMs - elapsed;
+          await new Promise(r => setTimeout(r, Math.min(800, remain)));
+        } else {
+          break; // 中间曲目单次失败直接退出，或首曲已满 5 秒
+        }
+      }
+
+      if (this.resolveToken !== currentToken) return;
+
+      try {
+        if (data && data.success && data.url) {
           this.autoSkipCount = 0;
           // 写入缓存供回切使用
           this.resolveCache.set(songKey, {
@@ -364,19 +389,20 @@
           // 调度下一首预解析
           this._schedulePrefetch();
         } else {
-          // 当前曲目无可用音源：若在歌单连续播放中，智能顺延跳过（上限 3 首）
+          // 当前曲目无可用音源（或歌单首曲等待满 5 秒仍无可用流）：智能跳到下一首
           if (this.playlist.length > 1 && (this.autoSkipCount || 0) < 3) {
             this.autoSkipCount = (this.autoSkipCount || 0) + 1;
             const songName = song.title || song.name || "当前曲目";
             if (typeof window !== 'undefined' && window.Shell && window.Shell.showToast) {
-              window.Shell.showToast(`《${songName}》暂无有效音源，已自动跳过`);
+              const reason = isPlaylistFirstTrack ? "加载超时" : "暂无有效音源";
+              window.Shell.showToast(`《${songName}》${reason}，已自动跳到下一首`);
             }
             const nextIdx = (idx + 1) % this.playlist.length;
             setTimeout(() => {
               if (this.resolveToken === currentToken) {
-                this.playIndex(nextIdx, true);
+                this.playIndex(nextIdx, true, false); // 第二首及之后不再是歌单首曲，不重复等待 5 秒
               }
-            }, 600);
+            }, 500);
             return;
           }
 
@@ -492,7 +518,7 @@
       this.isDefaultList = false;
       this._emit('playlistChange', { playlist: this.playlist, isDefault: false });
       const idx = Math.max(0, Math.min(startIndex, this.playlist.length - 1));
-      this.playIndex(idx);
+      this.playIndex(idx, false, idx === 0);
     }
 
     // 切换循环模式
