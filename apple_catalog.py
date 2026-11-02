@@ -35,13 +35,25 @@ def extract_ssr_data(html, keyword="data"):
                 continue
     return None
 
+def is_valid_adam_id(val):
+    """判断是否为合法有效的 Apple Adam ID (以 pl. 开头或至少 6 位纯数字)"""
+    if not val:
+        return False
+    s = str(val).strip()
+    return s.startswith("pl.") or (s.isdigit() and len(s) >= 6)
+
 def parse_card_item(it, sec_title=""):
-    """统一解析 Apple Music 卡片项目，提取标题、副标、类型、直链和 storeAdamID"""
+    """统一解析 Apple Music 卡片项目，提取标题、副标、类型、直链和合法 storeAdamID"""
     desc = it.get('contentDescriptor') or {}
-    kind = desc.get('kind') or it.get('itemKind') or ''
+    raw_kind = (desc.get('kind') or it.get('itemKind') or '').strip()
     title = it.get('title') or (it.get('titleLinks', [{}])[0].get('title') if it.get('titleLinks') else '')
     subtitle = it.get('subtitle') or (it.get('subtitleLinks', [{}])[0].get('title') if it.get('subtitleLinks') else '')
-    adam_id = desc.get('identifiers', {}).get('storeAdamID') or it.get('id')
+    
+    # 优先提取官方 storeAdamID，严禁接受 hero-list-shelf / brick-swoosh 等 DOM 内部标签
+    raw_adam = desc.get('identifiers', {}).get('storeAdamID')
+    adam_id = str(raw_adam).strip() if is_valid_adam_id(raw_adam) else ''
+    
+    # 获取有效 URL 直链
     url = desc.get('url') or ''
     if not url and it.get('titleLinks'):
         url = it['titleLinks'][0].get('segue', {}).get('destination', {}).get('contentDescriptor', {}).get('url', '')
@@ -50,6 +62,7 @@ def parse_card_item(it, sec_title=""):
     if not url and it.get('contentDescriptor'):
         url = it['contentDescriptor'].get('url', '')
 
+    # 若缺少 adam_id 则从真实 URL 中提取
     if not adam_id and url:
         m_pl = re.search(r'(pl\.[a-zA-Z0-9]+)', url)
         if m_pl:
@@ -63,13 +76,25 @@ def parse_card_item(it, sec_title=""):
                 if m_end:
                     adam_id = m_end.group(1)
 
-    if not kind:
-        if 'playlist' in url or (adam_id and str(adam_id).startswith('pl.')):
+    # 精确判断资源类型（严防将单曲 song 或视频、电台误归类为专辑）
+    rk = raw_kind.lower()
+    if rk == 'song' or '?i=' in url:
+        kind = 'song'
+    elif rk in ['playlist', 'uploaded-playlist'] or str(adam_id).startswith('pl.') or '/playlist/' in url:
+        kind = 'playlist'
+    elif rk in ['album', 'record'] or ('/album/' in url and '?i=' not in url):
+        kind = 'album'
+    elif rk in ['curator', 'applecurator'] or '/curator/' in url:
+        kind = 'curator'
+    elif rk in ['musicvideo', 'video', 'post', 'radiostation', 'station', 'artist', 'brick', 'artistuploadedvideo']:
+        kind = rk
+    else:
+        if adam_id and str(adam_id).startswith('pl.'):
             kind = 'playlist'
-        elif 'album' in url:
+        elif adam_id and str(adam_id).isdigit():
             kind = 'album'
         else:
-            kind = 'playlist'
+            kind = 'playlist' if 'playlist' in url else ('album' if 'album' in url else (rk or 'other'))
 
     return {
         'type': kind,
@@ -78,7 +103,7 @@ def parse_card_item(it, sec_title=""):
         'curator': subtitle or 'Apple Music',
         'heading': it.get('heading', ''),
         'desc': sec_title if sec_title else '',
-        'id': adam_id,
+        'id': adam_id if is_valid_adam_id(adam_id) else None,
         'url': url
     }
 
@@ -127,7 +152,7 @@ def fetch_apple_new_page(storefront="cn"):
 
                 desc_text = f"Apple Music 官方精选新歌，包含：" + '、'.join(track_samples) + f" 等共 {len(tracks_list)} 首"
                 sections_out.append({
-                    'title': '官方精选新歌合集',
+                    'title': sec_title,
                     'items': [{
                         'type': 'playlist',
                         'kind': 'playlist',
@@ -143,11 +168,11 @@ def fetch_apple_new_page(storefront="cn"):
                     }]
                 })
             else:
-                # 规则 2：专辑与歌单板块完整收录，过滤非音乐内容
+                # 规则 2：专辑与歌单板块完整收录，严格过滤非音乐内容和无真实 ID 的宣传卡片
                 valid_items = []
                 for it in items:
                     card = parse_card_item(it, sec_title)
-                    if card['kind'] in ['playlist', 'album'] and card['title']:
+                    if card['kind'] in ['playlist', 'album'] and card['title'] and card.get('id'):
                         valid_items.append(card)
 
                 if valid_items:
@@ -173,6 +198,9 @@ def fetch_apple_search_page(storefront="cn"):
                 card = parse_card_item(it)
                 if card['title'] and card['id']:
                     card_url = card['url']
+                    # 过滤已失效或无法作为 Web 专区访问的条目 (如 itunes 遗留链接或空链接)
+                    if not card_url or 'itunes.apple.com' in card_url:
+                        continue
                     if card['title'] == '排行榜' or card['id'] == '1514706977' or 'viewTop' in card_url:
                         card_url = f"https://music.apple.com/{storefront}/new/top-charts"
                     categories.append({
@@ -211,45 +239,49 @@ def fetch_apple_curator_page(url):
             if not items:
                 continue
 
-            valid_items = []
+            # 细分歌曲与歌单/专辑板块，严格过滤非音乐实体
+            song_items = []
+            collection_items = []
             for it in items:
                 card = parse_card_item(it, sec_title)
-                if card['kind'] in ['playlist', 'album', 'song'] and card['title']:
-                    valid_items.append(card)
+                if not card['title']:
+                    continue
+                if card['kind'] == 'song':
+                    song_items.append(card)
+                elif card['kind'] in ['playlist', 'album'] and card.get('id'):
+                    collection_items.append(card)
 
-            if valid_items:
-                is_song_section = any(it['kind'] == 'song' for it in valid_items)
-                if is_song_section:
-                    tracks_list = []
-                    for idx_tr, it in enumerate(valid_items, 1):
-                        tracks_list.append({
-                            'index': idx_tr,
-                            'name': it['title'],
-                            'artist': it['curator'],
-                            'album': sec_title,
-                            'durationMillis': 0,
-                            'url': it['url']
-                        })
-                    sections_out.append({
-                        'title': sec_title,
-                        'items': [{
-                            'kind': 'curated',
-                            'type': 'curated',
-                            'title': f"{sec_title} Top {len(tracks_list)}",
-                            'curator': 'Apple Music 官方编辑',
-                            'heading': '官方热门排行合集',
-                            'desc': f"{sec_title} 完整收录 {len(tracks_list)} 首上榜热门金曲",
-                            'trackCount': len(tracks_list),
-                            'tracks': tracks_list,
-                            'roomUrl': '',
-                            'url': url
-                        }]
+            if song_items:
+                tracks_list = []
+                for idx_tr, it in enumerate(song_items, 1):
+                    tracks_list.append({
+                        'index': idx_tr,
+                        'name': it['title'],
+                        'artist': it['curator'],
+                        'album': sec_title,
+                        'durationMillis': 0,
+                        'url': it['url']
                     })
-                else:
-                    sections_out.append({
-                        'title': sec_title,
-                        'items': valid_items
-                    })
+                sections_out.append({
+                    'title': sec_title,
+                    'items': [{
+                        'kind': 'curated',
+                        'type': 'curated',
+                        'title': f"{sec_title} Top {len(tracks_list)}",
+                        'curator': 'Apple Music 官方编辑',
+                        'heading': '官方热门排行合集',
+                        'desc': f"{sec_title} 完整收录 {len(tracks_list)} 首上榜热门金曲",
+                        'trackCount': len(tracks_list),
+                        'tracks': tracks_list,
+                        'roomUrl': '',
+                        'url': url
+                    }]
+                })
+            elif collection_items:
+                sections_out.append({
+                    'title': sec_title,
+                    'items': collection_items
+                })
 
     return {"url": url, "sections": sections_out}
 

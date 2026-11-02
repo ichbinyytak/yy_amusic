@@ -273,12 +273,16 @@
     opacity: 1;
 }
 
-/* /new 页面吸顶分类标题 */
+/* /new 页面吸顶分类标题与折叠手风琴样式 */
+.section-accordion-block {
+    border-bottom: 1px solid var(--border-subtle);
+}
+
 .section-divider {
     background-color: #1a1f27;
     border-top: 1px solid var(--border-color);
     border-bottom: 1px solid var(--border-subtle);
-    padding: 4px 6px;
+    padding: 5px 8px;
     font-size: 10.5px;
     font-weight: 700;
     color: #ff7588;
@@ -288,7 +292,70 @@
     position: sticky;
     top: 0;
     z-index: 5;
+    user-select: none;
+    transition: background 0.15s ease;
 }
+
+.section-divider.section-accordion-hdr {
+    cursor: pointer;
+}
+
+.section-divider.section-accordion-hdr:hover {
+    background-color: #232a35;
+    color: #ff8e9e;
+}
+
+.section-hdr-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.section-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    color: var(--text-muted);
+}
+
+.section-title-text {
+    font-weight: 700;
+}
+
+.section-body {
+    display: none;
+    background: var(--bg-main);
+}
+
+.section-body.open {
+    display: block;
+}
+
+/* 统一规范：子板块吸顶手风琴标题 */
+.section-divider.sub-accordion-hdr {
+    background-color: #171c24;
+    padding: 5px 12px;
+    font-size: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.section-divider.sub-accordion-hdr .section-title-text {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.section-divider.sub-accordion-hdr:hover {
+    background-color: #1f2631;
+}
+
+.section-divider.sub-accordion-hdr:hover .section-title-text {
+    color: #ff7588;
+}
+
 .section-count { font-size: 8.5px; font-weight: normal; color: var(--text-muted); }
 
 /* 树形层级音乐库结构 */

@@ -46,6 +46,7 @@ window.RightPanel = (function () {
         if (detailTitle) detailTitle.innerText = title;
         if (detailSubtitle) detailSubtitle.innerText = `${curator} • 官方精选 (共 ${currentTracks.length} 首)`;
         if (detailActions) detailActions.style.display = currentTracks.length > 0 ? "flex" : "none";
+        updateFavButtonStatus();
         renderTracklist(currentTracks);
         if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
             window.player.setPlaylist(currentTracks, -1);
@@ -119,13 +120,41 @@ window.RightPanel = (function () {
         }
 
         try {
-            const normalizedType = type.endsWith('s') ? type : `${type}s`;
-            const endpoint = `${normalizedType}/${id}`;
-            const data = await apiRequest(endpoint, cached?.etag);
+            // 智能识别或规范化资源类型：pl. 开头必为 playlists，纯数字必为 albums
+            let targetType = "playlists";
+            const sid = String(id || "");
+            if (sid.startsWith("pl.")) {
+                targetType = "playlists";
+            } else if (/^\d+$/.test(sid)) {
+                targetType = "albums";
+            } else if (type) {
+                targetType = type.endsWith('s') ? type : `${type}s`;
+            }
+
+            const endpoint = `${targetType}/${id}`;
+            let data;
+            try {
+                data = await apiRequest(endpoint, cached?.etag);
+            } catch (apiErr) {
+                // 若首选类型请求 404，自动降级尝试另一种类型 (playlists <-> albums <-> songs) 容错
+                const altType = targetType === "playlists" ? "albums" : "playlists";
+                try {
+                    data = await apiRequest(`${altType}/${id}`);
+                    targetType = altType;
+                } catch (altErr) {
+                    try {
+                        data = await apiRequest(`songs/${id}`);
+                        targetType = "songs";
+                    } catch (songErr) {
+                        throw apiErr;
+                    }
+                }
+            }
+
             if (data === 304) return;
 
             const item = data?.data?.[0];
-            const tracks = item?.relationships?.tracks?.data || [];
+            const tracks = (targetType === "songs" && item) ? [item] : (item?.relationships?.tracks?.data || []);
 
             currentTracks = tracks.map((t, idx) => {
                 const attr = t.attributes;

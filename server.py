@@ -320,7 +320,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, format, *args):
-        sys.stdout.write(f"[Amusic] {self.address_string()} - {format % args}\n")
+        try:
+            sys.stdout.write(f"[Amusic] {self.address_string()} - {format % args}\n")
+            sys.stdout.flush()
+        except Exception:
+            pass
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True

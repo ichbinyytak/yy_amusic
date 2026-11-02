@@ -18,6 +18,20 @@ window.LeftPanel = (function () {
     const searchInput = document.getElementById("searchInput");
     const clearBtn = document.getElementById("clearBtn");
 
+    // 矢量图标定义 (纯图标，保证高分辨率清晰呈现)
+    const iconDownload = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px;"><line x1="12" y1="3" x2="12" y2="16"></line><polyline points="7 11 12 16 17 11"></polyline><line x1="4" y1="21" x2="20" y2="21"></line></svg>`;
+    const iconUpload = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px;"><line x1="12" y1="17" x2="12" y2="4"></line><polyline points="7 9 12 4 17 9"></polyline><line x1="4" y1="21" x2="20" y2="21"></line></svg>`;
+    const iconAdd = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+    const iconMinus = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+    const iconEdit = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
+    const iconArrowCollapsed = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
+    const iconArrowExpanded = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
+
+    // 状态记录：最新发布 & 各专区分区板块展开状态 (默认全折叠，初始为空 Set)
+    const expandedSections = new Set();
+    // 状态记录：我的音乐库分类折叠状态 (默认全折叠，初始为空 Set)
+    const expandedGroups = new Set();
+
     function init() {
         if (storefrontSelect) {
             storefrontSelect.value = window.currentStorefront || "cn";
@@ -111,11 +125,11 @@ window.LeftPanel = (function () {
             },
             onCached: (data) => {
                 const sections = data?.sections || [];
-                renderNewSections(sections);
+                renderNewSections(sections, false, "new");
             },
             onUpdated: (data) => {
                 const sections = data?.sections || [];
-                renderNewSections(sections);
+                renderNewSections(sections, false, "new");
             },
             onError: (err) => {
                 playlistListEl.innerHTML = `<div class="loading-state">❌ 获取 /new 页面失败: ${err.message}</div>`;
@@ -124,7 +138,7 @@ window.LeftPanel = (function () {
         });
     }
 
-    function renderNewSections(sections, backToCategories = false) {
+    function renderNewSections(sections, backToCategories = false, contextKey = "new") {
         playlistListEl.innerHTML = "";
         if (!sections || sections.length === 0) {
             playlistListEl.innerHTML = '<div class="loading-state">暂未解析到板块数据。</div>';
@@ -138,7 +152,7 @@ window.LeftPanel = (function () {
 
         if (backToCategories) {
             const divBack = document.createElement("div");
-            divBack.className = "section-divider";
+            divBack.className = "section-divider back-divider";
             divBack.style.cursor = "pointer";
             divBack.style.color = "var(--accent)";
             divBack.innerHTML = `<span>‹ 返回全部分类专区</span><span class="section-count">返回</span>`;
@@ -146,20 +160,52 @@ window.LeftPanel = (function () {
             playlistListEl.appendChild(divBack);
         }
 
-        sections.forEach(sec => {
+        sections.forEach((sec, idx) => {
             const secTitle = sec.title || "推荐板块";
             const secItems = sec.items || [];
             if (secItems.length === 0) return;
 
+            const secKey = `${contextKey}_${idx}_${secTitle}`;
+            const isExpanded = expandedSections.has(secKey); // 默认全折叠
+
+            const secBlock = document.createElement("div");
+            secBlock.className = "section-accordion-block";
+
             const div = document.createElement("div");
-            div.className = "section-divider";
-            div.innerHTML = `<span>${escapeHtml(secTitle)}</span><span class="section-count">${secItems.length} 个</span>`;
-            playlistListEl.appendChild(div);
+            div.className = "section-divider section-accordion-hdr";
+            div.innerHTML = `
+                <div class="section-hdr-left">
+                    <span class="section-arrow">${isExpanded ? iconArrowExpanded : iconArrowCollapsed}</span>
+                    <span class="section-title-text">${escapeHtml(secTitle)}</span>
+                </div>
+                <span class="section-count">${secItems.length} 个</span>
+            `;
+
+            const secBody = document.createElement("div");
+            secBody.className = `section-body ${isExpanded ? 'open' : ''}`;
+
+            div.onclick = () => {
+                if (expandedSections.has(secKey)) {
+                    expandedSections.delete(secKey);
+                    secBody.classList.remove("open");
+                    const arrowEl = div.querySelector(".section-arrow");
+                    if (arrowEl) arrowEl.innerHTML = iconArrowCollapsed;
+                } else {
+                    expandedSections.add(secKey);
+                    secBody.classList.add("open");
+                    const arrowEl = div.querySelector(".section-arrow");
+                    if (arrowEl) arrowEl.innerHTML = iconArrowExpanded;
+                }
+            };
 
             secItems.forEach(item => {
                 const card = createPlaylistCard(item);
-                playlistListEl.appendChild(card);
+                secBody.appendChild(card);
             });
+
+            secBlock.appendChild(div);
+            secBlock.appendChild(secBody);
+            playlistListEl.appendChild(secBlock);
         });
     }
 
@@ -174,21 +220,10 @@ window.LeftPanel = (function () {
             titleEl: listPanelTitle,
             renderSections: renderNewSections,
             getStorefront: getStorefront,
+            createCard: createPlaylistCard,
             reloadExplore: loadSearchPage
         });
     }
-
-    // 记录展开的分类折叠状态 (默认全折叠，初始为空 Set)
-    const expandedGroups = new Set();
-
-    // 矢量图标定义 (纯图标，保证高分辨率清晰呈现)
-    const iconDownload = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px;"><line x1="12" y1="3" x2="12" y2="16"></line><polyline points="7 11 12 16 17 11"></polyline><line x1="4" y1="21" x2="20" y2="21"></line></svg>`;
-    const iconUpload = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -1px;"><line x1="12" y1="17" x2="12" y2="4"></line><polyline points="7 9 12 4 17 9"></polyline><line x1="4" y1="21" x2="20" y2="21"></line></svg>`;
-    const iconAdd = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-    const iconMinus = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-    const iconEdit = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
-    const iconArrowCollapsed = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
-    const iconArrowExpanded = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
 
     // 3. 我的音乐库 (分组层级结构：收藏歌单 + 我的歌单，默认折叠，未分类置顶)
     function loadLibraryPage() {
@@ -567,7 +602,8 @@ window.LeftPanel = (function () {
             if (isCuratedCollection && window.RightPanel.selectCuratedCollection) {
                 window.RightPanel.selectCuratedCollection(name, curator, url, item.roomUrl, item.tracks);
             } else if (item.id) {
-                window.RightPanel.selectPlaylist(item.id, isAlbum ? "album" : "playlist", name, curator, url);
+                const autoType = String(item.id).startsWith("pl.") ? "playlist" : (/^\d+$/.test(String(item.id)) ? "album" : (isAlbum ? "album" : "playlist"));
+                window.RightPanel.selectPlaylist(item.id, autoType, name, curator, url);
             } else if (item.tracks && window.RightPanel.selectCuratedCollection) {
                 window.RightPanel.selectCuratedCollection(name, curator, url, item.roomUrl, item.tracks);
             }
