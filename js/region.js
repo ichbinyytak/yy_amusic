@@ -15,8 +15,8 @@ window.RegionPanel = (function () {
     let regionContainerEl = null;
     let storefrontSelectEl = null;
 
-    // 展开状态记录
-    const expandedSections = new Set();
+    // 展开状态记录 (默认展开最新发布)
+    const expandedSections = new Set(["region_new_tab"]);
     const expandedPartitions = new Set();
     const expandedSubSections = new Set();
 
@@ -191,6 +191,10 @@ window.RegionPanel = (function () {
             if (secItems.length === 0) return;
 
             const secKey = `new_sec_${idx}_${secTitle}`;
+            if (idx === 0 && !expandedSections.has("__has_init_first_sec__")) {
+                expandedSections.add(secKey);
+                expandedSections.add("__has_init_first_sec__");
+            }
             const isExpanded = expandedSections.has(secKey);
 
             const block = document.createElement("div");

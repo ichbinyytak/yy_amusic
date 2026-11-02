@@ -142,6 +142,10 @@ function formatDuration(millis) {
 }
 
 function showToast(msg) {
+    if (window.Shell && window.Shell.showToast) {
+        window.Shell.showToast(msg);
+        return;
+    }
     const toast = document.getElementById("toast");
     if (!toast) return;
     toast.innerText = msg;
@@ -150,3 +154,11 @@ function showToast(msg) {
         toast.classList.remove("show");
     }, 2200);
 }
+
+// 明确暴露至全局 window 命名空间
+window.ClientCache = ClientCache;
+window.swrFetch = swrFetch;
+window.apiRequest = apiRequest;
+window.escapeHtml = escapeHtml;
+window.formatDuration = formatDuration;
+window.showToast = showToast;

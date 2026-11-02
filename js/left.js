@@ -70,7 +70,7 @@ window.LeftPanel = (function () {
             title: "我的音乐库",
             extraHeaderHtml: ""
         });
-        scrollContainer.appendChild(libBlock);
+        scrollContainer.appendChild(libBlock.blockEl);
         window.LibraryPanel?.init?.(libBlock.bodyEl);
 
         // 2. ## 区域 手风琴 (内嵌极简紧凑微型下拉选择器)
@@ -91,7 +91,7 @@ window.LeftPanel = (function () {
             title: "区域",
             extraHeaderHtml: regionSelectHtml
         });
-        scrollContainer.appendChild(regionBlock);
+        scrollContainer.appendChild(regionBlock.blockEl);
 
         const microSelect = regionBlock.headerEl.querySelector("#regionMicroSelect");
         window.RegionPanel?.init?.(regionBlock.bodyEl, microSelect);
@@ -102,7 +102,7 @@ window.LeftPanel = (function () {
             title: "数据管理",
             extraHeaderHtml: ""
         });
-        scrollContainer.appendChild(backupBlock);
+        scrollContainer.appendChild(backupBlock.blockEl);
         window.BackupManager?.renderBackupSection?.(backupBlock.bodyEl);
     }
 
