@@ -215,6 +215,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_json(lines)
             return
 
+        # 9. 零内存流转发中继 (用于前端纯客户端打包 ZIP 跨域音频拉流)
+        if self.path.startswith("/api/stream_proxy"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            target_url = qs.get("url", [""])[0]
+            if not target_url:
+                self.send_error_json("Missing url parameter", 400)
+                return
+            try:
+                req = urllib.request.Request(target_url, headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    self.send_response(200)
+                    self.send_header("Content-Type", resp.headers.get("Content-Type", "audio/mpeg"))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    if "Content-Length" in resp.headers:
+                        self.send_header("Content-Length", resp.headers["Content-Length"])
+                    self.end_headers()
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+            except Exception as e:
+                self.send_error_json(str(e), 502)
+            return
+
         super().do_GET()
 
     def do_POST(self):

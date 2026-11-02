@@ -531,6 +531,53 @@ window.Shell = (function () {
         }
     }
 
+    /* -------------------- 弹窗：批量打包下载确认 -------------------- */
+    let pendingBatchDownloadTracks = [];
+
+    function openBatchDownloadModal(tracks) {
+        pendingBatchDownloadTracks = tracks || [];
+        const modal = document.getElementById("batchDownloadModal");
+        const summaryEl = document.getElementById("batchDownloadSummary");
+        const listEl = document.getElementById("batchDownloadSongList");
+
+        if (summaryEl) {
+            summaryEl.innerText = `已选中 ${pendingBatchDownloadTracks.length} 首歌曲，将打包为单个 ZIP 文件下载：`;
+        }
+        if (listEl) {
+            let html = "";
+            pendingBatchDownloadTracks.forEach((t, i) => {
+                const title = t.name || t.title || "未知歌曲";
+                const artist = t.artist || "未知歌手";
+                const dur = t.durationMillis ? `${Math.floor(t.durationMillis / 60000)}:${String(Math.floor((t.durationMillis % 60000) / 1000)).padStart(2, '0')}` : "";
+                html += `
+                    <div style="padding:3px 4px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">${i + 1}. <strong>${escapeHtml(title)}</strong> - ${escapeHtml(artist)}</span>
+                        ${dur ? `<span style="color:var(--text-muted); font-size:10px; flex-shrink:0;">${dur}</span>` : ''}
+                    </div>
+                `;
+            });
+            listEl.innerHTML = html;
+        }
+
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeBatchDownloadModal() {
+        const modal = document.getElementById("batchDownloadModal");
+        if (modal) modal.classList.remove("open");
+        pendingBatchDownloadTracks = [];
+    }
+
+    function confirmBatchDownload() {
+        if (!pendingBatchDownloadTracks || pendingBatchDownloadTracks.length === 0) {
+            closeBatchDownloadModal();
+            return;
+        }
+        const toDownload = [...pendingBatchDownloadTracks];
+        closeBatchDownloadModal();
+        window.Downloader?.startZipBatchDownload?.(toDownload);
+    }
+
     /* -------------------- 全局 Toast 提示 -------------------- */
     function showToast(msg) {
         if (!toast) return;
@@ -565,6 +612,9 @@ window.Shell = (function () {
         openAddToCustomModal,
         closeAddToCustomModal,
         confirmCreateAndAdd,
+        openBatchDownloadModal,
+        closeBatchDownloadModal,
+        confirmBatchDownload,
         showToast
     };
 })();

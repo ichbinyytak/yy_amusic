@@ -83,6 +83,24 @@
     gap: 6px;
 }
 
+.lib-tool-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 2px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: var(--fs-t2);
+    font-weight: 700;
+    line-height: 1;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.lib-tool-btn:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
 .top-accordion-body {
     display: none;
     background-color: var(--bg-main);

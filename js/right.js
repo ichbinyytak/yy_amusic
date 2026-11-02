@@ -241,6 +241,7 @@ window.RightPanel = (function () {
         detailActions.style.display = "flex";
 
         const isFav = currentPlaylistData?.id && window.StorageManager.isPlaylistFaved(currentPlaylistData.id);
+        const selCount = selectedTrackIndices.size;
 
         detailActions.innerHTML = `
             <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
@@ -255,9 +256,11 @@ window.RightPanel = (function () {
                     ${isFav ? '★' : '☆'}
                 </button>
             ` : '')}
-            <button class="btn-action-icon" onclick="window.RightPanel.downloadCurrentPlaylist()" title="下载整单全部歌曲">
-                ↓
-            </button>
+            ${selCount > 0 ? `
+                <button class="btn-action-icon" onclick="window.RightPanel.downloadSelectedTracks()" title="下载所选歌曲 (${selCount} 首)">
+                    ↓
+                </button>
+            ` : ''}
         `;
     }
 
@@ -321,7 +324,6 @@ window.RightPanel = (function () {
                     <td class="track-action-col">
                         <button class="btn-track-action play-song" onclick="window.RightPanel.playSong(${idx})" title="单曲播放">▶</button>
                         <button class="btn-track-action" onclick="window.RightPanel.openAddToPlaylistModal(${idx})" title="加入自建歌单">＋</button>
-                        <button class="btn-track-action" onclick="window.RightPanel.downloadSingleSong(${idx})" title="下载单曲音频直链">↓</button>
                         ${isViewingCustomPlaylist ? `
                             <button class="btn-track-action del-song" onclick="window.RightPanel.removeSongFromCustom(${idx})" title="从歌单移除">✕</button>
                         ` : ''}
@@ -385,6 +387,7 @@ window.RightPanel = (function () {
                 checkAllBox.checked = currentTracks.length > 0 && selectedTrackIndices.size === currentTracks.length;
             }
         }
+        renderHeaderActions();
         updateFloatingBatchBar();
     }
 
@@ -419,19 +422,33 @@ window.RightPanel = (function () {
         }
     }
 
+    // 统一下载已勾选歌曲 (单首直下，多首出清单弹窗打包 ZIP)
+    function downloadSelectedTracks() {
+        if (selectedTrackIndices.size === 0) {
+            window.Shell?.showToast?.("请先勾选需要下载的歌曲");
+            return;
+        }
+        const selected = Array.from(selectedTrackIndices).sort((a, b) => a - b).map(idx => currentTracks[idx]);
+        window.Downloader?.promptBatchDownload?.(selected);
+    }
+
     // 单曲下载
     function downloadSingleSong(idx) {
         if (!currentTracks || !currentTracks[idx]) return;
         window.Downloader?.downloadSingleTrack?.(currentTracks[idx]);
     }
 
-    // 整单下载
+    // 整单下载 (兼容接口，统一交由 Downloader 处理)
     function downloadCurrentPlaylist() {
         if (!currentTracks || currentTracks.length === 0) {
             window.Shell?.showToast?.("无可用曲目下载");
             return;
         }
-        window.Downloader?.downloadBatchTracks?.(currentTracks);
+        if (selectedTrackIndices.size > 0) {
+            downloadSelectedTracks();
+        } else {
+            window.Downloader?.promptBatchDownload?.(currentTracks);
+        }
     }
 
     // 批量播放已选
@@ -446,9 +463,7 @@ window.RightPanel = (function () {
 
     // 批量下载已选
     function downloadBatchSelected() {
-        if (selectedTrackIndices.size === 0) return;
-        const selected = Array.from(selectedTrackIndices).sort((a,b)=>a-b).map(idx => currentTracks[idx]);
-        window.Downloader?.downloadBatchTracks?.(selected);
+        downloadSelectedTracks();
     }
 
     // 批量加入歌单
@@ -600,6 +615,7 @@ window.RightPanel = (function () {
         playSong,
         downloadSingleSong,
         downloadCurrentPlaylist,
+        downloadSelectedTracks,
         playBatchSelected,
         downloadBatchSelected,
         openBatchAddToPlaylistModal,
@@ -611,6 +627,12 @@ window.RightPanel = (function () {
         handleCheckboxChange,
         handleCheckAll,
         clearSelection,
-        handleSearch
+        handleSearch,
+        isViewingCustom: (id) => isViewingCustomPlaylist && currentCustomPlaylistId === id,
+        updateCurrentCustomTitle: (newTitle) => {
+            if (isViewingCustomPlaylist && detailTitle) {
+                detailTitle.innerText = newTitle;
+            }
+        }
     };
 })();

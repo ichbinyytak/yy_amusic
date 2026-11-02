@@ -73,14 +73,16 @@
       this._bindAudioEvents();
     }
 
-    // 解锁移动端音频限制 (由用户手势触摸同步触发)
+    // 解锁移动端与浏览器音频限制 (由用户手势触摸同步触发)
     unlockAudio() {
       if (this.unlocked || !this.audio) return;
       try {
+        if (!this.audio.src) {
+          this.audio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+        }
         const p = this.audio.play();
         if (p && p.then) {
           p.then(() => {
-            this.audio.pause();
             this.unlocked = true;
           }).catch(() => {});
         }
@@ -249,7 +251,8 @@
     // 播放指定索引的曲目 (支持秒级预解析直链秒开)
     async playIndex(idx) {
       if (idx < 0 || idx >= this.playlist.length) return;
-      if (this.isResolving) return;
+      this.resolveToken = (this.resolveToken || 0) + 1;
+      const currentToken = this.resolveToken;
 
       this.unlockAudio();
       this.currentIndex = idx;
@@ -317,6 +320,7 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
+        if (this.resolveToken !== currentToken) return;
         const cost = (performance.now() - t0).toFixed(0);
 
         if (data.success && data.url) {

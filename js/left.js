@@ -64,51 +64,45 @@ window.LeftPanel = (function () {
         scrollContainer.innerHTML = "";
         scrollContainer.className = "list-panel-scroll";
 
-        // 1. ## 我的音乐库 手风琴
+        // 1. ## 我的音乐库 手风琴 [↑] [↓]
+        const libHeaderHtml = `
+            <button class="lib-tool-btn" id="btnExportBackup" title="导出备份 JSON" onclick="event.stopPropagation(); window.BackupManager?.exportData?.();">↑</button>
+            <button class="lib-tool-btn" id="btnImportBackup" title="导入恢复 JSON" onclick="event.stopPropagation(); window.BackupManager?.triggerImport?.();">↓</button>
+        `;
         const libBlock = createTopAccordion({
             id: "top_library",
             title: "我的音乐库",
-            extraHeaderHtml: ""
+            extraHeaderHtml: libHeaderHtml
         });
         scrollContainer.appendChild(libBlock.blockEl);
         window.LibraryPanel?.init?.(libBlock.bodyEl);
 
-        // 2. ## 区域 手风琴 (内嵌极简紧凑微型下拉选择器)
+        // 2. ## Apple专区 手风琴 (内嵌极简紧凑微型下拉选择器：中国大陆|香港|台湾|美国)
         const currentSf = window.currentStorefront || "cn";
         const regionSelectHtml = `
             <select class="region-micro-select" id="regionMicroSelect" title="切换地区" onclick="event.stopPropagation();">
-                <option value="cn" ${currentSf === 'cn' ? 'selected' : ''}>🇨🇳 大陆</option>
-                <option value="hk" ${currentSf === 'hk' ? 'selected' : ''}>🇭🇰 香港</option>
-                <option value="tw" ${currentSf === 'tw' ? 'selected' : ''}>🇹🇼 台湾</option>
-                <option value="us" ${currentSf === 'us' ? 'selected' : ''}>🇺🇸 美国</option>
-                <option value="jp" ${currentSf === 'jp' ? 'selected' : ''}>🇯🇵 日本</option>
-                <option value="gb" ${currentSf === 'gb' ? 'selected' : ''}>🇬🇧 英国</option>
+                <option value="cn" ${currentSf === 'cn' ? 'selected' : ''}>中国大陆</option>
+                <option value="hk" ${currentSf === 'hk' ? 'selected' : ''}>香港</option>
+                <option value="tw" ${currentSf === 'tw' ? 'selected' : ''}>台湾</option>
+                <option value="us" ${currentSf === 'us' ? 'selected' : ''}>美国</option>
             </select>
         `;
 
         const regionBlock = createTopAccordion({
             id: "top_region",
-            title: "区域",
+            title: "Apple专区",
             extraHeaderHtml: regionSelectHtml
         });
         scrollContainer.appendChild(regionBlock.blockEl);
 
         const microSelect = regionBlock.headerEl.querySelector("#regionMicroSelect");
         window.RegionPanel?.init?.(regionBlock.bodyEl, microSelect);
-
-        // 3. ## 数据管理 手风琴
-        const backupBlock = createTopAccordion({
-            id: "top_backup",
-            title: "数据管理",
-            extraHeaderHtml: ""
-        });
-        scrollContainer.appendChild(backupBlock.blockEl);
-        window.BackupManager?.renderBackupSection?.(backupBlock.bodyEl);
     }
 
     function createTopAccordion({ id, title, extraHeaderHtml }) {
         const block = document.createElement("div");
         block.className = "top-accordion-block";
+        if (id) block.id = id;
 
         const isOpen = expandedTopAccordions.has(id);
 
@@ -156,6 +150,7 @@ window.LeftPanel = (function () {
         const isCustom = !!options.isCustom;
         const isFav = !!options.isFav;
         const onDelete = options.onDelete;
+        const onRename = options.onRename;
 
         const isCurated = !!item.isCurated || item.type === "curated" || item.kind === "curated" || (item.tracks && item.tracks.length > 0);
         const kind = item.kind || item.type || (item.attributes ? (item.type === "albums" ? "album" : "playlist") : "playlist");
@@ -175,7 +170,21 @@ window.LeftPanel = (function () {
         card.className = "playlist-card";
         if (item.id) card.id = `card-${item.id}`;
 
-        const isAlreadyFaved = !isCustom && item.id && window.StorageManager.isPlaylistFaved(item.id);
+        let actionsHtml = "";
+        if (isCustom) {
+            actionsHtml = `
+                <div class="playlist-card-actions">
+                    <button class="btn-card-action" data-action="rename" title="改名">✎</button>
+                    <button class="btn-card-action btn-del" data-action="del" title="删除">✕</button>
+                </div>
+            `;
+        } else if (isFav) {
+            actionsHtml = `
+                <div class="playlist-card-actions">
+                    <button class="btn-card-action btn-del" data-action="del" title="移除收藏">✕</button>
+                </div>
+            `;
+        }
 
         card.innerHTML = `
             <div class="playlist-card-row1">
@@ -183,15 +192,7 @@ window.LeftPanel = (function () {
                     <span class="playlist-type-tag" style="color: ${tagColor};">${typeLabel}</span>
                     <span class="playlist-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
                 </div>
-                <div class="playlist-card-actions">
-                    <button class="btn-card-action" data-action="play" title="播放全部">▶</button>
-                    ${(isCustom || isFav) ? `
-                        <button class="btn-card-action btn-del" data-action="del" title="删除">✕</button>
-                    ` : `
-                        <button class="btn-card-action fav ${isAlreadyFaved ? 'active' : ''}" data-action="fav" title="${isAlreadyFaved ? '已收藏' : '收藏'}">${isAlreadyFaved ? '★' : '☆'}</button>
-                    `}
-                    <button class="btn-card-action" data-action="download" title="下载整单">↓</button>
-                </div>
+                ${actionsHtml}
             </div>
             <div class="playlist-card-row2">
                 <span class="playlist-curator" title="${escapeHtml(cleanCurator)}">${escapeHtml(cleanCurator)}</span>
@@ -199,14 +200,12 @@ window.LeftPanel = (function () {
             </div>
         `;
 
-        // 按钮事件绑定
-        const btnPlay = card.querySelector('[data-action="play"]');
-        if (btnPlay) {
-            btnPlay.onclick = (e) => {
+        // 按钮事件绑定 (左侧卡片取消全部播放/收藏/下载，仅保留自建改名与删除)
+        const btnRename = card.querySelector('[data-action="rename"]');
+        if (btnRename) {
+            btnRename.onclick = (e) => {
                 e.stopPropagation();
-                openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
-                    window.RightPanel?.playCurrentAll?.();
-                });
+                if (onRename) onRename();
             };
         }
 
@@ -215,24 +214,6 @@ window.LeftPanel = (function () {
             btnDel.onclick = (e) => {
                 e.stopPropagation();
                 if (onDelete) onDelete();
-            };
-        }
-
-        const btnFav = card.querySelector('[data-action="fav"]');
-        if (btnFav) {
-            btnFav.onclick = (e) => {
-                e.stopPropagation();
-                promptFavCard(item, name, cleanCurator, btnFav);
-            };
-        }
-
-        const btnDownload = card.querySelector('[data-action="download"]');
-        if (btnDownload) {
-            btnDownload.onclick = (e) => {
-                e.stopPropagation();
-                openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
-                    window.RightPanel?.downloadCurrentPlaylist?.();
-                });
             };
         }
 
