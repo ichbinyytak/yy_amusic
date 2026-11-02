@@ -310,10 +310,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json("缺少有效歌名或候选信息", 400)
                 return
 
-            cands = search_candidates(search_key, target_artist=artist)
+            cands = search_candidates(search_key, target_artist=artist, target_title=title)
             if not cands and artist:
-                # 备用方案：仅用标题再次尝试
-                cands = search_candidates(title, target_artist=artist)
+                # 备用方案 1：仅用标题再次尝试比对歌手
+                cands = search_candidates(title, target_artist=artist, target_title=title)
+            if not cands and artist:
+                # 备用方案 2：外文/跨区歌手译名差异容错，仅用标题检索，放宽歌手限制
+                cands = search_candidates(title, target_artist="", target_title=title)
 
             last_err = "未找到候选歌曲"
             for c in cands:

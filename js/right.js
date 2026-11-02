@@ -252,8 +252,8 @@ window.RightPanel = (function () {
                     ✕
                 </button>
             ` : (currentPlaylistData?.id ? `
-                <button class="btn-action-icon" id="btnFavCurrent" onclick="window.RightPanel.toggleFavCurrentPlaylist()" title="${isFav ? '取消收藏' : '收藏到分类'}">
-                    ${isFav ? '★' : '☆'}
+                <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.toggleFavCurrentPlaylist()" title="${isFav ? '取消收藏' : '收藏到分类'}">
+                    ＋
                 </button>
             ` : '')}
             ${selCount > 0 ? `

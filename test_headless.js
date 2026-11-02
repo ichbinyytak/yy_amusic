@@ -226,8 +226,15 @@ async function run() {
 
     const isMultiMode = await evaluate(`document.getElementById('trackTableEl')?.classList.contains('multi-select-mode')`);
     const floatingBarShow = await evaluate(`document.getElementById('floatingBatchBar')?.classList.contains('show')`);
+    const contextMenuOpen = await evaluate(`!!document.getElementById('globalContextMenu')?.classList.contains('show')`);
     console.log(`多选模式已激活: ${isMultiMode}, 悬浮批量栏已浮出: ${floatingBarShow}`);
+    console.log(`歌曲长按不弹出冗余选项菜单: ${!contextMenuOpen}`);
     if (!isMultiMode || !floatingBarShow) throw new Error("组合1失败：长按/右键未能激活多选模式与悬浮批量栏！");
+    if (contextMenuOpen) throw new Error("歌曲长按不应弹出冗余操作菜单！");
+
+    const favBtnText = await evaluate(`document.getElementById('btnFavCurrent')?.innerText?.trim()`);
+    console.log(`收藏图标统一为 ＋: ${favBtnText === '＋'}`);
+    if (favBtnText && favBtnText !== '＋') throw new Error(`收藏图标未统一为 ＋，当前为 ${favBtnText}`);
 
     // 勾选第 2 首歌
     console.log("多选模式下轻触勾选第 2 首歌曲...");

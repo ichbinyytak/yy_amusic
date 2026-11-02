@@ -284,7 +284,7 @@ window.LeftPanel = (function () {
                 // Apple专区 (官方精选 / 榜单 / 专辑 / 歌单)
                 return [
                     {
-                        icon: "★",
+                        icon: "＋",
                         label: "收藏到分类",
                         onClick: () => {
                             const plData = {
@@ -370,7 +370,7 @@ window.LeftPanel = (function () {
         if (isFaved) {
             window.StorageManager.unfavPlaylist(item.id);
             btnEl.classList.remove("active");
-            btnEl.innerHTML = "☆";
+            btnEl.innerHTML = "＋";
             window.Shell?.showToast?.(`已取消收藏《${name}》`);
         } else {
             const plData = {

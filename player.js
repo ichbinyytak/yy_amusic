@@ -248,9 +248,12 @@
       }, 1200); // 歌曲起播 1.2 秒后平稳静默预取
     }
 
-    // 播放指定索引的曲目 (支持秒级预解析直链秒开)
-    async playIndex(idx) {
+    // 播放指定索引的曲目 (支持秒级预解析直链秒开与无源优雅顺延)
+    async playIndex(idx, isAutoSkip = false) {
       if (idx < 0 || idx >= this.playlist.length) return;
+      if (!isAutoSkip) {
+        this.autoSkipCount = 0;
+      }
       this.resolveToken = (this.resolveToken || 0) + 1;
       const currentToken = this.resolveToken;
 
@@ -269,6 +272,7 @@
 
       // 2. 命中预解析直链缓存：0 毫秒秒切出声！
       if (cached && cached.url) {
+        this.autoSkipCount = 0;
         this.audio.src = cached.url;
         const playPromise = this.audio.play();
         if (playPromise !== undefined) {
@@ -324,6 +328,7 @@
         const cost = (performance.now() - t0).toFixed(0);
 
         if (data.success && data.url) {
+          this.autoSkipCount = 0;
           // 写入缓存供回切使用
           this.resolveCache.set(songKey, {
             url: data.url,
@@ -359,19 +364,41 @@
           // 调度下一首预解析
           this._schedulePrefetch();
         } else {
+          // 当前曲目无可用音源：若在歌单连续播放中，智能顺延跳过（上限 3 首）
+          if (this.playlist.length > 1 && (this.autoSkipCount || 0) < 3) {
+            this.autoSkipCount = (this.autoSkipCount || 0) + 1;
+            const songName = song.title || song.name || "当前曲目";
+            if (typeof window !== 'undefined' && window.Shell && window.Shell.showToast) {
+              window.Shell.showToast(`《${songName}》暂无有效音源，已自动跳过`);
+            }
+            const nextIdx = (idx + 1) % this.playlist.length;
+            setTimeout(() => {
+              if (this.resolveToken === currentToken) {
+                this.playIndex(nextIdx, true);
+              }
+            }, 600);
+            return;
+          }
+
+          // 达到跳过上限或单曲播放失败：明确停止音频，保持状态机同步
+          this.autoSkipCount = 0;
+          try { this.audio.pause(); } catch (e) {}
           this._emit('stateChange', {
             isPlaying: false,
             isResolving: false,
             song,
-            error: data.error || "所有音源轮询均未通过校验"
+            error: `《${song.title || song.name || '曲目'}》暂无可用音源`
           });
         }
       } catch (err) {
+        if (this.resolveToken !== currentToken) return;
+        this.autoSkipCount = 0;
+        try { this.audio.pause(); } catch (e) {}
         this._emit('stateChange', {
           isPlaying: false,
           isResolving: false,
           song,
-          error: "网络错误: " + err.message
+          error: "网络连接异常，无法解析音频流"
         });
       } finally {
         this.isResolving = false;

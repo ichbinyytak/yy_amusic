@@ -93,6 +93,12 @@
     color: #fff;
 }
 
+.btn-action-icon.active {
+    color: var(--accent-apple);
+    border-color: var(--accent-apple);
+    background-color: rgba(250, 45, 72, 0.12);
+}
+
 /* 详情主体滚动区 */
 .detail-body {
     flex: 1;

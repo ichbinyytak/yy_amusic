@@ -202,7 +202,7 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 # 3. 歌曲检索接口 (自动繁转简 + 智能分词提取)
 # ========================================================
 
-def search_candidates(keyword: str, target_artist: str = "", limit: int = 8) -> list:
+def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, target_title: str = "") -> list:
     """
     轻量快速检索歌曲候选列表，全链路经过繁转简与高容错打分清洗
     返回按匹配得分从高到低排序的正规候选列表
@@ -213,8 +213,11 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8) -> 
         return []
 
     # 2. 智能提取目标标题与目标歌手（支持语序颠倒与空格分词）
-    parts = simplified_k.split()
-    if not target_artist:
+    if target_title:
+        target_title = to_simple(clean_brackets(target_title))
+        target_artist = to_simple(target_artist) if target_artist else ""
+    elif not target_artist:
+        parts = simplified_k.split()
         if len(parts) >= 2:
             target_title = " ".join(parts[:-1])
             target_artist = parts[-1]
