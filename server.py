@@ -123,6 +123,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # 5. 官方数据库请求代理转发 (附带 Bearer Token 与合法 Origin，支持 304 快速协商)
         if self.path.startswith("/api/apple/"):
             apple_path = self.path[len("/api/apple/"):]
+            # 安全钳制：Apple Music 官方 search 等接口 limit 上限为 25
+            apple_path = re.sub(r'([?&]limit=)(?:[3-9]\d|\d{3,}|2[6-9])', r'\g<1>25', apple_path)
             apple_url = f"https://api.music.apple.com/{apple_path}"
             client_etag = self.headers.get("If-None-Match")
             try:

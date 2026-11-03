@@ -666,7 +666,7 @@ window.RightPanel = (function () {
         try {
             const encoded = encodeURIComponent(query);
             const sf = window.RegionPanel?.getStorefront?.() || "cn";
-            const data = await window.apiRequest(`search?types=songs,albums,playlists&term=${encoded}&limit=30`);
+            const data = await window.apiRequest(`search?types=songs,albums,playlists&term=${encoded}&limit=25`);
 
             const songs = data?.results?.songs?.data || [];
             const albums = data?.results?.albums?.data || [];
