@@ -486,6 +486,54 @@ async function run() {
         throw new Error("点击 [← 返回] 后未能正常退出搜索或未能恢复原视图！");
     }
 
+    console.log("\n--- 开始验证 6.6: 点击单曲中歌手名联动搜索 & 点击专辑名直接进入整张专辑 ---");
+    // 1. 获取当前曲目表中第一首歌的歌手名
+    const firstArtist = await evaluate(`document.querySelector('.track-artist-link')?.innerText?.trim() || ''`);
+    console.log(`当前列表第一首歌曲歌手: "${firstArtist}"`);
+    if (!firstArtist) throw new Error("曲目列表未找到 .track-artist-link 歌手跳转链接元素！");
+
+    // 点击该歌手链接触发搜索联动
+    console.log(`点击歌手链接《${firstArtist}》触发联动搜索...`);
+    await evaluate(`document.querySelector('.track-artist-link').click()`);
+
+    // 等待搜索结果渲染
+    for (let i = 0; i < 30; i++) {
+        await sleep(200);
+        const done = await evaluate(`document.querySelectorAll('#viewSearch .playlist-card').length > 0 && document.querySelectorAll('.track-table tbody tr').length > 0`);
+        if (done) break;
+    }
+
+    const artistSearchActive = await evaluate(`document.getElementById('viewSearch')?.classList.contains('active')`);
+    const artistSearchInputVal = await evaluate(`document.getElementById('searchInput')?.value || ''`);
+    console.log(`点击歌手后激活搜索面板: ${artistSearchActive}`);
+    console.log(`搜索框同步歌手关键词: "${artistSearchInputVal}"`);
+    if (!artistSearchActive || !artistSearchInputVal.includes(firstArtist.replace(/^·\s*/, ''))) {
+        throw new Error("点击歌手名未能正确触发联动搜索！");
+    }
+
+    // 2. 在搜索结果单曲列表中，测试点击专辑名直接进入整张专辑
+    const targetAlbumName = await evaluate(`document.querySelector('.track-album-link')?.innerText?.trim() || ''`);
+    console.log(`搜索结果列表中第一首单曲所属专辑: "${targetAlbumName}"`);
+    if (targetAlbumName) {
+        console.log(`点击专辑名《${targetAlbumName}》进入专辑完整曲目详情...`);
+        await evaluate(`document.querySelector('.track-album-link').click()`);
+        
+        // 等待专辑详情与曲目加载完成
+        for (let i = 0; i < 30; i++) {
+            await sleep(200);
+            const loaded = await evaluate(`document.getElementById('detailTitle')?.innerText?.includes('${targetAlbumName.replace(/'/g, "\\'")}') && document.querySelectorAll('.track-table tbody tr').length > 0`);
+            if (loaded) break;
+        }
+
+        const albumDetailTitle = await evaluate(`document.getElementById('detailTitle')?.innerText || ''`);
+        const albumTracksCount = await evaluate(`document.querySelectorAll('.track-table tbody tr').length`);
+        console.log(`右侧详情标题已切换为专辑: "${albumDetailTitle}"`);
+        console.log(`整张专辑曲目加载数: ${albumTracksCount}`);
+        if (!albumDetailTitle.includes(targetAlbumName) || albumTracksCount === 0) {
+            throw new Error("点击单曲专辑名未能正确穿透加载整张专辑曲目列表！");
+        }
+    }
+
     console.log("\n--- 开始验证 7: 控制台报错检查 (严格 0 错误铁律) ---");
     console.log(`Console 错误条数: ${consoleErrors.length}`);
     if (consoleErrors.length > 0) {

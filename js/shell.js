@@ -146,19 +146,31 @@ window.Shell = (function () {
     function handleSearch() {
         const query = searchInput ? searchInput.value.trim() : "";
         if (!query) return;
-        window.RightPanel?.handleSearch?.(query);
+        if (window.SearchPanel) {
+            window.SearchPanel.search(query);
+        } else {
+            window.RightPanel?.handleSearch?.(query);
+        }
     }
 
     function clearSearch() {
-        if (searchInput) searchInput.value = "";
-        if (clearBtn) clearBtn.style.display = "none";
-        window.LeftPanel?.exitSearch?.();
+        if (window.SearchPanel) {
+            window.SearchPanel.exitSearch();
+        } else {
+            if (searchInput) searchInput.value = "";
+            if (clearBtn) clearBtn.style.display = "none";
+            window.LeftPanel?.exitSearch?.();
+        }
     }
 
     function exitSearch() {
-        if (searchInput) searchInput.value = "";
-        if (clearBtn) clearBtn.style.display = "none";
-        window.LeftPanel?.exitSearch?.();
+        if (window.SearchPanel) {
+            window.SearchPanel.exitSearch();
+        } else {
+            if (searchInput) searchInput.value = "";
+            if (clearBtn) clearBtn.style.display = "none";
+            window.LeftPanel?.exitSearch?.();
+        }
     }
 
     /* -------------------- 音量直立弹窗交互 -------------------- */

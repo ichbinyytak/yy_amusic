@@ -319,11 +319,11 @@ window.RightPanel = (function () {
                     <td class="track-info-cell">
                         <div class="track-title-wrapper">
                             <span class="track-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
-                            <span class="track-artist" title="${escapeHtml(t.artist)}">· ${escapeHtml(t.artist)}</span>
+                            <span class="track-artist" title="${escapeHtml(t.artist)}">· <span class="track-artist-link" onclick="event.stopPropagation(); window.RightPanel.searchArtistByTrack(${idx})">${escapeHtml(t.artist)}</span></span>
                         </div>
                     </td>
                     <td class="track-album-col" title="${escapeHtml(t.album || '')}">
-                        ${escapeHtml(t.album || '')}
+                        <span class="track-album-link" onclick="event.stopPropagation(); window.RightPanel.openAlbumByTrack(${idx})">${escapeHtml(t.album || '')}</span>
                     </td>
                     <td class="track-duration-col">
                         ${formatTime(t.durationMillis)}
@@ -647,13 +647,10 @@ window.RightPanel = (function () {
     }
 
     /**
-     * 全局搜索结果直接在右侧详情区域展示 (遵照 SITE_ARCHITECTURE.md 规范)
+     * 右侧搜索加载与渲染中枢 (与 js/search.js 左右联动)
      */
-    async function handleSearch(term) {
-        if (!term || !term.trim()) return;
-        const query = term.trim();
+    function prepareSearchLoading(query) {
         clearSelection();
-
         isViewingCustomPlaylist = false;
         currentCustomPlaylistId = null;
         currentPlaylistData = { name: `搜索: "${query}"`, title: `搜索: "${query}"`, id: "" };
@@ -662,58 +659,75 @@ window.RightPanel = (function () {
         if (detailSubtitle) detailSubtitle.innerText = "正在检索 Apple 音乐库...";
         if (detailActions) detailActions.style.display = "none";
         if (detailBody) detailBody.innerHTML = '<div class="loading-state">🔍 正在检索匹配的歌曲与专辑...</div>';
+    }
 
-        // 联动驱动左侧展示加载中
-        window.LeftPanel?.showSearchLoading?.(query);
+    function renderSearchResults(query, songs = [], plCount = 0, albCount = 0) {
+        currentTracks = songs.map((t, idx) => {
+            const attr = t.attributes;
+            return {
+                index: idx + 1,
+                name: attr?.name || "未知曲目",
+                artist: attr?.artistName || "未知歌手",
+                album: attr?.albumName || "未知专辑",
+                durationMillis: attr?.durationInMillis || 0,
+                isrc: attr?.isrc || "",
+                url: attr?.url || "",
+                id: t.id || ""
+            };
+        });
 
-        try {
-            const encoded = encodeURIComponent(query);
-            const data = await window.apiRequest(`search?types=songs,albums,playlists&term=${encoded}&limit=25`);
+        const totalResults = songs.length + plCount + albCount;
+        if (totalResults === 0) {
+            if (detailSubtitle) detailSubtitle.innerText = "未找到匹配结果";
+            if (detailBody) detailBody.innerHTML = `<div class="loading-state">未找到与 "${escapeHtml(query)}" 相关的单曲或专辑。</div>`;
+            return;
+        }
 
-            const songs = data?.results?.songs?.data || [];
-            const albums = data?.results?.albums?.data || [];
-            const playlists = data?.results?.playlists?.data || [];
+        if (detailSubtitle) {
+            detailSubtitle.innerText = `找到 ${songs.length} 首单曲 • 左侧已列出 ${plCount} 个歌单 / ${albCount} 张专辑`;
+        }
 
-            // 1. 驱动左侧面板渲染匹配的歌单与专辑 (方案B左右联动)
-            window.LeftPanel?.renderSearchResults?.(query, playlists, albums);
+        renderHeaderActions();
+        renderTracklist(currentTracks);
 
-            // 2. 右侧渲染单曲曲目列表
-            currentTracks = songs.map((t, idx) => {
-                const attr = t.attributes;
-                return {
-                    index: idx + 1,
-                    name: attr?.name || "未知曲目",
-                    artist: attr?.artistName || "未知歌手",
-                    album: attr?.albumName || "搜索结果",
-                    durationMillis: attr?.durationInMillis || 0,
-                    isrc: attr?.isrc || "",
-                    url: attr?.url || "",
-                    id: t.id || ""
-                };
-            });
+        if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+            window.player.setPlaylist(currentTracks, -1);
+        }
+    }
 
-            const totalResults = songs.length + albums.length + playlists.length;
-            if (totalResults === 0) {
-                if (detailSubtitle) detailSubtitle.innerText = "未找到匹配结果";
-                if (detailBody) detailBody.innerHTML = `<div class="loading-state">未找到与 "${escapeHtml(query)}" 相关的单曲或专辑。</div>`;
-                return;
+    function renderSearchError(errMsg) {
+        if (detailSubtitle) detailSubtitle.innerText = "检索失败";
+        if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 检索失败: ${escapeHtml(errMsg)}</div>`;
+    }
+
+    function searchArtistByTrack(idx) {
+        if (!currentTracks || !currentTracks[idx]) return;
+        const track = currentTracks[idx];
+        if (track.artist) {
+            window.SearchPanel?.search?.(track.artist);
+        }
+    }
+
+    function openAlbumByTrack(idx) {
+        if (!currentTracks || !currentTracks[idx]) return;
+        const track = currentTracks[idx];
+        let albumId = track.albumId;
+        if (!albumId && track.url) {
+            const match = track.url.match(/\/album\/(?:[^/]+\/)?(\d+)/);
+            if (match && match[1]) {
+                albumId = match[1];
             }
+        }
+        if (albumId) {
+            selectPlaylist(albumId, 'album', track.album || track.name, track.artist, track.url);
+        } else if (track.album) {
+            window.SearchPanel?.search?.(track.album);
+        }
+    }
 
-            if (detailSubtitle) {
-                detailSubtitle.innerText = `找到 ${songs.length} 首单曲 • 左侧已列出 ${playlists.length} 个歌单 / ${albums.length} 张专辑`;
-            }
-
-            renderHeaderActions();
-            renderTracklist(currentTracks);
-
-            if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
-                window.player.setPlaylist(currentTracks, -1);
-            }
-        } catch (err) {
-            console.error("[Search Error]", err);
-            if (detailSubtitle) detailSubtitle.innerText = "检索失败";
-            if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 检索失败: ${escapeHtml(err.message)}</div>`;
-            window.LeftPanel?.renderSearchError?.(err.message);
+    async function handleSearch(term) {
+        if (window.SearchPanel) {
+            window.SearchPanel.search(term);
         }
     }
 
@@ -740,6 +754,11 @@ window.RightPanel = (function () {
         handleCheckAll,
         clearSelection,
         handleSearch,
+        prepareSearchLoading,
+        renderSearchResults,
+        renderSearchError,
+        searchArtistByTrack,
+        openAlbumByTrack,
         isViewingCustom: (id) => isViewingCustomPlaylist && currentCustomPlaylistId === id,
         updateCurrentCustomTitle: (newTitle) => {
             if (isViewingCustomPlaylist && detailTitle) {

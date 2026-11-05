@@ -221,6 +221,19 @@
     word-break: break-word;
 }
 
+/* 歌手与专辑交互点击跳转链接 */
+.track-artist-link,
+.track-album-link {
+    cursor: pointer;
+    transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.track-artist-link:hover,
+.track-album-link:hover {
+    color: var(--accent-apple) !important;
+    text-decoration: underline;
+}
+
 /* 专辑列 */
 .track-album-col {
     font-size: var(--fs-t3);
