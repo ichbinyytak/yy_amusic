@@ -16,6 +16,7 @@ import json
 import subprocess
 import urllib.request
 import urllib.error
+import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 铁律：假音频与试听截断黑名单字节数
@@ -248,6 +249,7 @@ class SourceManager:
     """音源调度总管：管理、测速、重排、双核并发全量冲刺"""
     def __init__(self):
         self.sources = {}
+        self.tested_at = None
         self._init_builtin_sources()
 
     def _init_builtin_sources(self):
@@ -285,6 +287,7 @@ class SourceManager:
         try:
             with open(ranking_file, "r", encoding="utf-8") as f:
                 data = json.loads(f.read())
+            self.tested_at = data.get("testedAt") or data.get("generatedAt")
             sources_list = data.get("sources", [])
             for s_info in sources_list:
                 sid = s_info.get("id")
@@ -359,6 +362,7 @@ class SourceManager:
                     pass
 
         ordered = self.get_ordered_sources()
+        self.tested_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         return [{
             "id": s.id,
             "name": s.name,

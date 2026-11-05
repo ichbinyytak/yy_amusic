@@ -346,6 +346,37 @@ window.Shell = (function () {
     function renderSourceList(data) {
         if (!sourcesListBody) return;
         const sources = Array.isArray(data) ? data : (data.sources || []);
+        const testedAt = (!Array.isArray(data) && data) ? (data.tested_at || data.updated_at) : null;
+
+        // 更新抽屉副标题显示最后更新与测速时间
+        const subtitleEl = document.querySelector(".source-drawer-subtitle");
+        if (subtitleEl) {
+            let timeStr = "";
+            if (testedAt) {
+                try {
+                    const d = new Date(testedAt);
+                    if (!isNaN(d.getTime())) {
+                        const pad = n => String(n).padStart(2, '0');
+                        const Y = d.getFullYear();
+                        const M = pad(d.getMonth() + 1);
+                        const D = pad(d.getDate());
+                        const h = pad(d.getHours());
+                        const m = pad(d.getMinutes());
+                        timeStr = `${Y}-${M}-${D} ${h}:${m}`;
+                    } else {
+                        timeStr = testedAt;
+                    }
+                } catch(e) {
+                    timeStr = testedAt;
+                }
+            }
+            if (timeStr) {
+                subtitleEl.innerHTML = `云端每日自动测速 · 最近更新: <span style="color:var(--text-main); font-weight:600;">${escapeHtml(timeStr)}</span> · 双核冲刺毫秒出声`;
+            } else {
+                subtitleEl.innerText = "云端每日自动测速与同步，双核并发冲刺，毫秒出声";
+            }
+        }
+
         if (sources.length === 0) {
             sourcesListBody.innerHTML = '<div class="loading-state">暂无可用的音源</div>';
             return;
@@ -354,15 +385,15 @@ window.Shell = (function () {
         let html = '';
         sources.forEach((s) => {
             const latVal = (s.latency_ms !== undefined && s.latency_ms !== null) ? s.latency_ms : s.latency;
-            const isOk = s.status === "ok" || (latVal !== undefined && latVal > 0);
-            const latencyText = (latVal !== undefined && latVal !== null && latVal > 0)
+            const isOk = s.status === "ok" && (latVal !== undefined && latVal > 0 && latVal < 5000);
+            const latencyText = (latVal !== undefined && latVal !== null && latVal > 0 && isOk)
                 ? `${latVal}ms`
-                : (isOk ? "在线" : "离线");
+                : (isOk ? "在线" : "已失效");
             html += `
                 <div class="source-card">
                     <div>
                         <strong>${escapeHtml(s.name || s.id)}</strong>
-                        <div style="font-size:var(--fs-t4); color:var(--text-muted);">${escapeHtml(s.type || '内置音源')}</div>
+                        <div style="font-size:var(--fs-t4); color:var(--text-muted);">${escapeHtml(s.type || (s.platform ? s.platform.toUpperCase() : '内置音源'))}</div>
                     </div>
                     <span class="source-status-badge ${isOk ? 'source-status-ok' : 'source-status-failed'}">${latencyText}</span>
                 </div>

@@ -229,10 +229,14 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
         target_artist = to_simple(target_artist)
 
     results = []
+    # 清理查询词中的连接符号，避免音源平台按特殊语法处理导致搜空
+    query_k = re.sub(r'[&/、+]+', ' ', simplified_k).strip()
+    if not query_k:
+        query_k = simplified_k
 
     # 3. 酷我轻量检索通道
     try:
-        url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(simplified_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
+        url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
         with urllib.request.urlopen(req, timeout=2.0) as r:
             data = json.loads(r.read().decode('utf-8'))
@@ -258,7 +262,7 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
 
     # 4. 网易云轻量检索通道
     try:
-        url_ne = f"http://music.163.com/api/search/get?s={urllib.parse.quote(simplified_k)}&type=1&offset=0&limit={limit}"
+        url_ne = f"http://music.163.com/api/search/get?s={urllib.parse.quote(query_k)}&type=1&offset=0&limit={limit}"
         req = urllib.request.Request(url_ne, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=2.0) as r:
             data = json.loads(r.read().decode('utf-8'))

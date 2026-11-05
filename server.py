@@ -192,7 +192,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 })
             # 按延迟从快到慢统一排序
             data.sort(key=lambda x: x["latency_ms"])
-            self.send_json(data)
+            self.send_json({
+                "tested_at": source_hub.tested_at,
+                "sources": data
+            })
             return
 
         # 7. 音频底层：歌曲候选检索 (带 OpenCC 繁简转换与多维打分)

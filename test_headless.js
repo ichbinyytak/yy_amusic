@@ -216,6 +216,13 @@ async function run() {
     if (!hasMsNumber && sourceStatusBadges.length > 0) {
         throw new Error("音源抽屉中未正确展示延迟毫秒数！");
     }
+    const subtitleText = await evaluate(`document.querySelector('.source-drawer-subtitle')?.innerText || ''`);
+    console.log(`音源抽屉副标题文本: "${subtitleText}"`);
+    const hasUpdateTime = subtitleText.includes("最近更新") && /\d{4}-\d{2}-\d{2}/.test(subtitleText);
+    console.log(`是否展示最近更新时间: ${hasUpdateTime}`);
+    if (!hasUpdateTime) {
+        throw new Error("音源抽屉副标题中未正确展示最近更新时间！");
+    }
     await evaluate(`window.Shell.closeAllDrawers()`);
     await sleep(300);
 
@@ -547,6 +554,44 @@ async function run() {
         if (!albumDetailTitle.includes(targetAlbumName) || albumTracksCount === 0) {
             throw new Error("点击单曲专辑名未能正确穿透加载整张专辑曲目列表！");
         }
+    }
+
+    console.log("\n--- 开始验证 6.6.1: 多歌手 a & b 独立链接拆分与各自联动搜索 ---");
+    // 渲染带有多歌手的合唱测试曲目
+    await evaluate(`
+        window.RightPanel.renderTracklist([
+            { index: 1, name: "今天你要嫁给我", artist: "陶喆 & 蔡依林", album: "太美丽", durationMillis: 270000 },
+            { index: 2, name: "千里之外", artist: "费玉清 / 周杰伦", album: "依然范特西", durationMillis: 255000 }
+        ]);
+    `);
+    await sleep(200);
+
+    const firstRowArtistLinks = await evaluate(`Array.from(document.querySelectorAll('#track-row-0 .track-artist-link')).map(el => el.innerText.trim())`);
+    console.log(`合唱歌曲 1 (陶喆 & 蔡依林) 解析到的歌手链接:`, firstRowArtistLinks);
+    if (firstRowArtistLinks.length !== 2 || firstRowArtistLinks[0] !== '陶喆' || firstRowArtistLinks[1] !== '蔡依林') {
+        throw new Error(`多歌手未能正确拆分成两个独立歌手链接！当前: ${JSON.stringify(firstRowArtistLinks)}`);
+    }
+
+    const firstRowDelim = await evaluate(`document.querySelector('#track-row-0 .artist-delimiter')?.innerText?.trim()`);
+    console.log(`合唱歌曲 1 连接符: "${firstRowDelim}"`);
+    if (firstRowDelim !== '&') {
+        throw new Error(`多歌手连接符未正确保留！期望 '&'，当前: '${firstRowDelim}'`);
+    }
+
+    const secondRowArtistLinks = await evaluate(`Array.from(document.querySelectorAll('#track-row-1 .track-artist-link')).map(el => el.innerText.trim())`);
+    console.log(`合唱歌曲 2 (费玉清 / 周杰伦) 解析到的歌手链接:`, secondRowArtistLinks);
+    if (secondRowArtistLinks.length !== 2 || secondRowArtistLinks[0] !== '费玉清' || secondRowArtistLinks[1] !== '周杰伦') {
+        throw new Error(`斜杠多歌手未能正确拆分成两个独立歌手链接！当前: ${JSON.stringify(secondRowArtistLinks)}`);
+    }
+
+    // 测试点击第二个歌手链接（蔡依林），验证精准搜索‘蔡依林’而非合唱全称
+    console.log("测试点击第二个歌手链接《蔡依林》...");
+    await evaluate(`document.querySelectorAll('#track-row-0 .track-artist-link')[1].click()`);
+    await sleep(600);
+    const searchValAfterSecondArtist = await evaluate(`document.getElementById('searchInput')?.value || ''`);
+    console.log(`点击第二个歌手后搜索框内容: "${searchValAfterSecondArtist}"`);
+    if (searchValAfterSecondArtist !== '蔡依林') {
+        throw new Error(`点击第二个歌手时未能精确独立搜索！期望 '蔡依林'，实际: '${searchValAfterSecondArtist}'`);
     }
 
     console.log("\n--- 开始验证 6.7: 播放切歌即刻静音 & 首曲精准起播不跳曲 ---");

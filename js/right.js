@@ -297,6 +297,21 @@ window.RightPanel = (function () {
         const curPlayingSong = window.player && window.player.playlist[window.player.currentIndex];
         const hasSelection = selectedTrackIndices.size > 0;
 
+        // 多歌手拆解与独立链接生成辅助函数（支持 a & b, a / b, a、b, a, b, feat. 等）
+        function renderArtistLinksHtml(artistStr) {
+            if (!artistStr) return '未知歌手';
+            const delimRegex = /(\s*(?:&|\/|、|,|feat\.|ft\.|with)\s*)/i;
+            const parts = artistStr.split(delimRegex);
+            return parts.map(part => {
+                const trimmed = part.trim();
+                if (!trimmed) return '';
+                if (/^(?:&|\/|、|,|feat\.|ft\.|with)$/i.test(trimmed)) {
+                    return ` <span class="artist-delimiter">${escapeHtml(trimmed)}</span> `;
+                }
+                return `<span class="track-artist-link" data-artist="${escapeHtml(trimmed)}" onclick="event.stopPropagation(); window.RightPanel.searchArtistByName(this.dataset.artist)">${escapeHtml(trimmed)}</span>`;
+            }).join('').replace(/\s+/g, ' ').trim();
+        }
+
         let html = `
             <table class="track-table ${hasSelection ? 'multi-select-mode' : ''}" id="trackTableEl">
                 <thead>
@@ -331,7 +346,7 @@ window.RightPanel = (function () {
                     <td class="track-info-cell">
                         <div class="track-title-wrapper">
                             <span class="track-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
-                            <span class="track-artist" title="${escapeHtml(t.artist)}">· <span class="track-artist-link" onclick="event.stopPropagation(); window.RightPanel.searchArtistByTrack(${idx})">${escapeHtml(t.artist)}</span></span>
+                            <span class="track-artist" title="${escapeHtml(t.artist)}">· ${renderArtistLinksHtml(t.artist)}</span>
                         </div>
                     </td>
                     <td class="track-album-col" title="${escapeHtml(t.album || '')}">
@@ -712,11 +727,17 @@ window.RightPanel = (function () {
         if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 检索失败: ${escapeHtml(errMsg)}</div>`;
     }
 
+    function searchArtistByName(artistName) {
+        if (!artistName) return;
+        window.SearchPanel?.search?.(artistName);
+    }
+
     function searchArtistByTrack(idx) {
         if (!currentTracks || !currentTracks[idx]) return;
         const track = currentTracks[idx];
         if (track.artist) {
-            window.SearchPanel?.search?.(track.artist);
+            const firstArtist = track.artist.split(/(?:\s*&\s*|\s*\/\s*|\s*、\s*|,\s*|\s+feat\.\s+|\s+ft\.\s+|\s+with\s+)/i)[0].trim();
+            window.SearchPanel?.search?.(firstArtist || track.artist);
         }
     }
 
@@ -770,6 +791,7 @@ window.RightPanel = (function () {
         renderSearchResults,
         renderSearchError,
         searchArtistByTrack,
+        searchArtistByName,
         openAlbumByTrack,
         isViewingCustom: (id) => isViewingCustomPlaylist && currentCustomPlaylistId === id,
         updateCurrentCustomTitle: (newTitle) => {
