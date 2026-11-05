@@ -189,16 +189,27 @@ window.StorageManager = (function () {
         return Array.from(set);
     }
 
+    function getAllCategories() {
+        const set = new Set();
+        set.add("未分组");
+        getRegisteredCategories('custom').forEach(c => set.add(c));
+        getRegisteredCategories('fav').forEach(c => set.add(c));
+        return Array.from(set);
+    }
+
     function addCategory(kind, name) {
         if (!name || typeof name !== 'string' || !name.trim()) return false;
         const trimmed = name.trim();
         if (trimmed === "未分类" || trimmed === "默认" || trimmed === "未分组") return false;
-        const key = kind === 'fav' ? KEY_CAT_FAV : KEY_CAT_CUSTOM;
-        const saved = getJson(key, []);
-        if (!saved.includes(trimmed)) {
-            saved.push(trimmed);
-            setJson(key, saved);
-        }
+        const targets = (!kind || kind === 'all') ? ['custom', 'fav'] : [kind];
+        targets.forEach(k => {
+            const key = k === 'fav' ? KEY_CAT_FAV : KEY_CAT_CUSTOM;
+            const saved = getJson(key, []);
+            if (!saved.includes(trimmed)) {
+                saved.push(trimmed);
+                setJson(key, saved);
+            }
+        });
         return true;
     }
 
@@ -211,31 +222,34 @@ window.StorageManager = (function () {
         if (targetCat === "未分组") return { ok: false, error: "不能命名为未分组" };
         if (oldCat === targetCat) return { ok: true };
 
-        const key = kind === 'fav' ? KEY_CAT_FAV : KEY_CAT_CUSTOM;
-        let cats = getJson(key, []);
-        if (!Array.isArray(cats)) cats = [];
+        const targets = (!kind || kind === 'all') ? ['custom', 'fav'] : [kind];
+        targets.forEach(k => {
+            const key = k === 'fav' ? KEY_CAT_FAV : KEY_CAT_CUSTOM;
+            let cats = getJson(key, []);
+            if (!Array.isArray(cats)) cats = [];
 
-        const idx = cats.indexOf(oldCat);
-        if (idx !== -1) {
-            cats[idx] = targetCat;
-        } else if (!cats.includes(targetCat)) {
-            cats.push(targetCat);
-        }
-        setJson(key, cats.filter(c => c !== "未分组"));
+            const idx = cats.indexOf(oldCat);
+            if (idx !== -1) {
+                cats[idx] = targetCat;
+            } else if (!cats.includes(targetCat)) {
+                cats.push(targetCat);
+            }
+            setJson(key, cats.filter(c => c !== "未分组"));
+        });
 
-        if (kind === 'fav') {
-            const list = getFavPlaylists();
-            list.forEach(f => {
-                if (normalizeCategory(f.category) === oldCat) f.category = targetCat;
-            });
-            saveFavPlaylists(list);
-        } else {
-            const list = getCustomPlaylists();
-            list.forEach(c => {
-                if (normalizeCategory(c.category) === oldCat) c.category = targetCat;
-            });
-            saveCustomPlaylists(list);
-        }
+        // 同步更新所有关联歌单的 category
+        const fList = getFavPlaylists();
+        fList.forEach(f => {
+            if (normalizeCategory(f.category) === oldCat) f.category = targetCat;
+        });
+        saveFavPlaylists(fList);
+
+        const cList = getCustomPlaylists();
+        cList.forEach(c => {
+            if (normalizeCategory(c.category) === oldCat) c.category = targetCat;
+        });
+        saveCustomPlaylists(cList);
+
         return { ok: true };
     }
 
@@ -245,18 +259,21 @@ window.StorageManager = (function () {
         }
 
         // 默认只能删除空组；若分组内部包含任何歌单或专辑，绝对禁止删除
-        const plList = kind === 'fav' ? getFavPlaylists() : getCustomPlaylists();
+        const plList = [...getFavPlaylists(), ...getCustomPlaylists()];
         const hasItems = plList.some(p => normalizeCategory(p.category) === catName);
         if (hasItems) {
             return { ok: false, error: "该组内包含歌单，无法删除" };
         }
 
-        const key = kind === 'fav' ? KEY_CAT_FAV : KEY_CAT_CUSTOM;
-        let cats = getJson(key, []);
-        if (Array.isArray(cats)) {
-            cats = cats.filter(c => c !== catName);
-            setJson(key, cats);
-        }
+        const targets = (!kind || kind === 'all') ? ['custom', 'fav'] : [kind];
+        targets.forEach(k => {
+            const key = k === 'fav' ? KEY_CAT_FAV : KEY_CAT_CUSTOM;
+            let cats = getJson(key, []);
+            if (Array.isArray(cats)) {
+                cats = cats.filter(c => c !== catName);
+                setJson(key, cats);
+            }
+        });
         return { ok: true };
     }
 
@@ -544,6 +561,7 @@ window.StorageManager = (function () {
         changePlaylistCategory,
         // 分类管理
         getRegisteredCategories,
+        getAllCategories,
         addCategory,
         renameCategory,
         deleteCategory,

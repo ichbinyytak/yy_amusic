@@ -260,20 +260,14 @@ window.RightPanel = (function () {
                 </button>
             `;
         } else {
-            // 默认未勾选状态：播放全部 / 收藏或删除歌单
+            // 默认未勾选状态：遵照用户指令3：歌单名字右侧常驻【播放 ▶】与【添加 ＋】图标
             detailActions.innerHTML = `
                 <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
                     ▶
                 </button>
-                ${isViewingCustomPlaylist ? `
-                    <button class="btn-action-icon" onclick="window.RightPanel.deleteCurrentCustomPlaylist()" title="删除此自建歌单">
-                        ✕
-                    </button>
-                ` : (currentPlaylistData?.id ? `
-                    <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.toggleFavCurrentPlaylist()" title="${isFav ? '取消收藏' : '收藏到分类'}">
-                        ＋
-                    </button>
-                ` : '')}
+                <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.openPlaylistGroupingModal()" title="分组管理 / 收藏">
+                    ＋
+                </button>
             `;
         }
     }
@@ -577,14 +571,12 @@ window.RightPanel = (function () {
     }
 
     // 收藏当前官方歌单
-    function toggleFavCurrentPlaylist() {
-        if (isViewingCustomPlaylist || !currentPlaylistData?.id) return;
-        const isFaved = window.StorageManager.isPlaylistFaved(currentPlaylistData.id);
-        if (isFaved) {
-            window.StorageManager.unfavPlaylist(currentPlaylistData.id);
-            window.Shell?.showToast?.(`已取消收藏《${currentPlaylistData.name}》`);
-            renderHeaderActions();
-        } else {
+    // 右侧头部【＋】统一打开分组弹窗 (遵照用户指令3：可选择加入分组或新建分组)
+    function openPlaylistGroupingModal() {
+        if (!currentPlaylistData) return;
+        if (isViewingCustomPlaylist && currentCustomPlaylistId) {
+            window.Shell?.openMoveCategoryModal?.('custom', currentCustomPlaylistId, currentPlaylistData.category || '未分组');
+        } else if (currentPlaylistData.id) {
             const plData = {
                 id: currentPlaylistData.id,
                 type: currentPlaylistData.type || "playlist",
@@ -596,6 +588,10 @@ window.RightPanel = (function () {
             };
             window.Shell?.openAddToFavModal?.(plData);
         }
+    }
+
+    function toggleFavCurrentPlaylist() {
+        openPlaylistGroupingModal();
     }
 
     // 删除当前自建歌单
@@ -721,6 +717,7 @@ window.RightPanel = (function () {
         playBatchSelected,
         downloadBatchSelected,
         openBatchAddToPlaylistModal,
+        openPlaylistGroupingModal,
         toggleFavCurrentPlaylist,
         deleteCurrentCustomPlaylist,
         openAddToPlaylistModal,

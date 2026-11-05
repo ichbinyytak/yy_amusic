@@ -28,6 +28,7 @@ async function run() {
     const chrome = spawn('google-chrome', [
         '--headless=new',
         `--remote-debugging-port=${port}`,
+        '--user-data-dir=/tmp/test-chrome-profile-amusic',
         '--no-sandbox',
         '--disable-gpu',
         '--disable-extensions',
@@ -134,6 +135,56 @@ async function run() {
     console.log(`独立数据管理手风琴已彻底移除: ${!oldBackupBlock}`);
     if (!exportBtn || !importBtn || oldBackupBlock) throw new Error("数据管理图标迁移异常！");
 
+    console.log("\n--- 开始验证 2.05: 备份与恢复防误触应用内确认弹窗 ---");
+    await evaluate(`document.getElementById('btnExportBackup').click()`);
+    await sleep(200);
+    const exportModalOpen = await evaluate(`document.getElementById('confirmActionModal')?.classList.contains('open')`);
+    const exportModalTitle = await evaluate(`document.getElementById('confirmActionTitle')?.innerText || ''`);
+    console.log(`点击备份触发确认弹窗: ${exportModalOpen}, 弹窗标题: "${exportModalTitle}"`);
+    if (!exportModalOpen || !exportModalTitle.includes("备份")) {
+        throw new Error("点击备份歌单未弹出应用内确认弹窗！");
+    }
+    await evaluate(`window.Shell.closeConfirmActionModal()`);
+    await sleep(200);
+
+    await evaluate(`document.getElementById('btnImportBackup').click()`);
+    await sleep(200);
+    const importModalOpen = await evaluate(`document.getElementById('confirmActionModal')?.classList.contains('open')`);
+    const importModalTitle = await evaluate(`document.getElementById('confirmActionTitle')?.innerText || ''`);
+    console.log(`点击恢复触发确认弹窗: ${importModalOpen}, 弹窗标题: "${importModalTitle}"`);
+    if (!importModalOpen || !importModalTitle.includes("恢复")) {
+        throw new Error("点击恢复歌单未弹出应用内确认弹窗！");
+    }
+    await evaluate(`window.Shell.closeConfirmActionModal()`);
+    await sleep(200);
+
+    console.log("\n--- 开始验证 2.1: 顶部主标签页切换 (Apple专区 | 我的音乐库) ---");
+    const tabAppleBtn = await evaluate(`!!document.getElementById('tabAppleBtn')`);
+    const tabLibraryBtn = await evaluate(`!!document.getElementById('tabLibraryBtn')`);
+    const viewAppleExists = await evaluate(`!!document.getElementById('viewApple')`);
+    const viewLibraryExists = await evaluate(`!!document.getElementById('viewLibrary')`);
+    console.log(`主标签页组件完整: AppleTab=${tabAppleBtn}, LibTab=${tabLibraryBtn}, viewApple=${viewAppleExists}, viewLib=${viewLibraryExists}`);
+    if (!tabAppleBtn || !tabLibraryBtn || !viewAppleExists || !viewLibraryExists) {
+        throw new Error("左侧主标签页或双全页视图未正确就绪！");
+    }
+
+    // 初始状态下 viewApple 处于激活，点击 tabLibraryBtn 切换到音乐库全页
+    console.log("点击【我的音乐库】Tab 进行全页切换...");
+    await evaluate(`document.getElementById('tabLibraryBtn').click()`);
+    await sleep(200);
+    const libActive = await evaluate(`document.getElementById('viewLibrary').classList.contains('active')`);
+    const appleActive = await evaluate(`document.getElementById('viewApple').classList.contains('active')`);
+    console.log(`切换后 viewLibrary激活: ${libActive}, viewApple隐藏: ${!appleActive}`);
+    if (!libActive || appleActive) throw new Error("切换至【我的音乐库】全页失败！");
+
+    // 切回【Apple专区】
+    console.log("切回【Apple专区】Tab...");
+    await evaluate(`document.getElementById('tabAppleBtn').click()`);
+    await sleep(200);
+    const appleRestored = await evaluate(`document.getElementById('viewApple').classList.contains('active')`);
+    console.log(`切回后 viewApple重新激活: ${appleRestored}`);
+    if (!appleRestored) throw new Error("切回【Apple专区】全页失败！");
+
     console.log("\n--- 开始验证 3: Apple专区与地区精简 ---");
     const appleHdrText = await evaluate(`document.querySelector('#top_region .top-accordion-left')?.innerText || ''`);
     console.log(`专区标题: "${appleHdrText}" (包含 "Apple专区")`);
@@ -168,16 +219,71 @@ async function run() {
     await evaluate(`window.Shell.closeAllDrawers()`);
     await sleep(300);
 
-    console.log("\n--- 开始验证 4: 分组规则与【未分组】常驻 ---");
-    const favUngrouped = await evaluate(`document.getElementById('lib_favs_cat_未分组') !== null`);
-    const customUngrouped = await evaluate(`document.getElementById('lib_customs_cat_未分组') !== null`);
-    console.log(`收藏歌单存在【未分组】: ${favUngrouped}`);
-    console.log(`我的歌单存在【未分组】: ${customUngrouped}`);
-    if (!favUngrouped || !customUngrouped) throw new Error("【未分组】未能默认常驻置顶！");
+    console.log("\n--- 开始验证 4: 分组扁平化与【未分组】常驻 ---");
+    // 先确保切到我的音乐库
+    await evaluate(`document.getElementById('tabLibraryBtn').click()`);
+    await sleep(200);
 
-    const ungroupedHasButtons = await evaluate(`!!document.querySelector('#lib_customs_cat_未分组 .library-group-row button[data-action="del"]') || !!document.getElementById('lib_customs_cat_未分组')?.querySelector('button[data-action="del"]')`);
-    console.log(`【未分组】禁止删除按钮 (不渲染 ✕): ${!ungroupedHasButtons}`);
-    if (ungroupedHasButtons) throw new Error("【未分组】不应有删除按钮！");
+    const oldFavsExists = await evaluate(`!!document.getElementById('lib_favs')`);
+    const oldCustomsExists = await evaluate(`!!document.getElementById('lib_customs')`);
+    console.log(`已彻底移除中间【收藏歌单】层级: ${!oldFavsExists}`);
+    console.log(`已彻底移除中间【我的歌单】层级: ${!oldCustomsExists}`);
+    if (oldFavsExists || oldCustomsExists) throw new Error("仍残留中间板块手风琴层级！");
+
+    const libUngrouped = await evaluate(`document.getElementById('lib_cat_未分组') !== null`);
+    console.log(`我的音乐库直接存在【未分组】置顶: ${libUngrouped}`);
+    if (!libUngrouped) throw new Error("【未分组】未能默认常驻置顶！");
+
+    const ungroupedHasButtons = await evaluate(`!!document.querySelector('#lib_cat_未分组 .library-group-row button')`);
+    console.log(`【未分组】禁止外露按钮 (不渲染 ✕ 或 ✎): ${!ungroupedHasButtons}`);
+    if (ungroupedHasButtons) throw new Error("【未分组】不应有外露按钮！");
+
+    // 验证草图规范：未分组不可长按
+    console.log("验证草图规范：未分组长按/右键不呼出操作菜单...");
+    await evaluate(`
+        const ugRow = document.querySelector('#lib_cat_未分组 .library-group-row');
+        ugRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    `);
+    await sleep(200);
+    const ugMenuOpen = await evaluate(`document.getElementById('globalContextMenu')?.classList.contains('open') || false`);
+    console.log(`未分组长按后菜单未弹出 (期望 false): ${ugMenuOpen}`);
+    if (ugMenuOpen) throw new Error("未分组不应响应长按操作菜单！");
+
+    // 验证草图规范与指令9：自定义分组支持长按 (重命名、删除，且不含新建歌单)
+    console.log("验证规范：新建自定义分组并测试长按菜单呼出...");
+    await evaluate(`
+        window.StorageManager.addCategory('custom', '摇滚推荐组');
+        window.LibraryPanel.renderLibrary();
+    `);
+    await sleep(200);
+    await evaluate(`
+        const rockRow = document.querySelector('#lib_cat_摇滚推荐组 .library-group-row');
+        rockRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    `);
+    await sleep(200);
+    const rockMenuOpen = await evaluate(`document.getElementById('globalContextMenu')?.classList.contains('open') || false`);
+    const rockMenuItems = await evaluate(`Array.from(document.querySelectorAll('#globalContextMenu .context-menu-item')).map(e => e.innerText.trim())`);
+    console.log(`自定义分组长按弹出菜单: ${rockMenuOpen}, 菜单项:`, rockMenuItems);
+    const hasRenameOption = rockMenuItems.some(i => i.includes('重命名'));
+    const hasDelOption = rockMenuItems.some(i => i.includes('删除'));
+    const hasCreateOption = rockMenuItems.some(i => i.includes('新建歌单'));
+    console.log(`自定义分组长按不含“在此分组新建歌单” (期望 false): ${hasCreateOption}`);
+    if (!rockMenuOpen || !hasRenameOption || !hasDelOption) {
+        throw new Error("自定义分组长按菜单必须包含重命名与删除！");
+    }
+    if (hasCreateOption) {
+        throw new Error("遵照指令9，分组长按菜单中绝不应包含新建歌单选项！");
+    }
+    // 清理测试菜单与测试分类组
+    await evaluate(`window.ContextMenu?.hide?.()`);
+    await evaluate(`
+        window.StorageManager.deleteCategory('custom', '摇滚推荐组');
+        window.LibraryPanel.renderLibrary();
+    `);
+
+    // 切回 Apple 专区供后续卡片和歌曲测试使用
+    await evaluate(`document.getElementById('tabAppleBtn').click()`);
+    await sleep(200);
 
     console.log("\n--- 开始验证 5: 左侧歌单卡片图标精简 ---");
     // 等待歌单卡片加载
@@ -194,6 +300,65 @@ async function run() {
     if (cardPlayBtnCount > 0 || cardFavBtnCount > 0 || cardDownloadBtnCount > 0) {
         throw new Error("左侧卡片仍残留有播放、收藏或下载按钮！");
     }
+
+    console.log("\n--- 开始验证 5.1: Apple专区卡片长按静默与无复制选项规范 ---");
+    // 测试：长按 Apple 专区卡片绝对不弹出 ContextMenu
+    await evaluate(`
+        const appleCard = document.querySelector('.playlist-card[id^="card-pl."]');
+        if (appleCard) {
+            appleCard.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+        }
+    `);
+    await sleep(200);
+    const appleCardMenuOpened = await evaluate(`document.getElementById('globalContextMenu')?.classList.contains('open') || false`);
+    console.log(`Apple专区歌单长按静默不弹菜单 (期望 false): ${appleCardMenuOpened}`);
+    if (appleCardMenuOpened) throw new Error("Apple专区歌单长按不应弹出任何操作菜单！");
+
+    // 测试：自建歌单长按菜单中绝无“复制”选项
+    await evaluate(`
+        window.StorageManager.createCustomPlaylist('无复制测试歌单', '未分组');
+        window.LibraryPanel.renderLibrary();
+        window.LeftPanel.switchTab('library');
+    `);
+    await sleep(200);
+    await evaluate(`
+        const cCard = document.querySelector('#viewLibrary .playlist-card');
+        if (cCard) {
+            cCard.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+        }
+    `);
+    await sleep(200);
+    const customMenuItems = await evaluate(`Array.from(document.querySelectorAll('#globalContextMenu .context-menu-item')).map(e => e.innerText)`);
+    const hasCopyOption = customMenuItems.some(t => t.includes('复制'));
+    const hasRenameSongOption = customMenuItems.some(t => t.includes('重命名歌单'));
+    console.log(`歌单长按菜单项:`, customMenuItems);
+    console.log(`歌单长按菜单不存在复制选项 (期望 false): ${hasCopyOption}`);
+    console.log(`歌单长按菜单包含重命名歌单选项 (期望 true): ${hasRenameSongOption}`);
+    if (hasCopyOption) throw new Error("歌单长按菜单中不应包含任何复制选项！");
+    if (!hasRenameSongOption) throw new Error("我的音乐库歌单长按菜单中必须包含重命名歌单！");
+
+    // 点击重命名呼出应用内统一输入弹窗
+    await evaluate(`
+        const renameBtn = Array.from(document.querySelectorAll('#globalContextMenu .context-menu-item')).find(e => e.innerText.includes('重命名'));
+        if (renameBtn) renameBtn.click();
+    `);
+    await sleep(200);
+    const promptModalOpen = await evaluate(`document.getElementById('inputPromptModal')?.classList.contains('open')`);
+    console.log(`点击重命名歌单呼出应用内统一输入弹窗: ${promptModalOpen}`);
+    if (!promptModalOpen) throw new Error("重命名歌单未能呼出应用内统一输入弹窗！");
+    await evaluate(`window.Shell.closeInputPromptModal()`);
+    await sleep(200);
+    
+    // 清理测试数据并切回 Apple 专区
+    await evaluate(`window.ContextMenu?.hide?.()`);
+    await evaluate(`
+        const cList = window.StorageManager.getCustomPlaylists();
+        const target = cList.find(c => c.title === '无复制测试歌单');
+        if (target) window.StorageManager.deleteCustomPlaylist(target.id);
+        window.LibraryPanel.renderLibrary();
+        window.LeftPanel.switchTab('apple');
+    `);
+    await sleep(300);
 
     console.log("\n--- 开始验证 6: 右侧曲目列表与多选下载逻辑 ---");
     // 点击一个多曲目的官方歌单展开右侧

@@ -51,52 +51,224 @@ window.LeftPanel = (function () {
             if (e.key === "Escape") closeDrawer();
         });
 
-        // 装配三大顶级手风琴
+        // 装配顶部主标签页与左右全页视图
         assembleTopAccordions();
     }
 
     /**
-     * 装配三大同级顶级手风琴
+     * 装配顶部主标签页 (Apple专区 | 我的音乐库) 与全页视图切换
      */
     function assembleTopAccordions() {
+        const listPanel = document.getElementById("listPanel");
+        if (!listPanel) return;
+
+        // 1. 顶部主标签页栏 (保证单例，置于 listPanel 首位)
+        let tabsNav = document.getElementById("leftTabsNav");
+        if (!tabsNav) {
+            tabsNav = document.createElement("div");
+            tabsNav.id = "leftTabsNav";
+            tabsNav.className = "left-tabs-nav";
+            listPanel.insertBefore(tabsNav, listPanel.firstChild);
+        }
+
+        const currentSf = window.currentStorefront || (function () {
+            try { return localStorage.getItem("amusic_storefront") || "cn"; } catch (e) { return "cn"; }
+        })();
+        window.currentStorefront = currentSf;
+
+        const regionNames = {
+            "cn": "中国大陆",
+            "hk": "香港",
+            "tw": "台湾",
+            "us": "美国"
+        };
+        const currentName = regionNames[currentSf] || "中国大陆";
+
+        tabsNav.innerHTML = `
+            <div class="left-tabs-group">
+                <div class="left-tab-col" id="tabAppleCol" data-tab="apple">
+                    <div id="top_region">
+                        <span class="top-accordion-left" id="tabAppleBtn">Apple专区</span>
+                    </div>
+                </div>
+                <div class="left-tab-divider"></div>
+                <div class="left-tab-col" id="tabLibraryCol" data-tab="library">
+                    <span id="tabLibraryBtn">我的音乐库</span>
+                </div>
+            </div>
+        `;
+
+        // 2. 列表滚动容器内创建两个独立的整页视图面板
         const scrollContainer = document.getElementById("playlistList");
         if (!scrollContainer) return;
         scrollContainer.innerHTML = "";
         scrollContainer.className = "list-panel-scroll";
 
-        // 1. ## 我的音乐库 手风琴 [↑] [↓]
-        const libHeaderHtml = `
-            <button class="lib-tool-btn" id="btnExportBackup" title="导出备份 JSON" onclick="event.stopPropagation(); window.BackupManager?.exportData?.();">↑</button>
-            <button class="lib-tool-btn" id="btnImportBackup" title="导入恢复 JSON" onclick="event.stopPropagation(); window.BackupManager?.triggerImport?.();">↓</button>
+        const viewApple = document.createElement("div");
+        viewApple.id = "viewApple";
+        viewApple.className = "left-view-pane";
+
+        const viewLibrary = document.createElement("div");
+        viewLibrary.id = "viewLibrary";
+        viewLibrary.className = "left-view-pane";
+
+        // 2.1 Apple专区视图首行：独立设置行放置【地区选择器】(纯就地下拉，彻底防止顶部Tab误触)
+        const appleToolbar = document.createElement("div");
+        appleToolbar.className = "left-view-toolbar-row";
+        appleToolbar.id = "appleToolbarRow";
+        appleToolbar.innerHTML = `
+            <span style="font-size: var(--fs-t3); color: var(--text-secondary); display:inline-flex; align-items:center; gap:4px;">
+                <span>🌐 Apple 市场</span>
+            </span>
+            <div class="region-dropdown-wrapper" id="regionDropdownWrapper" onclick="event.stopPropagation();">
+                <button class="region-dropdown-trigger" id="regionDropdownTrigger" type="button" title="切换地区">
+                    <span id="regionCurrentText">${escapeHtml(currentName)}</span>
+                    <span class="region-dropdown-arrow">▾</span>
+                </button>
+                <div class="region-dropdown-menu" id="regionDropdownMenu">
+                    <div class="region-dropdown-item ${currentSf === 'cn' ? 'active' : ''}" data-val="cn">中国大陆</div>
+                    <div class="region-dropdown-item ${currentSf === 'hk' ? 'active' : ''}" data-val="hk">香港</div>
+                    <div class="region-dropdown-item ${currentSf === 'tw' ? 'active' : ''}" data-val="tw">台湾</div>
+                    <div class="region-dropdown-item ${currentSf === 'us' ? 'active' : ''}" data-val="us">美国</div>
+                </div>
+                <!-- 隐式同步 select，确保自动化测试与既有 API 逻辑 100% 兼容 -->
+                <select class="region-micro-select" id="regionMicroSelect" title="切换地区" style="display:none;">
+                    <option value="cn" ${currentSf === 'cn' ? 'selected' : ''}>中国大陆</option>
+                    <option value="hk" ${currentSf === 'hk' ? 'selected' : ''}>香港</option>
+                    <option value="tw" ${currentSf === 'tw' ? 'selected' : ''}>台湾</option>
+                    <option value="us" ${currentSf === 'us' ? 'selected' : ''}>美国</option>
+                </select>
+            </div>
         `;
-        const libBlock = createTopAccordion({
-            id: "top_library",
-            title: "我的音乐库",
-            extraHeaderHtml: libHeaderHtml
-        });
-        scrollContainer.appendChild(libBlock.blockEl);
-        window.LibraryPanel?.init?.(libBlock.bodyEl);
+        viewApple.appendChild(appleToolbar);
 
-        // 2. ## Apple专区 手风琴 (内嵌极简紧凑微型下拉选择器：中国大陆|香港|台湾|美国)
-        const currentSf = window.currentStorefront || "cn";
-        const regionSelectHtml = `
-            <select class="region-micro-select" id="regionMicroSelect" title="切换地区" onclick="event.stopPropagation();">
-                <option value="cn" ${currentSf === 'cn' ? 'selected' : ''}>中国大陆</option>
-                <option value="hk" ${currentSf === 'hk' ? 'selected' : ''}>香港</option>
-                <option value="tw" ${currentSf === 'tw' ? 'selected' : ''}>台湾</option>
-                <option value="us" ${currentSf === 'us' ? 'selected' : ''}>美国</option>
-            </select>
+        const appleContent = document.createElement("div");
+        appleContent.id = "appleContent";
+        viewApple.appendChild(appleContent);
+
+        // 2.2 我的音乐库视图首行：独立设置行放置【备份歌单】与【恢复歌单】(彻底防止顶部Tab误触)
+        const libToolbar = document.createElement("div");
+        libToolbar.className = "left-view-toolbar-row";
+        libToolbar.id = "libraryToolbarRow";
+        libToolbar.innerHTML = `
+            <button class="btn-lib-text-action" id="btnExportBackup" title="备份当前全部歌单为 JSON 文件" onclick="event.stopPropagation(); window.Shell?.openConfirmModal?.({ title: '↑ 备份歌单确认', message: '确定将当前音乐库全部歌单导出为 JSON 备份文件吗？', confirmText: '确认备份', onConfirm: () => window.BackupManager?.exportData?.() });">
+                <span>↑ 备份歌单</span>
+            </button>
+            <button class="btn-lib-text-action" id="btnImportBackup" title="从 JSON 文件恢复歌单数据" onclick="event.stopPropagation(); window.Shell?.openConfirmModal?.({ title: '↓ 恢复歌单确认', message: '恢复歌单将读取本地 JSON 备份文件并合并至您的音乐库，确认继续吗？', confirmText: '确认恢复', onConfirm: () => window.BackupManager?.triggerImport?.() });">
+                <span>↓ 恢复歌单</span>
+            </button>
         `;
+        viewLibrary.appendChild(libToolbar);
 
-        const regionBlock = createTopAccordion({
-            id: "top_region",
-            title: "Apple专区",
-            extraHeaderHtml: regionSelectHtml
+        const libContent = document.createElement("div");
+        libContent.id = "libContent";
+        viewLibrary.appendChild(libContent);
+
+        scrollContainer.appendChild(viewApple);
+        scrollContainer.appendChild(viewLibrary);
+
+        // 绑定自定义纯下拉切换逻辑 (纯下拉无弹窗)
+        const regionWrapper = appleToolbar.querySelector("#regionDropdownWrapper");
+        const regionTrigger = appleToolbar.querySelector("#regionDropdownTrigger");
+        const regionMenu = appleToolbar.querySelector("#regionDropdownMenu");
+        const regionCurrentText = appleToolbar.querySelector("#regionCurrentText");
+        const microSelect = appleToolbar.querySelector("#regionMicroSelect");
+
+        function closeRegionDropdown() {
+            regionWrapper?.classList.remove("open");
+        }
+
+        regionTrigger?.addEventListener("click", (e) => {
+            e.stopPropagation();
+            regionWrapper?.classList.toggle("open");
         });
-        scrollContainer.appendChild(regionBlock.blockEl);
 
-        const microSelect = regionBlock.headerEl.querySelector("#regionMicroSelect");
-        window.RegionPanel?.init?.(regionBlock.bodyEl, microSelect);
+        regionMenu?.querySelectorAll(".region-dropdown-item").forEach(item => {
+            item.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const val = item.getAttribute("data-val");
+                if (!val) return;
+                
+                regionMenu.querySelectorAll(".region-dropdown-item").forEach(i => i.classList.remove("active"));
+                item.classList.add("active");
+                if (regionCurrentText) regionCurrentText.innerText = item.innerText.trim();
+                closeRegionDropdown();
+
+                // 同步 microSelect 并分发 change 事件驱动 RegionPanel
+                if (microSelect) {
+                    microSelect.value = val;
+                    microSelect.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            });
+        });
+
+        document.addEventListener("click", (e) => {
+            if (regionWrapper && !regionWrapper.contains(e.target)) {
+                closeRegionDropdown();
+            }
+        });
+
+        // 3. 分别挂载 Apple专区 与 我的音乐库控制器至独立内容容器
+        window.RegionPanel?.init?.(appleContent, microSelect);
+        window.LibraryPanel?.init?.(libContent);
+
+        // 4. 读取偏好或默认激活 Apple 专区
+        let activeTab = "apple";
+        try {
+            const saved = localStorage.getItem("amusic_active_left_tab");
+            if (saved === "apple" || saved === "library") activeTab = saved;
+        } catch (e) {}
+
+        function switchTab(tabName) {
+            activeTab = tabName;
+            try { localStorage.setItem("amusic_active_left_tab", tabName); } catch (e) {}
+
+            const colApple = tabsNav.querySelector("#tabAppleCol");
+            const colLib = tabsNav.querySelector("#tabLibraryCol");
+            const btnApple = tabsNav.querySelector("#tabAppleBtn");
+            const btnLib = tabsNav.querySelector("#tabLibraryBtn");
+
+            if (tabName === "apple") {
+                colApple?.classList.add("active");
+                colLib?.classList.remove("active");
+                btnApple?.classList.add("active");
+                btnLib?.classList.remove("active");
+                viewApple.classList.add("active");
+                viewLibrary.classList.remove("active");
+            } else {
+                colLib?.classList.add("active");
+                colApple?.classList.remove("active");
+                btnLib?.classList.add("active");
+                btnApple?.classList.remove("active");
+                viewLibrary.classList.add("active");
+                viewApple.classList.remove("active");
+                // 每次切入音乐库主动同步刷新一次，确保最新歌单立即呈现
+                window.LibraryPanel?.renderLibrary?.();
+            }
+        }
+
+        // 统一在导航栏做事件委托，彻底消除点不准/点到文字未触发的问题
+        tabsNav.addEventListener("click", (e) => {
+            // 如果点到导出/导入按钮或地区下拉框，不触发 Tab 切换
+            if (e.target.closest("#regionMicroSelect") || e.target.closest(".left-tabs-tools")) {
+                return;
+            }
+            if (e.target.closest("#tabLibraryCol") || e.target.closest("#tabLibraryBtn")) {
+                switchTab("library");
+            } else if (e.target.closest("#tabAppleCol") || e.target.closest("#tabAppleBtn") || e.target.closest("#top_region")) {
+                switchTab("apple");
+            }
+        });
+
+        // 绑定直接元素的快捷监听
+        tabsNav.querySelector("#tabAppleCol")?.addEventListener("click", () => switchTab("apple"));
+        tabsNav.querySelector("#tabLibraryCol")?.addEventListener("click", () => switchTab("library"));
+        tabsNav.querySelector("#tabAppleBtn")?.addEventListener("click", () => switchTab("apple"));
+        tabsNav.querySelector("#tabLibraryBtn")?.addEventListener("click", () => switchTab("library"));
+
+        window.LeftPanel.switchTab = switchTab;
+
+        switchTab(activeTab);
     }
 
     function createTopAccordion({ id, title, extraHeaderHtml }) {
@@ -195,15 +367,18 @@ window.LeftPanel = (function () {
             </div>
         `;
 
-        // 统一长按 500ms / 鼠标右键轻量上下文菜单绑定
-        window.ContextMenu?.bind(card, () => {
-            if (isCustom) {
+        // 严格遵照用户指令：
+        // 1. Apple区域歌单长按不出现任何菜单 (收藏到右侧收藏，播放到右侧按，复制和打包均不需要)
+        // 2. 我的音乐库歌单长按彻底移除“播放全部” (统一在右侧曲目列表按播放)
+        // 3. 所有歌单长按均彻底去除“复制链接 / 复制歌单名”
+        if (isCustom || isFav) {
+            window.ContextMenu?.bind(card, () => {
                 return [
                     {
                         icon: "⇄",
                         label: "移动至分组",
                         onClick: () => {
-                            window.Shell?.openMoveCategoryModal?.('custom', item.id, item.category || '未分组');
+                            window.Shell?.openMoveCategoryModal?.(isCustom ? 'custom' : 'fav', item.id, item.category || '未分组');
                         }
                     },
                     {
@@ -220,117 +395,11 @@ window.LeftPanel = (function () {
                         onClick: () => {
                             if (onDelete) onDelete();
                         }
-                    },
-                    { separator: true },
-                    {
-                        icon: "▶",
-                        label: "播放全部",
-                        onClick: () => {
-                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
-                                window.RightPanel?.playCurrentAll?.();
-                            });
-                        }
-                    },
-                    {
-                        icon: "🔗",
-                        label: "复制歌单名",
-                        onClick: () => {
-                            navigator.clipboard.writeText(name).then(() => {
-                                window.Shell?.showToast?.("已复制歌单名到剪贴板");
-                            });
-                        }
                     }
                 ];
-            } else if (isFav) {
-                return [
-                    {
-                        icon: "⇄",
-                        label: "移动至分组",
-                        onClick: () => {
-                            window.Shell?.openMoveCategoryModal?.('fav', item.id, item.category || '未分组');
-                        }
-                    },
-                    {
-                        icon: "✕",
-                        label: "移除收藏",
-                        danger: true,
-                        onClick: () => {
-                            if (onDelete) onDelete();
-                        }
-                    },
-                    { separator: true },
-                    {
-                        icon: "▶",
-                        label: "播放全部",
-                        onClick: () => {
-                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
-                                window.RightPanel?.playCurrentAll?.();
-                            });
-                        }
-                    },
-                    {
-                        icon: "🔗",
-                        label: "复制官方链接",
-                        onClick: () => {
-                            if (url) {
-                                navigator.clipboard.writeText(url).then(() => {
-                                    window.Shell?.showToast?.("已复制官方链接到剪贴板");
-                                });
-                            }
-                        }
-                    }
-                ];
-            } else {
-                // Apple专区 (官方精选 / 榜单 / 专辑 / 歌单)
-                return [
-                    {
-                        icon: "＋",
-                        label: "收藏到分类",
-                        onClick: () => {
-                            const plData = {
-                                id: item.id,
-                                type: item.type || (item.kind === "album" ? "album" : "playlist"),
-                                name: name,
-                                title: name,
-                                curator: cleanCurator,
-                                url: url,
-                                trackCount: item.trackCount || 0
-                            };
-                            window.Shell?.openAddToFavModal?.(plData);
-                        }
-                    },
-                    {
-                        icon: "▶",
-                        label: "播放全部",
-                        onClick: () => {
-                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
-                                window.RightPanel?.playCurrentAll?.();
-                            });
-                        }
-                    },
-                    {
-                        icon: "🔗",
-                        label: "复制官方直链",
-                        onClick: () => {
-                            if (url) {
-                                navigator.clipboard.writeText(url).then(() => {
-                                    window.Shell?.showToast?.("已复制直链到剪贴板");
-                                });
-                            }
-                        }
-                    },
-                    {
-                        icon: "↓",
-                        label: "打包下载全部",
-                        onClick: () => {
-                            openItem(item, isCustom, isCurated, isAlbum, name, cleanCurator, () => {
-                                window.RightPanel?.downloadCurrentPlaylist?.();
-                            });
-                        }
-                    }
-                ];
-            }
-        });
+            });
+        }
+        // Apple专区歌单：直接静默，不绑定 ContextMenu，完全不弹出菜单
 
         // 卡片点击展开至右侧
         card.onclick = () => {

@@ -424,7 +424,7 @@ window.Shell = (function () {
         }
 
         if (choiceList) {
-            const cats = window.StorageManager.getRegisteredCategories('fav');
+            const cats = window.StorageManager.getAllCategories ? window.StorageManager.getAllCategories() : window.StorageManager.getRegisteredCategories('fav');
             const favs = window.StorageManager.getFavPlaylists();
             let html = '';
             cats.forEach(c => {
@@ -511,7 +511,7 @@ window.Shell = (function () {
         }
 
         if (choiceList) {
-            const cats = window.StorageManager.getRegisteredCategories(kind);
+            const cats = window.StorageManager.getAllCategories ? window.StorageManager.getAllCategories() : window.StorageManager.getRegisteredCategories(kind);
             let html = '';
             cats.forEach(c => {
                 const isCurrent = (curCat || '未分组') === c;
@@ -669,6 +669,85 @@ window.Shell = (function () {
         }, 2200);
     }
 
+    /* -------------------- 弹窗：通用确认 (防误触) -------------------- */
+    let pendingConfirmCallback = null;
+
+    function openConfirmModal({ title, message, confirmText, cancelText, onConfirm }) {
+        const modal = document.getElementById("confirmActionModal");
+        const titleEl = document.getElementById("confirmActionTitle");
+        const msgEl = document.getElementById("confirmActionMessage");
+        const submitBtn = document.getElementById("btnConfirmActionSubmit");
+        const cancelBtn = document.getElementById("btnConfirmActionCancel");
+
+        if (titleEl) titleEl.innerText = title || "操作确认";
+        if (msgEl) msgEl.innerText = message || "确认执行此操作吗？";
+        if (cancelBtn) cancelBtn.innerText = cancelText || "取消";
+        if (submitBtn) submitBtn.innerText = confirmText || "确认";
+
+        pendingConfirmCallback = onConfirm;
+
+        if (submitBtn) {
+            submitBtn.onclick = () => {
+                const cb = pendingConfirmCallback;
+                closeConfirmActionModal();
+                if (typeof cb === 'function') cb();
+            };
+        }
+
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeConfirmActionModal() {
+        const modal = document.getElementById("confirmActionModal");
+        if (modal) modal.classList.remove("open");
+        pendingConfirmCallback = null;
+    }
+
+    /* -------------------- 弹窗：通用文本输入/重命名 -------------------- */
+    let pendingInputCallback = null;
+
+    function openInputPromptModal({ title, desc, defaultValue, onConfirm }) {
+        const modal = document.getElementById("inputPromptModal");
+        const titleEl = document.getElementById("inputPromptTitle");
+        const descEl = document.getElementById("inputPromptDesc");
+        const inputEl = document.getElementById("inputPromptValue");
+        const submitBtn = document.getElementById("btnInputPromptSubmit");
+
+        if (titleEl) titleEl.innerText = title || "✎ 重命名";
+        if (descEl) descEl.innerText = desc || "请输入新名称：";
+        if (inputEl) inputEl.value = defaultValue || "";
+
+        pendingInputCallback = onConfirm;
+
+        function submit() {
+            const val = inputEl ? inputEl.value.trim() : "";
+            const cb = pendingInputCallback;
+            closeInputPromptModal();
+            if (typeof cb === 'function') cb(val);
+        }
+
+        if (submitBtn) submitBtn.onclick = submit;
+        if (inputEl) {
+            inputEl.onkeydown = (e) => {
+                if (e.key === "Enter") submit();
+            };
+        }
+
+        if (modal) {
+            modal.classList.add("open");
+            setTimeout(() => {
+                inputEl?.focus();
+                inputEl?.select();
+            }, 100);
+        }
+    }
+
+    function closeInputPromptModal() {
+        const modal = document.getElementById("inputPromptModal");
+        if (modal) modal.classList.remove("open");
+        pendingInputCallback = null;
+    }
+
     return {
         init,
         handleSearch,
@@ -699,6 +778,10 @@ window.Shell = (function () {
         openBatchDownloadModal,
         closeBatchDownloadModal,
         confirmBatchDownload,
+        openConfirmModal,
+        closeConfirmActionModal,
+        openInputPromptModal,
+        closeInputPromptModal,
         showToast
     };
 })();
