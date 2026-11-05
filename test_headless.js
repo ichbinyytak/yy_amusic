@@ -457,10 +457,12 @@ async function run() {
     const searchReturnBar = await evaluate(`!!document.getElementById('searchReturnBar')`);
     const searchCardsCount = await evaluate(`document.querySelectorAll('#viewSearch .playlist-card').length`);
     const rightTrackCount = await evaluate(`document.querySelectorAll('.track-table tbody tr').length`);
+    const drawerAutoOpened = await evaluate(`document.getElementById('listPanel')?.classList.contains('open')`);
     console.log(`左侧激活搜索结果面板 (viewSearch.active): ${searchActive}`);
     console.log(`左侧存在顶部返回导航条 (#searchReturnBar): ${searchReturnBar}`);
     console.log(`左侧展示匹配歌单/专辑卡片数: ${searchCardsCount}`);
     console.log(`右侧展示检索到的单曲列表数: ${rightTrackCount}`);
+    console.log(`搜索有结果时左侧抽屉自动弹出 (.list-panel.open): ${drawerAutoOpened}`);
     console.log(`调试：最近 10 条 Console Logs:`, consoleLogs.slice(-10));
 
     if (!searchActive || !searchReturnBar) {
@@ -471,6 +473,19 @@ async function run() {
     }
     if (rightTrackCount === 0) {
         throw new Error("搜索 '王菲' 后右侧未能展示匹配的单曲列表！");
+    }
+    if (!drawerAutoOpened) {
+        throw new Error("搜索左侧有结果时，左侧抽屉未能自动弹出！");
+    }
+
+    // 测试点击右侧区域，左侧抽屉自动缩回
+    console.log("测试交互：点击右侧歌曲面板，左侧抽屉自动缩回...");
+    await evaluate(`document.getElementById('detailPanel').click()`);
+    await sleep(300);
+    const drawerClosedOnRightClick = await evaluate(`!document.getElementById('listPanel')?.classList.contains('open')`);
+    console.log(`点击右侧后左侧抽屉已成功缩回: ${drawerClosedOnRightClick}`);
+    if (!drawerClosedOnRightClick) {
+        throw new Error("点击右侧区域后左侧抽屉未能成功缩回！");
     }
 
     // 测试丝滑返回：点击左侧顶部的 [← 返回] 按钮
@@ -532,6 +547,23 @@ async function run() {
         if (!albumDetailTitle.includes(targetAlbumName) || albumTracksCount === 0) {
             throw new Error("点击单曲专辑名未能正确穿透加载整张专辑曲目列表！");
         }
+    }
+
+    console.log("\n--- 开始验证 6.7: 播放切歌即刻静音 & 首曲精准起播不跳曲 ---");
+    // 测试：点击“播放全部”，验证立刻停止前序播放并精准从第一首 (索引 0) 开始起播
+    console.log("执行‘播放全部’测试...");
+    await evaluate(`window.RightPanel.playCurrentAll()`);
+    
+    // 立即检查播控状态：前序音频是否立刻停止，当前起播索引是否为 0
+    const playingIndex = await evaluate(`window.player.currentIndex`);
+    const isPausedDuringResolve = await evaluate(`window.player.audio.paused`);
+    console.log(`播放全部起播曲目索引 (应为 0): ${playingIndex}`);
+    console.log(`寻链阶段底层音频即刻静音 (audio.paused): ${isPausedDuringResolve}`);
+    if (playingIndex !== 0) {
+        throw new Error(`点击播放全部未能从第一首起播，当前索引为 ${playingIndex}！`);
+    }
+    if (!isPausedDuringResolve) {
+        throw new Error("点击播放新曲目时，未能立刻停止当前音频播放！");
     }
 
     console.log("\n--- 开始验证 7: 控制台报错检查 (严格 0 错误铁律) ---");

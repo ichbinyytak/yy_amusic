@@ -65,6 +65,13 @@ window.SearchPanel = (function () {
             // 1. 渲染左侧搜索结果 (歌单卡片与专辑卡片)
             renderResults(query, playlists, albums);
 
+            // 规则1：当搜索的时候，如果左侧有显示（匹配到歌单或专辑），则左侧会自动弹出
+            if (playlists.length > 0 || albums.length > 0) {
+                window.LeftPanel?.openDrawer?.();
+            } else {
+                window.LeftPanel?.closeDrawer?.();
+            }
+
             // 2. 渲染右侧单曲曲目列表
             window.RightPanel?.renderSearchResults?.(query, songs, playlists.length, albums.length);
 

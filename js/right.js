@@ -26,9 +26,20 @@ window.RightPanel = (function () {
     const detailSubtitle = document.getElementById("detailSubtitle");
     const detailActions = document.getElementById("detailActions");
     const detailBody = document.getElementById("detailBody");
+    const detailPanel = document.getElementById("detailPanel");
     const btnFavCurrent = document.getElementById("btnFavCurrent");
     const floatingBatchBar = document.getElementById("floatingBatchBar");
     const batchCountText = document.getElementById("batchCountText");
+
+    // 点击右侧区域时，若左侧抽屉正展开则自动缩回
+    if (detailPanel) {
+        detailPanel.addEventListener("click", () => {
+            const listPanel = document.getElementById("listPanel");
+            if (listPanel && listPanel.classList.contains("open")) {
+                window.LeftPanel?.closeDrawer?.();
+            }
+        });
+    }
 
     function escapeHtml(str) {
         if (!str) return "";
@@ -179,7 +190,8 @@ window.RightPanel = (function () {
                     album: attr?.albumName || name,
                     durationMillis: attr?.durationInMillis || 0,
                     isrc: attr?.isrc || "",
-                    url: attr?.url || ""
+                    url: attr?.url || "",
+                    id: t.id || ""
                 };
             });
 

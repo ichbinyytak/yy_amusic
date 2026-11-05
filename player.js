@@ -117,6 +117,7 @@
       });
 
       this.audio.addEventListener('ended', () => {
+        if (this.isResolving || !this.isPlaying) return;
         this._handleTrackEnded();
       });
 
@@ -131,6 +132,7 @@
 
     // 歌轨自然结束时的处理
     _handleTrackEnded() {
+      if (this.isResolving || !this.isPlaying) return;
       if (this.playMode === 'single') {
         this.audio.currentTime = 0;
         this.audio.play().catch(() => {});
@@ -261,6 +263,13 @@
       this.currentIndex = idx;
       const song = this.playlist[idx];
 
+      // 立即停止正在播放的上一首音频，彻底切断前一首歌的声音与 ended 事件
+      try {
+        this.audio.pause();
+        this.audio.currentTime = 0;
+      } catch (e) {}
+      this.isPlaying = false;
+
       // 1. 毫秒级即时视觉反馈：第 0 毫秒立即高亮与切歌名，杜绝卡顿感
       this._emit('trackChange', { index: idx, song });
 
@@ -332,20 +341,20 @@
           });
           data = await res.json();
           cost = (performance.now() - t0).toFixed(0);
-          if (data && data.success && data.url) {
-            break; // 成功解析出有效音频流！
+          if (data) {
+            break; // 服务端已完成多源并发冲刺，直接使用结果
           }
         } catch (err) {
           // 捕获网络或瞬态异常
         }
 
-        // 仅对歌单首曲启用最长 5 秒缓冲等待与重试窗口
+        // 仅在网络异常抛错时对歌单首曲启用最多 3 秒重试窗口
         const elapsed = performance.now() - startTime;
-        if (isPlaylistFirstTrack && elapsed < maxWaitMs) {
-          const remain = maxWaitMs - elapsed;
+        if (isPlaylistFirstTrack && elapsed < 3000) {
+          const remain = 3000 - elapsed;
           await new Promise(r => setTimeout(r, Math.min(800, remain)));
         } else {
-          break; // 中间曲目单次失败直接退出，或首曲已满 5 秒
+          break;
         }
       }
 
@@ -518,7 +527,7 @@
       this.isDefaultList = false;
       this._emit('playlistChange', { playlist: this.playlist, isDefault: false });
       const idx = Math.max(0, Math.min(startIndex, this.playlist.length - 1));
-      this.playIndex(idx, false, idx === 0);
+      this.playIndex(idx, false, false);
     }
 
     // 切换循环模式
@@ -568,6 +577,8 @@
 
       if (autoPlayIndex >= 0 && autoPlayIndex < this.playlist.length) {
         this.playIndex(autoPlayIndex);
+      } else if (!this.isPlaying) {
+        this.currentIndex = 0;
       }
     }
 
