@@ -152,6 +152,13 @@ window.Shell = (function () {
     function clearSearch() {
         if (searchInput) searchInput.value = "";
         if (clearBtn) clearBtn.style.display = "none";
+        window.LeftPanel?.exitSearch?.();
+    }
+
+    function exitSearch() {
+        if (searchInput) searchInput.value = "";
+        if (clearBtn) clearBtn.style.display = "none";
+        window.LeftPanel?.exitSearch?.();
     }
 
     /* -------------------- 音量直立弹窗交互 -------------------- */
@@ -752,6 +759,7 @@ window.Shell = (function () {
         init,
         handleSearch,
         clearSearch,
+        exitSearch,
         toggleVolumePopup,
         handleVerticalVolumeChange,
         handleProgressBarClick,

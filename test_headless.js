@@ -438,6 +438,54 @@ async function run() {
     const modalClosed = await evaluate(`!document.getElementById('batchDownloadModal')?.classList.contains('open')`);
     console.log(`弹窗成功关闭: ${modalClosed}`);
 
+    console.log("\n--- 开始验证 6.5: 方案B左右联动搜索与丝滑返回机制 ---");
+    // 触发搜索 "王菲"
+    console.log("执行搜索 '王菲'...");
+    await evaluate(`
+        const input = document.getElementById('searchInput');
+        input.value = '王菲';
+        window.Shell.handleSearch();
+    `);
+    // 等待接口异步抓取并渲染完成（最多等待 6 秒）
+    for (let i = 0; i < 30; i++) {
+        await sleep(200);
+        const done = await evaluate(`document.querySelectorAll('#viewSearch .playlist-card').length > 0 && document.querySelectorAll('.track-table tbody tr').length > 0`);
+        if (done) break;
+    }
+
+    const searchActive = await evaluate(`document.getElementById('viewSearch')?.classList.contains('active')`);
+    const searchReturnBar = await evaluate(`!!document.getElementById('searchReturnBar')`);
+    const searchCardsCount = await evaluate(`document.querySelectorAll('#viewSearch .playlist-card').length`);
+    const rightTrackCount = await evaluate(`document.querySelectorAll('.track-table tbody tr').length`);
+    console.log(`左侧激活搜索结果面板 (viewSearch.active): ${searchActive}`);
+    console.log(`左侧存在顶部返回导航条 (#searchReturnBar): ${searchReturnBar}`);
+    console.log(`左侧展示匹配歌单/专辑卡片数: ${searchCardsCount}`);
+    console.log(`右侧展示检索到的单曲列表数: ${rightTrackCount}`);
+    console.log(`调试：最近 10 条 Console Logs:`, consoleLogs.slice(-10));
+
+    if (!searchActive || !searchReturnBar) {
+        throw new Error("搜索后左侧未能激活结果面板或未展示返回条！");
+    }
+    if (searchCardsCount === 0) {
+        throw new Error("搜索 '王菲' 后左侧未能展示匹配的歌单或专辑卡片！");
+    }
+    if (rightTrackCount === 0) {
+        throw new Error("搜索 '王菲' 后右侧未能展示匹配的单曲列表！");
+    }
+
+    // 测试丝滑返回：点击左侧顶部的 [← 返回] 按钮
+    console.log("测试返回机制：点击左侧 [← 返回] 按钮退出搜索...");
+    await evaluate(`document.getElementById('btnExitSearch').click()`);
+    await sleep(300);
+
+    const searchClosed = await evaluate(`!document.getElementById('viewSearch')?.classList.contains('active')`);
+    const appleRestoredAfterSearch = await evaluate(`document.getElementById('viewApple')?.classList.contains('active')`);
+    console.log(`退出搜索后 viewSearch 隐藏: ${searchClosed}`);
+    console.log(`退出搜索后自动恢复专区视图: ${appleRestoredAfterSearch}`);
+    if (!searchClosed || !appleRestoredAfterSearch) {
+        throw new Error("点击 [← 返回] 后未能正常退出搜索或未能恢复原视图！");
+    }
+
     console.log("\n--- 开始验证 7: 控制台报错检查 (严格 0 错误铁律) ---");
     console.log(`Console 错误条数: ${consoleErrors.length}`);
     if (consoleErrors.length > 0) {

@@ -654,20 +654,30 @@ window.RightPanel = (function () {
         const query = term.trim();
         clearSelection();
 
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = { name: `搜索: "${query}"`, title: `搜索: "${query}"`, id: "" };
+
         if (detailTitle) detailTitle.innerText = `搜索: "${query}"`;
         if (detailSubtitle) detailSubtitle.innerText = "正在检索 Apple 音乐库...";
         if (detailActions) detailActions.style.display = "none";
         if (detailBody) detailBody.innerHTML = '<div class="loading-state">🔍 正在检索匹配的歌曲与专辑...</div>';
 
+        // 联动驱动左侧展示加载中
+        window.LeftPanel?.showSearchLoading?.(query);
+
         try {
             const encoded = encodeURIComponent(query);
-            const sf = window.RegionPanel?.getStorefront?.() || "cn";
             const data = await window.apiRequest(`search?types=songs,albums,playlists&term=${encoded}&limit=25`);
 
             const songs = data?.results?.songs?.data || [];
             const albums = data?.results?.albums?.data || [];
             const playlists = data?.results?.playlists?.data || [];
 
+            // 1. 驱动左侧面板渲染匹配的歌单与专辑 (方案B左右联动)
+            window.LeftPanel?.renderSearchResults?.(query, playlists, albums);
+
+            // 2. 右侧渲染单曲曲目列表
             currentTracks = songs.map((t, idx) => {
                 const attr = t.attributes;
                 return {
@@ -677,19 +687,20 @@ window.RightPanel = (function () {
                     album: attr?.albumName || "搜索结果",
                     durationMillis: attr?.durationInMillis || 0,
                     isrc: attr?.isrc || "",
-                    url: attr?.url || ""
+                    url: attr?.url || "",
+                    id: t.id || ""
                 };
             });
 
             const totalResults = songs.length + albums.length + playlists.length;
             if (totalResults === 0) {
                 if (detailSubtitle) detailSubtitle.innerText = "未找到匹配结果";
-                if (detailBody) detailBody.innerHTML = `<div class="loading-state">未找到与 "${escapeHtml(query)}" 相关的歌曲或专辑。</div>`;
+                if (detailBody) detailBody.innerHTML = `<div class="loading-state">未找到与 "${escapeHtml(query)}" 相关的单曲或专辑。</div>`;
                 return;
             }
 
             if (detailSubtitle) {
-                detailSubtitle.innerText = `检索到 ${songs.length} 首单曲 / ${albums.length} 张专辑 / ${playlists.length} 个歌单`;
+                detailSubtitle.innerText = `找到 ${songs.length} 首单曲 • 左侧已列出 ${playlists.length} 个歌单 / ${albums.length} 张专辑`;
             }
 
             renderHeaderActions();
@@ -699,8 +710,10 @@ window.RightPanel = (function () {
                 window.player.setPlaylist(currentTracks, -1);
             }
         } catch (err) {
+            console.error("[Search Error]", err);
             if (detailSubtitle) detailSubtitle.innerText = "检索失败";
             if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 检索失败: ${escapeHtml(err.message)}</div>`;
+            window.LeftPanel?.renderSearchError?.(err.message);
         }
     }
 

@@ -621,3 +621,37 @@
 .library-group-body.open {
     display: block;
 }
+
+/* ========================================================
+   搜索结果左侧视图与返回条 (方案B专用)
+   ======================================================== */
+.search-return-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background-color: #161b22;
+    border-bottom: 1px solid var(--border-color);
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    box-sizing: border-box;
+}
+
+.btn-search-return {
+    color: var(--accent) !important;
+    border: 1px solid rgba(88, 166, 255, 0.4) !important;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 3px 8px !important;
+    font-size: var(--fs-t4) !important;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-search-return:hover {
+    background: rgba(88, 166, 255, 0.15) !important;
+    border-color: var(--accent) !important;
+}

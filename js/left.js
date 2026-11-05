@@ -16,6 +16,12 @@ window.LeftPanel = (function () {
     const iconArrowCollapsed = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
     const iconArrowExpanded = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
 
+    let switchTab = function () {};
+    let exitSearch = function () {};
+    let showSearchLoading = function () {};
+    let renderSearchResults = function () {};
+    let renderSearchError = function () {};
+
     function escapeHtml(str) {
         if (!str) return "";
         return String(str)
@@ -164,8 +170,14 @@ window.LeftPanel = (function () {
         libContent.id = "libContent";
         viewLibrary.appendChild(libContent);
 
+        // 2.3 方案B：专设搜索结果视图面板 (用于左侧并列展示搜索匹配的歌单与专辑)
+        const viewSearch = document.createElement("div");
+        viewSearch.id = "viewSearch";
+        viewSearch.className = "left-view-pane";
+
         scrollContainer.appendChild(viewApple);
         scrollContainer.appendChild(viewLibrary);
+        scrollContainer.appendChild(viewSearch);
 
         // 绑定自定义纯下拉切换逻辑 (纯下拉无弹窗)
         const regionWrapper = appleToolbar.querySelector("#regionDropdownWrapper");
@@ -214,19 +226,38 @@ window.LeftPanel = (function () {
 
         // 4. 读取偏好或默认激活 Apple 专区
         let activeTab = "apple";
+        let previousActiveTab = "apple";
         try {
             const saved = localStorage.getItem("amusic_active_left_tab");
-            if (saved === "apple" || saved === "library") activeTab = saved;
+            if (saved === "apple" || saved === "library") {
+                activeTab = saved;
+                previousActiveTab = saved;
+            }
         } catch (e) {}
 
-        function switchTab(tabName) {
-            activeTab = tabName;
-            try { localStorage.setItem("amusic_active_left_tab", tabName); } catch (e) {}
-
+        switchTab = function (tabName) {
             const colApple = tabsNav.querySelector("#tabAppleCol");
             const colLib = tabsNav.querySelector("#tabLibraryCol");
             const btnApple = tabsNav.querySelector("#tabAppleBtn");
             const btnLib = tabsNav.querySelector("#tabLibraryBtn");
+
+            if (tabName === "search") {
+                activeTab = "search";
+                colApple?.classList.remove("active");
+                colLib?.classList.remove("active");
+                btnApple?.classList.remove("active");
+                btnLib?.classList.remove("active");
+                viewSearch.classList.add("active");
+                viewApple.classList.remove("active");
+                viewLibrary.classList.remove("active");
+                return;
+            }
+
+            activeTab = tabName;
+            previousActiveTab = tabName;
+            try { localStorage.setItem("amusic_active_left_tab", tabName); } catch (e) {}
+
+            viewSearch.classList.remove("active");
 
             if (tabName === "apple") {
                 colApple?.classList.add("active");
@@ -245,7 +276,143 @@ window.LeftPanel = (function () {
                 // 每次切入音乐库主动同步刷新一次，确保最新歌单立即呈现
                 window.LibraryPanel?.renderLibrary?.();
             }
+        };
+
+        exitSearch = function () {
+            switchTab(previousActiveTab || "apple");
+        };
+
+        showSearchLoading = function (query) {
+            if (!viewSearch) return;
+            switchTab("search");
+            viewSearch.innerHTML = `
+                <div class="search-return-bar" id="searchReturnBar">
+                    <div style="display:flex; flex-direction:column; gap:2px; overflow:hidden;">
+                        <span style="font-size:var(--fs-t2); font-weight:600; color:var(--text-primary);">🔍 搜索: "${escapeHtml(query)}"</span>
+                        <span style="font-size:var(--fs-t4); color:var(--text-muted);">正在检索...</span>
+                    </div>
+                    <button class="btn-search-return" onclick="window.Shell.exitSearch()">← 返回</button>
+                </div>
+                <div class="loading-state" style="padding: 24px 16px; font-size: var(--fs-t3); color: var(--text-muted); text-align: center;">
+                    🔍 正在检索匹配的歌单与专辑...
+                </div>
+            `;
+        };
+
+        function createSearchSection(secId, title, count) {
+            const block = document.createElement("div");
+            block.className = "library-group-container";
+            block.id = secId;
+
+            const hdr = document.createElement("div");
+            hdr.className = "library-group-row open";
+            hdr.innerHTML = `
+                <div class="library-group-left">
+                    <span class="library-group-arrow open">${iconArrowExpanded}</span>
+                    <span>${escapeHtml(title)}</span>
+                    <span class="count-badge">${count}</span>
+                </div>
+            `;
+
+            const body = document.createElement("div");
+            body.className = "library-group-body open";
+
+            hdr.onclick = () => {
+                const isOpen = body.classList.toggle("open");
+                hdr.classList.toggle("open", isOpen);
+                const arrow = hdr.querySelector(".library-group-arrow");
+                if (arrow) {
+                    arrow.classList.toggle("open", isOpen);
+                    arrow.innerHTML = isOpen ? iconArrowExpanded : iconArrowCollapsed;
+                }
+            };
+
+            block.appendChild(hdr);
+            block.appendChild(body);
+            return { blockEl: block, bodyEl: body };
         }
+
+        renderSearchResults = function (query, playlists = [], albums = []) {
+            if (!viewSearch) return;
+            switchTab("search");
+            viewSearch.innerHTML = "";
+
+            const total = playlists.length + albums.length;
+            const returnBar = document.createElement("div");
+            returnBar.className = "search-return-bar";
+            returnBar.id = "searchReturnBar";
+            returnBar.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:2px; overflow:hidden; flex:1;">
+                    <span style="font-size:var(--fs-t2); font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🔍 "${escapeHtml(query)}"</span>
+                    <span style="font-size:var(--fs-t4); color:var(--text-muted);">${playlists.length} 个歌单 • ${albums.length} 张专辑</span>
+                </div>
+                <button class="btn-search-return" id="btnExitSearch" onclick="window.Shell.exitSearch()">← 返回</button>
+            `;
+            viewSearch.appendChild(returnBar);
+
+            if (total === 0) {
+                const emptyHint = document.createElement("div");
+                emptyHint.style.cssText = "padding: 24px 16px; font-size: var(--fs-t3); color: var(--text-muted); text-align: center; line-height: 1.6;";
+                emptyHint.innerHTML = `未找到与 "<strong>${escapeHtml(query)}</strong>" 相关的精选歌单或专辑。<br><span style="font-size:var(--fs-t4);">👉 您可直接在右侧查看检索到的单曲。</span>`;
+                viewSearch.appendChild(emptyHint);
+                return;
+            }
+
+            // 1. 匹配的精选歌单
+            if (playlists.length > 0) {
+                const plBlock = createSearchSection("search_playlists", "精选歌单", playlists.length);
+                playlists.forEach(pl => {
+                    const cardItem = {
+                        id: pl.id,
+                        type: "playlist",
+                        kind: "playlist",
+                        title: pl.attributes?.name || "未知歌单",
+                        name: pl.attributes?.name || "未知歌单",
+                        curator: pl.attributes?.curatorName || "Apple Music",
+                        url: pl.attributes?.url || "",
+                        trackCount: pl.attributes?.trackCount || 0,
+                        _isSearch: true
+                    };
+                    const card = createPlaylistCard(cardItem, { isCustom: false, isFav: false });
+                    plBlock.bodyEl.appendChild(card);
+                });
+                viewSearch.appendChild(plBlock.blockEl);
+            }
+
+            // 2. 匹配的精选专辑
+            if (albums.length > 0) {
+                const albBlock = createSearchSection("search_albums", "精选专辑", albums.length);
+                albums.forEach(alb => {
+                    const cardItem = {
+                        id: alb.id,
+                        type: "album",
+                        kind: "album",
+                        title: alb.attributes?.name || "未知专辑",
+                        name: alb.attributes?.name || "未知专辑",
+                        curator: alb.attributes?.artistName || "未知歌手",
+                        url: alb.attributes?.url || "",
+                        trackCount: alb.attributes?.trackCount || 0,
+                        _isSearch: true
+                    };
+                    const card = createPlaylistCard(cardItem, { isCustom: false, isFav: false });
+                    albBlock.bodyEl.appendChild(card);
+                });
+                viewSearch.appendChild(albBlock.blockEl);
+            }
+        };
+
+        renderSearchError = function (errMsg) {
+            if (!viewSearch) return;
+            viewSearch.innerHTML = `
+                <div class="search-return-bar" id="searchReturnBar">
+                    <span style="font-size:var(--fs-t2); font-weight:600; color:var(--text-primary);">🔍 搜索异常</span>
+                    <button class="btn-search-return" onclick="window.Shell.exitSearch()">← 返回</button>
+                </div>
+                <div class="loading-state" style="padding: 24px 16px; font-size: var(--fs-t3); color: #ff7588; text-align: center;">
+                    ❌ 检索失败: ${escapeHtml(errMsg)}
+                </div>
+            `;
+        };
 
         // 统一在导航栏做事件委托，彻底消除点不准/点到文字未触发的问题
         tabsNav.addEventListener("click", (e) => {
@@ -398,6 +565,28 @@ window.LeftPanel = (function () {
                     }
                 ];
             });
+        } else if (item._isSearch) {
+            // 搜索结果卡片：长按可一键收藏加入我的分组
+            window.ContextMenu?.bind(card, () => {
+                return [
+                    {
+                        icon: "＋",
+                        label: "加入我的分组",
+                        onClick: () => {
+                            const plData = {
+                                id: item.id,
+                                type: item.type || (item.kind === "album" ? "album" : "playlist"),
+                                name: name,
+                                title: name,
+                                curator: cleanCurator || "Apple Music",
+                                url: url,
+                                trackCount: trackCount || 0
+                            };
+                            window.Shell?.openAddToFavModal?.(plData);
+                        }
+                    }
+                ];
+            });
         }
         // Apple专区歌单：直接静默，不绑定 ContextMenu，完全不弹出菜单
 
@@ -487,6 +676,11 @@ window.LeftPanel = (function () {
     return {
         init,
         createPlaylistCard,
+        switchTab: (...args) => switchTab(...args),
+        exitSearch: (...args) => exitSearch(...args),
+        showSearchLoading: (...args) => showSearchLoading(...args),
+        renderSearchResults: (...args) => renderSearchResults(...args),
+        renderSearchError: (...args) => renderSearchError(...args),
         toggleDrawer,
         openDrawer,
         closeDrawer
