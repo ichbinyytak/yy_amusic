@@ -11,6 +11,7 @@ sync_sources.py - 每日自动同步并落地 lx-hub 最新验活音源脚本
 
 import os
 import re
+import time
 import json
 import urllib.request
 import urllib.parse
@@ -143,6 +144,27 @@ def sync() -> dict:
                 except Exception:
                     pass
 
+    print(f"=== 同步完成: 成功 {success_count} 个，失败 {fail_count} 个，清理过期 {cleaned_count} 个 ===")
+
+    # 就地沙箱真实测速与智能排班
+    print(f"=== 开始全量音源沙箱测速与排班 ===")
+    try:
+        from source_manager import SourceManager
+        sm = SourceManager()
+        test_results = sm.test_all()
+        ranking_file = os.path.join(BASE_DIR, "sources_ranking.json")
+        ranking_data = {
+            "generatedAt": generated_at,
+            "testedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "total": len(test_results),
+            "sources": test_results
+        }
+        with open(ranking_file, "w", encoding="utf-8") as f:
+            json.dump(ranking_data, f, ensure_ascii=False, indent=2)
+        print(f"✓ 已成功生成最新测速排班表: {ranking_file} (共 {len(test_results)} 个)")
+    except Exception as e:
+        print(f"⚠️ 测速排班生成异常: {e}")
+
     summary = {
         "success": True,
         "generatedAt": generated_at,
@@ -151,7 +173,6 @@ def sync() -> dict:
         "failed": fail_count,
         "cleaned": cleaned_count
     }
-    print(f"=== 同步完成: 成功 {success_count} 个，失败 {fail_count} 个，清理过期 {cleaned_count} 个 ===")
     return summary
 
 if __name__ == "__main__":

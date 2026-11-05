@@ -270,9 +270,32 @@ class SourceManager:
         # 2. 直接从 https://ichbinyytak.github.io/lx-hub/data.json 拉取全量音源
         self.sync_from_lx_hub()
 
-        # 3. 后台异步静默测速预热：不阻塞主服务冷启动，数秒内自动点亮全量就绪音源
+        # 3. 载入云端 Actions 自动测速排班表 (零冷启动等待，直接就绪)
+        self.load_prewarmed_ranking()
+
+        # 4. 后台异步静默测速预热：不阻塞主服务冷启动，数秒内自动点亮全量就绪音源
         import threading
         threading.Thread(target=self.test_all, daemon=True).start()
+
+    def load_prewarmed_ranking(self):
+        """载入 GitHub Actions 每日测速生成的 sources_ranking.json"""
+        ranking_file = os.path.join(BASE_DIR, "sources_ranking.json")
+        if not os.path.exists(ranking_file):
+            return
+        try:
+            with open(ranking_file, "r", encoding="utf-8") as f:
+                data = json.loads(f.read())
+            sources_list = data.get("sources", [])
+            for s_info in sources_list:
+                sid = s_info.get("id")
+                if sid in self.sources:
+                    src = self.sources[sid]
+                    src.latency_ms = float(s_info.get("latency_ms", src.latency_ms))
+                    src.status = s_info.get("status", src.status)
+                    if s_info.get("platform"):
+                        src.platform = s_info.get("platform")
+        except Exception as e:
+            pass
 
     def sync_from_lx_hub(self):
         """从用户维护的 lx-hub 动态同步并注册全部 32 个音源"""
