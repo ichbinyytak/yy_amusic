@@ -84,6 +84,11 @@ window.Shell = (function () {
             document.querySelectorAll(".track-table tr").forEach(tr => tr.classList.remove("track-row-playing"));
             const playingRow = document.getElementById(`track-row-${index}`);
             if (playingRow) playingRow.classList.add("track-row-playing");
+
+            // 若播放队列抽屉处于展开状态，即时同步队列中的高亮项与播放指示符
+            if (queueDrawer && queueDrawer.classList.contains("open")) {
+                renderQueueList();
+            }
         });
 
         window.player.on("stateChange", ({ isPlaying, error }) => {
@@ -317,6 +322,12 @@ window.Shell = (function () {
             `;
         });
         queueListBody.innerHTML = html;
+
+        // 自动平滑滚动使当前播放项处于可视区
+        const activeItem = queueListBody.querySelector(".queue-item.active");
+        if (activeItem) {
+            activeItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
     }
 
     function toggleSourceModal() {
