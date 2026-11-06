@@ -19,6 +19,8 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import hashlib
+import ipaddress
+import socket
 
 # 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
 from source_manager import source_hub
@@ -32,6 +34,49 @@ from apple_catalog import (
     fetch_apple_curator_page,
     fetch_apple_room
 )
+
+def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
+    """
+    网络安全防御：校验外部请求 URL 是否合法安全，严防 SSRF、本地敏感文件读取 (file://) 及私有内网穿透探测。
+    """
+    if not url or not isinstance(url, str):
+        return False
+    url = url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return False
+    try:
+        parsed = urllib.parse.urlparse(url)
+        hostname = (parsed.hostname or "").strip().lower()
+        if not hostname:
+            return False
+
+        # 1. 域名白名单校验（若指定）
+        if allowed_hosts:
+            if not any(hostname == h or hostname.endswith("." + h) for h in allowed_hosts):
+                return False
+
+        # 2. 拦截本机与内网专用域名
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.endswith(".local") or hostname.endswith(".internal"):
+            return False
+
+        # 3. 拦截私有 IP 与链路本地段 (防御针对 169.254.x.x / 192.168.x.x 等地址的 SSRF)
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+                return False
+        except ValueError:
+            # 域名解析 A/AAAA 记录防 DNS 重绑定或内网解析绕过
+            try:
+                addrinfo = socket.getaddrinfo(hostname, None)
+                for item in addrinfo:
+                    resolved_ip = ipaddress.ip_address(item[4][0])
+                    if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved:
+                        return False
+            except Exception:
+                pass
+        return True
+    except Exception:
+        return False
 
 PORT = 8088
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -101,6 +146,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not curator_url:
                 self.send_error_json("Missing url parameter", 400)
                 return
+            if not is_safe_external_url(curator_url, allowed_hosts=["music.apple.com"]):
+                self.send_error_json("Invalid Apple Music URL: only https://music.apple.com is allowed", 403)
+                return
             try:
                 self.send_json(fetch_apple_curator_page(curator_url))
             except Exception as e:
@@ -113,6 +161,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             room_url = urllib.parse.parse_qs(parsed.query).get("url", [""])[0]
             if not room_url:
                 self.send_error_json("Missing url parameter", 400)
+                return
+            if not is_safe_external_url(room_url, allowed_hosts=["music.apple.com"]):
+                self.send_error_json("Invalid Apple Music URL: only https://music.apple.com is allowed", 403)
                 return
             try:
                 self.send_json({"tracks": fetch_apple_room(room_url)})
@@ -227,6 +278,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             target_url = qs.get("url", [""])[0]
             if not target_url:
                 self.send_error_json("Missing url parameter", 400)
+                return
+            if not is_safe_external_url(target_url):
+                self.send_error_json("Forbidden target URL (SSRF and local file protection)", 403)
                 return
             try:
                 req = urllib.request.Request(target_url, headers={"User-Agent": USER_AGENT})
