@@ -33,10 +33,17 @@ window.RightPanel = (function () {
 
     // 点击右侧区域时，若左侧抽屉正展开则自动缩回
     if (detailPanel) {
-        detailPanel.addEventListener("click", () => {
+        detailPanel.addEventListener("click", (e) => {
             const listPanel = document.getElementById("listPanel");
             if (listPanel && listPanel.classList.contains("open")) {
                 window.LeftPanel?.closeDrawer?.();
+            }
+
+            // 多选模式下：若点击了详情区域的空白处（非行元素、非顶部操作栏按钮等），立即退出多选
+            if (selectedTrackIndices.size > 0) {
+                if (!e.target.closest("tr[data-idx]") && !e.target.closest("#detailActions") && !e.target.closest("#checkAllBox")) {
+                    clearSelection();
+                }
             }
         });
     }
@@ -395,18 +402,54 @@ window.RightPanel = (function () {
      * 2. 组合1：触屏长按 500ms 或鼠标右键，激活多选模式并勾选该行
      * 3. 多选模式下：轻触单击任意行即可快速连选/反选
      */
+    /**
+     * 行交互绑定：
+     * 1. 方案B：非多选模式下单击彻底无反应 (防误触/防滑动误切歌)；双击 (dblclick) 极速直接开播
+     * 2. 组合1：触屏长按 500ms 或鼠标右键，激活多选模式并勾选该行
+     * 3. 多选模式下：仅点击首列复选框区域为增减勾选；点击歌曲行其他任何区域或空白处，立即取消多选恢复正常状态！
+     */
+    let lastLongPressTime = 0;
+
     function bindTrackRowsInteraction() {
         const rows = detailBody.querySelectorAll("tr[data-idx]");
         rows.forEach(row => {
             const idx = parseInt(row.getAttribute("data-idx"), 10);
 
-            // 单击行事件处理
+            // 单击行事件处理（使用捕获模式优先拦截非复选框区域的点击并清空多选，防止触发内部歌手/专辑跳转）
             row.addEventListener("click", (e) => {
-                if (e.target.tagName === "INPUT") return; // 复选框原生 change 事件处理
-                if (selectedTrackIndices.size > 0) {
-                    toggleTrackSelection(idx);
+                // 防触屏长按释放后的合成点击误杀
+                if (Date.now() - lastLongPressTime < 350) return;
+
+                // 若点击的是首列复选框列：
+                if (e.target.closest(".track-index-col")) {
+                    // 若点击的是单元格或序号而非原生 input，同步翻转复选框状态
+                    if (e.target.tagName !== "INPUT") {
+                        const box = row.querySelector(".track-checkbox");
+                        if (box) {
+                            box.checked = !box.checked;
+                            toggleTrackSelection(idx);
+                        }
+                    }
+                    return;
                 }
+
+                // 核心交互：多选模式下，点击任何非复选框区域（歌名、歌手、时长或空白处），直接清空多选恢复正常！
+                if (selectedTrackIndices.size > 0) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    clearSelection();
+                    return;
+                }
+
                 // 非多选模式：彻底无反应 (方案B，防误触)
+            }, true);
+
+            // 4.2 桌面端双击 (dblclick) 极速直接开播
+            row.addEventListener("dblclick", (e) => {
+                if (e.target.closest(".track-index-col")) return;
+                if (selectedTrackIndices.size === 0) {
+                    playSong(idx);
+                }
             });
 
             // 长按与右键处理 (组合1)
@@ -424,6 +467,7 @@ window.RightPanel = (function () {
 
                 touchTimer = setTimeout(() => {
                     isLongPress = true;
+                    lastLongPressTime = Date.now();
                     if (navigator.vibrate) {
                         try { navigator.vibrate(30); } catch (err) {}
                     }
@@ -447,8 +491,9 @@ window.RightPanel = (function () {
                     touchTimer = null;
                 }
                 if (isLongPress) {
-                    e.preventDefault();
-                    e.stopPropagation();
+                    lastLongPressTime = Date.now();
+                    try { e.preventDefault(); } catch (err) {}
+                    try { e.stopPropagation(); } catch (err) {}
                 }
             });
 
@@ -472,7 +517,7 @@ window.RightPanel = (function () {
             selectedTrackIndices.add(idx);
         }
         syncMultiSelectUI();
-        window.Shell?.showToast?.("已激活多选模式，轻触可连续选择");
+        window.Shell?.showToast?.("已激活多选模式：点击复选框多选，点击其他区域取消");
     }
 
     function toggleTrackSelection(idx) {
