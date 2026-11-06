@@ -13,6 +13,8 @@ import os
 import sys
 import time
 import json
+import re
+import threading
 import subprocess
 import urllib.request
 import urllib.error
@@ -250,6 +252,8 @@ class SourceManager:
     def __init__(self):
         self.sources = {}
         self.tested_at = None
+        self._test_lock = threading.Lock()
+        self._is_testing = False
         self._init_builtin_sources()
 
     def _init_builtin_sources(self):
@@ -269,15 +273,92 @@ class SourceManager:
         self.register(AudioSource("kw_anti", "车机原生源 (酷我)", "kw", _probe_kw_anti, "5886682"))
         self.register(AudioSource("wy_meting", "网易直通源 (网易)", "wy", _probe_wy_meting, "347230"))
 
-        # 2. 直接从 https://ichbinyytak.github.io/lx-hub/data.json 拉取全量音源
-        self.sync_from_lx_hub()
+        # 2. 零外网阻塞：直接从本地 sources_cache 与 sources_ranking.json 极速预热注册音源
+        self.load_local_cached_sources()
 
-        # 3. 载入云端 Actions 自动测速排班表 (零冷启动等待，直接就绪)
-        self.load_prewarmed_ranking()
+    def load_local_cached_sources(self):
+        """
+        零网络开销：纯本地极速载入 sources_cache 与 sources_ranking.json
+        彻底消除模块导入与 Serverless 冷启动期间的外网同步阻塞 (0ms 冷启动)
+        """
+        cached_files = os.listdir(CACHE_DIR) if os.path.exists(CACHE_DIR) else []
+        ranking_file = os.path.join(BASE_DIR, "sources_ranking.json")
+        ranking_sources = {}
+        if os.path.exists(ranking_file):
+            try:
+                with open(ranking_file, "r", encoding="utf-8") as f:
+                    data = json.loads(f.read())
+                self.tested_at = data.get("testedAt") or data.get("generatedAt")
+                for s_info in data.get("sources", []):
+                    sid = s_info.get("id")
+                    if sid:
+                        ranking_sources[sid] = s_info
+            except Exception:
+                pass
 
-        # 4. 后台异步静默测速预热：不阻塞主服务冷启动，数秒内自动点亮全量就绪音源
-        import threading
-        threading.Thread(target=self.test_all, daemon=True).start()
+        # 1. 对比排班表注册本地 LX 音源
+        registered_sids = set()
+        for r_id, s_info in ranking_sources.items():
+            if not r_id.startswith("lx_"):
+                # 如果是内置原生音源，更新其健康度状态
+                if r_id in self.sources:
+                    src = self.sources[r_id]
+                    src.latency_ms = float(s_info.get("latency_ms", src.latency_ms))
+                    src.status = s_info.get("status", src.status)
+                    if s_info.get("platform"):
+                        src.platform = s_info.get("platform")
+                continue
+
+            sid = r_id[3:]  # 去掉 "lx_" 前缀
+            matching = [f for f in cached_files if sid in f and f.endswith(".js")]
+            if matching:
+                target_file = max(matching, key=lambda f: os.path.getmtime(os.path.join(CACHE_DIR, f)))
+                script_path = os.path.join(CACHE_DIR, target_file)
+                plats = s_info.get("platforms") or [s_info.get("platform", "kw")]
+                probe = _make_runner_probe(script_path, plats)
+                src = AudioSource(r_id, s_info.get("name", f"[LX] {target_file}"), plats, probe, "5886682")
+                src.platform = s_info.get("platform", plats[0])
+                src.latency_ms = float(s_info.get("latency_ms", 9999.0))
+                src.status = s_info.get("status", "ok")
+                src.consecutive_fails = int(s_info.get("consecutive_fails", 0))
+                src.success_count = int(s_info.get("success_count", 0))
+                self.register(src)
+                registered_sids.add(sid)
+
+        # 2. 补漏：扫描 sources_cache 中存在但尚未被排班表记录的脚本
+        for f in cached_files:
+            if not f.endswith(".js"):
+                continue
+            m = re.search(r'([a-f0-9]{8})\.js$', f)
+            sid = m.group(1) if m else f[:8]
+            if sid in registered_sids:
+                continue
+
+            script_path = os.path.join(CACHE_DIR, f)
+            plat_set = set()
+            try:
+                with open(script_path, 'r', encoding='utf-8', errors='ignore') as sf:
+                    scode = sf.read(8000)
+                    if re.search(r'[\'"]?kw[\'"]?\s*:', scode) or 'kuwo' in scode.lower():
+                        plat_set.add('kw')
+                    if re.search(r'[\'"]?wy[\'"]?\s*:', scode) or '163' in scode:
+                        plat_set.add('wy')
+                    if re.search(r'[\'"]?tx[\'"]?\s*:', scode) or 'qq' in scode.lower():
+                        plat_set.add('tx')
+                    if re.search(r'[\'"]?kg[\'"]?\s*:', scode) or 'kugou' in scode.lower():
+                        plat_set.add('kg')
+                    if re.search(r'[\'"]?mg[\'"]?\s*:', scode) or 'migu' in scode.lower():
+                        plat_set.add('mg')
+            except Exception:
+                pass
+            plats = list(plat_set) if plat_set else ['kw']
+            probe = _make_runner_probe(script_path, plats)
+            clean_name = f.replace('.js', '').replace('source_', '')
+            src = AudioSource(f"lx_{sid}", f"[LX] {clean_name}", plats, probe, "5886682")
+            src.status = "ok"
+            src.latency_ms = 2000.0
+            self.register(src)
+            registered_sids.add(sid)
 
     def load_prewarmed_ranking(self):
         """载入 GitHub Actions 每日测速生成的 sources_ranking.json"""
@@ -297,7 +378,7 @@ class SourceManager:
                     src.status = s_info.get("status", src.status)
                     if s_info.get("platform"):
                         src.platform = s_info.get("platform")
-        except Exception as e:
+        except Exception:
             pass
 
     def sync_from_lx_hub(self):
@@ -368,20 +449,37 @@ class SourceManager:
     def test_all(self) -> list:
         """
         对应草图【⚡测速重排】按钮：
-        并发就地测试所有音源，按实测延迟与健康度重新排序
+        并发就地测试所有音源，按实测延迟与健康度重新排序。
+        具备并发锁防护，杜绝多个线程或请求同时发起全量测试风暴。
         """
-        tasks = []
-        with ThreadPoolExecutor(max_workers=min(8, len(self.sources))) as executor:
-            for s in self.sources.values():
-                tasks.append(executor.submit(s.test_health))
-            for f in as_completed(tasks):
-                try:
-                    f.result()
-                except Exception:
-                    pass
+        with self._test_lock:
+            if self._is_testing:
+                # 若已在测速中，直接返回当前排班结果，避免重复重载
+                return [{
+                    "id": s.id, "name": s.name, "platform": s.platform,
+                    "platforms": s.platforms, "status": s.status,
+                    "latency_ms": s.latency_ms,
+                    "consecutive_fails": s.consecutive_fails,
+                    "success_count": s.success_count
+                } for s in self.get_ordered_sources()]
+            self._is_testing = True
+
+        try:
+            tasks = []
+            with ThreadPoolExecutor(max_workers=min(8, len(self.sources))) as executor:
+                for s in self.sources.values():
+                    tasks.append(executor.submit(s.test_health))
+                for f in as_completed(tasks):
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
+
+            self.tested_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        finally:
+            self._is_testing = False
 
         ordered = self.get_ordered_sources()
-        self.tested_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         return [{
             "id": s.id,
             "name": s.name,

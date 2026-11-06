@@ -420,8 +420,9 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 if __name__ == "__main__":
     os.chdir(DIRECTORY)
-    # 异步预热音源并发测速，零阻塞 HTTP 即时响应
-    threading.Thread(target=source_hub.test_all, daemon=True).start()
+    # 异步预热音源并发测速，零阻塞 HTTP 即时响应（非 Vercel 环境下启动）
+    if not os.environ.get("VERCEL"):
+        threading.Thread(target=source_hub.test_all, daemon=True).start()
 
     with ThreadingTCPServer(("0.0.0.0", PORT), Handler) as httpd:
         print(f"==================================================")
