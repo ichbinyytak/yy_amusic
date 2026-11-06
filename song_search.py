@@ -390,4 +390,3 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
             pass
 
     return lines
-    return lines

@@ -266,44 +266,6 @@
     white-space: nowrap;
 }
 
-/* 操作列 */
-.track-action-col {
-    width: 72px;
-    text-align: right;
-    white-space: nowrap;
-}
-
-.btn-track-action {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: var(--fs-t3);
-    width: 22px;
-    height: 22px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    transition: all 0.12s ease;
-}
-
-.btn-track-action:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-}
-
-.btn-track-action.play-song {
-    color: var(--success);
-}
-.btn-track-action.play-song:hover {
-    background-color: rgba(63, 185, 80, 0.15);
-}
-
-.btn-track-action.del-song:hover {
-    color: #ff7588;
-}
-
 /* 占位与空状态 */
 .placeholder-box {
     display: flex;

@@ -118,6 +118,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """统一错误 JSON 响应"""
         self.send_json({"error": str(message)}, status=status)
 
+    @staticmethod
+    def _format_sources_data(ordered):
+        """真实透传音源健康度与实测延迟，杜绝虚假全绿"""
+        data = []
+        for s in ordered:
+            lat = 9999.0 if (s.latency_ms == float('inf') or s.latency_ms is None) else round(s.latency_ms, 1)
+            data.append({
+                "id": s.id,
+                "name": s.name,
+                "platform": s.platform,
+                "status": s.status,
+                "latency_ms": lat,
+                "consecutive_fails": s.consecutive_fails,
+                "success_count": s.success_count
+            })
+        data.sort(key=lambda x: x["latency_ms"])
+        return data
+
     def do_GET(self):
         # 1. /new 页面结构化抓取 (全歌单/专辑模式)
         if self.path.startswith("/api/apple_new"):
@@ -225,24 +243,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e)
             return
 
-        # 6. 音频底层：音源健康度队列 (严格对齐 music-underlying 全量 36 音源就绪规范)
+        # 6. 音频底层：音源健康度队列 (真实透传各音源健康度与延迟)
         if self.path == "/api/sources":
             ordered = source_hub.get_ordered_sources()
-            data = []
-            for idx, s in enumerate(ordered):
-                is_real_ok = (s.status == "ok") and (s.latency_ms < 5000.0)
-                lat = round(s.latency_ms, 1) if is_real_ok else (38.0 + (idx % 12) * 6.0)
-                data.append({
-                    "id": s.id,
-                    "name": s.name,
-                    "platform": s.platform,
-                    "status": "ok",
-                    "latency_ms": lat,
-                    "consecutive_fails": s.consecutive_fails,
-                    "success_count": max(1, s.success_count)
-                })
-            # 按延迟从快到慢统一排序
-            data.sort(key=lambda x: x["latency_ms"])
+            data = self._format_sources_data(ordered)
             self.send_json({
                 "tested_at": source_hub.tested_at,
                 "sources": data
@@ -309,22 +313,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length).decode('utf-8') if length > 0 else ""
 
-        # 音源并发测速重排 (对齐 music-underlying 全量 36 音源就绪规范)
+        # 音源并发测速重排 (真实透传实测结果)
         if path in ("/api/sources/test", "/api/sources_test"):
             source_hub.test_all()
             ordered = source_hub.get_ordered_sources()
-            data = []
-            for idx, s in enumerate(ordered):
-                is_real_ok = (s.status == "ok") and (s.latency_ms < 5000.0)
-                lat = round(s.latency_ms, 1) if is_real_ok else (42.0 + (idx % 12) * 5.5)
-                data.append({
-                    "id": s.id, "name": s.name, "platform": s.platform,
-                    "status": "ok", "latency_ms": lat,
-                    "consecutive_fails": s.consecutive_fails,
-                    "success_count": max(1, s.success_count)
-                })
-            data.sort(key=lambda x: x["latency_ms"])
-            self.send_json(data)
+            data = self._format_sources_data(ordered)
+            self.send_json({
+                "tested_at": source_hub.tested_at,
+                "sources": data
+            })
             return
 
         # 同步 lx-hub 音源并测速
@@ -332,18 +329,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             source_hub.sync_from_lx_hub()
             source_hub.test_all()
             ordered = source_hub.get_ordered_sources()
-            data = []
-            for idx, s in enumerate(ordered):
-                is_real_ok = (s.status == "ok") and (s.latency_ms < 5000.0)
-                lat = round(s.latency_ms, 1) if is_real_ok else (42.0 + (idx % 12) * 5.5)
-                data.append({
-                    "id": s.id, "name": s.name, "platform": s.platform,
-                    "status": "ok", "latency_ms": lat,
-                    "consecutive_fails": s.consecutive_fails,
-                    "success_count": max(1, s.success_count)
-                })
-            data.sort(key=lambda x: x["latency_ms"])
-            self.send_json(data)
+            data = self._format_sources_data(ordered)
+            self.send_json({
+                "tested_at": source_hub.tested_at,
+                "sources": data
+            })
             return
 
         # 核心音频流双核并发解析：支持精准平台ID或 Apple Music 歌曲智能模糊匹配解析
