@@ -56,6 +56,9 @@ window.LeftPanel = (function () {
 
         // 装配顶部主标签页与左右全页视图
         assembleTopAccordions();
+
+        // 装配手势与鼠标拉动侧边栏
+        initGestures();
     }
 
     /**
@@ -537,6 +540,244 @@ window.LeftPanel = (function () {
         if (listPanel) listPanel.classList.remove("open");
         if (backdrop) backdrop.classList.remove("open");
         if (btn) btn.classList.remove("active");
+    }
+
+    /**
+     * 手势与鼠标拖拽呼出/推回侧边栏
+     * 支持：
+     * 1. 抽屉关闭时，在右侧主体区向右滑动/拉动 (dx > 60px 或快速划动) 带出左侧页
+     * 2. 抽屉展开时，在左侧页/遮罩区向左滑动/拉动 (dx < -60px 或快速划动) 推回左侧页
+     * 3. 实时跟手动效：listPanel 随手指/鼠标移动，遮罩层不透明度随之渐变
+     * 4. 方向锁定与防误触：严格判定水平与垂直位移比率，垂直滚动歌曲不受任何影响；交互控件与滚动条不劫持
+     */
+    function initGestures() {
+        const listPanel = document.getElementById("listPanel");
+        const backdrop = document.getElementById("leftDrawerBackdrop");
+        if (!listPanel || !backdrop) return;
+
+        let isTracking = false;
+        let isDeciding = false;
+        let isDragging = false;
+        let didDrag = false;
+        let isTouch = false;
+        let startX = 0;
+        let startY = 0;
+        let startTime = 0;
+        let initialDrawerOpen = false;
+
+        function isInteractive(target, clientX) {
+            if (!target || !(target instanceof Element)) return false;
+            // 排除表单元素、按钮、链接、音量滑块、弹窗、复选框等交互组件
+            if (target.closest("button, a, input, select, textarea, .volume-popup, .volume-slider, audio, .track-checkbox, .context-menu, .modal, .custom-select, .playlist-action-btn, #btnHamburger, #leftTabsNav")) {
+                return true;
+            }
+            // 排除滚动条区域点击 (防止拖动滚动条时被识别为页面拖拽)
+            if (target.clientWidth > 0 && clientX > target.getBoundingClientRect().left + target.clientWidth) {
+                return true;
+            }
+            return false;
+        }
+
+        function isModalOrOtherDrawerOpen() {
+            if (document.querySelector(".modal.open, .modal[style*='display: block'], .modal[style*='display: flex']")) {
+                return true;
+            }
+            const queueDrawer = document.getElementById("queueDrawer");
+            const sourceDrawer = document.getElementById("sourceDrawer");
+            if ((queueDrawer && queueDrawer.classList.contains("open")) ||
+                (sourceDrawer && sourceDrawer.classList.contains("open"))) {
+                return true;
+            }
+            return false;
+        }
+
+        function handleStart(e, clientX, clientY, touch) {
+            if (isModalOrOtherDrawerOpen()) return;
+            if (isInteractive(e.target, clientX)) return;
+
+            // 限制手势生效的纵向区域：排除顶部导航栏 (46px) 与底部播放栏 (64px)
+            if (clientY < 46 || clientY > window.innerHeight - 64) return;
+
+            initialDrawerOpen = listPanel.classList.contains("open");
+
+            if (!initialDrawerOpen) {
+                // 抽屉未展开：必须从右侧主体区 (detailPanel 或其子元素) 发起向右拖拽
+                const detailPanel = document.getElementById("detailPanel");
+                if (!detailPanel || (!detailPanel.contains(e.target) && e.target !== detailPanel)) {
+                    return;
+                }
+            }
+
+            isTouch = touch;
+            isTracking = true;
+            isDeciding = true;
+            isDragging = false;
+            startX = clientX;
+            startY = clientY;
+            startTime = Date.now();
+        }
+
+        function handleMove(e, clientX, clientY) {
+            if (!isTracking) return;
+
+            const dx = clientX - startX;
+            const dy = clientY - startY;
+            const absX = Math.abs(dx);
+            const absY = Math.abs(dy);
+
+            if (isDeciding) {
+                // 在前 8px 范围内进行方向判定与手势消抖
+                if (absX < 8 && absY < 8) return;
+                isDeciding = false;
+
+                if (!initialDrawerOpen) {
+                    // 关闭状态下：必须向右拖动，且水平位移显著大于垂直位移 (严格锁定)
+                    if (dx > 8 && absX > absY * 1.1) {
+                        isDragging = true;
+                        didDrag = true;
+                        if (!isTouch) {
+                            document.body.style.userSelect = "none";
+                            document.body.style.cursor = "ew-resize";
+                        }
+                    } else {
+                        // 判定为垂直滚动或向左手势，退出捕获
+                        isTracking = false;
+                        return;
+                    }
+                } else {
+                    // 展开状态下：必须向左推，且水平位移显著大于垂直位移
+                    if (dx < -8 && absX > absY * 1.1) {
+                        isDragging = true;
+                        didDrag = true;
+                        if (!isTouch) {
+                            document.body.style.userSelect = "none";
+                            document.body.style.cursor = "ew-resize";
+                        }
+                    } else {
+                        isTracking = false;
+                        return;
+                    }
+                }
+            }
+
+            if (isDragging) {
+                if (e.cancelable) e.preventDefault();
+
+                const panelWidth = listPanel.offsetWidth || 320;
+                let currentX = initialDrawerOpen ? dx : (-panelWidth + dx);
+                currentX = Math.min(0, Math.max(-panelWidth, currentX));
+
+                const progress = Math.max(0, Math.min(1, (panelWidth + currentX) / panelWidth));
+
+                listPanel.style.transition = "none";
+                listPanel.style.transform = `translateX(${currentX}px)`;
+
+                backdrop.style.transition = "none";
+                backdrop.style.opacity = progress.toFixed(3);
+                backdrop.style.pointerEvents = "auto";
+            }
+        }
+
+        function handleEnd(clientX) {
+            if (!isTracking) return;
+
+            const wasDragging = isDragging;
+            const dx = clientX - startX;
+            const dt = Date.now() - startTime;
+            const velocityX = dx / (dt || 1);
+
+            isTracking = false;
+            isDeciding = false;
+            isDragging = false;
+
+            if (wasDragging) {
+                // 恢复过渡动画，交给 openDrawer / closeDrawer 平滑吸附
+                listPanel.style.transition = "";
+                backdrop.style.transition = "";
+
+                const panelWidth = listPanel.offsetWidth || 320;
+                const threshold = 60;
+                const isFastFlickRight = dx > 40 && dt >= 30 && dt < 350 && velocityX > 0.45;
+                const isFastFlickLeft = dx < -40 && dt >= 30 && dt < 350 && velocityX < -0.45;
+
+                if (!initialDrawerOpen) {
+                    if (dx > threshold || isFastFlickRight) {
+                        openDrawer();
+                    } else {
+                        closeDrawer();
+                    }
+                } else {
+                    if (dx < -threshold || isFastFlickLeft) {
+                        closeDrawer();
+                    } else {
+                        openDrawer();
+                    }
+                }
+
+                // 清理内联样式以让 CSS 类控制最终样式
+                listPanel.style.transform = "";
+                backdrop.style.opacity = "";
+                backdrop.style.pointerEvents = "";
+
+                if (!isTouch) {
+                    document.body.style.userSelect = "";
+                    document.body.style.cursor = "";
+                }
+
+                // 拖拽完成后短暂阻断后续由于鼠标释放激发的 click 事件 (例如误点播歌单行)
+                setTimeout(() => {
+                    didDrag = false;
+                }, 120);
+            }
+        }
+
+        // 触摸事件
+        window.addEventListener("touchstart", (e) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            handleStart(e, touch.clientX, touch.clientY, true);
+        }, { passive: true });
+
+        window.addEventListener("touchmove", (e) => {
+            if (!isTracking || e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            handleMove(e, touch.clientX, touch.clientY);
+        }, { passive: false });
+
+        window.addEventListener("touchend", (e) => {
+            const touch = e.changedTouches ? e.changedTouches[0] : null;
+            const clientX = touch ? touch.clientX : startX;
+            handleEnd(clientX);
+        }, { passive: true });
+
+        window.addEventListener("touchcancel", () => {
+            handleEnd(startX);
+        }, { passive: true });
+
+        // 鼠标事件 (仅左键)
+        window.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
+            handleStart(e, e.clientX, e.clientY, false);
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!isTracking || isTouch) return;
+            handleMove(e, e.clientX, e.clientY);
+        });
+
+        window.addEventListener("mouseup", (e) => {
+            if (!isTracking || isTouch) return;
+            handleEnd(e.clientX);
+        });
+
+        // 阻止拖拽后的残留点击
+        window.addEventListener("click", (e) => {
+            if (didDrag) {
+                e.preventDefault();
+                e.stopPropagation();
+                didDrag = false;
+            }
+        }, true);
     }
 
     return {

@@ -647,7 +647,6 @@ body {
 
 /* 左侧歌单抽屉半透明遮罩 */
 .left-drawer-backdrop {
-    display: none;
     position: fixed;
     top: 46px;
     left: 0;
@@ -657,9 +656,13 @@ body {
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
     z-index: 840;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .left-drawer-backdrop.open {
-    display: block;
+    opacity: 1;
+    pointer-events: auto;
 }
 
 /* 移动端专用调优 */
