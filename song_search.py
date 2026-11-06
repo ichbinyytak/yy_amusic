@@ -21,6 +21,7 @@ import threading
 import difflib
 import urllib.request
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 
 # ========================================================
 # 1. 系统原生 OpenCC 繁简转换引擎 (调用 libopencc.so, 0.05ms)
@@ -202,10 +203,68 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 # 3. 歌曲检索接口 (自动繁转简 + 智能分词提取)
 # ========================================================
 
+def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int) -> list:
+    """酷我轻量检索通道"""
+    res = []
+    try:
+        url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
+        req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
+        with urllib.request.urlopen(req, timeout=2.0) as r:
+            data = json.loads(r.read().decode('utf-8'))
+            for it in data.get('abslist', []):
+                sname = it.get('SONGNAME', '')
+                sart = it.get('ARTIST', '')
+                salb = it.get('ALBUM', '')
+                sdur = it.get('DURATION')
+                rid = it.get('MUSICRID', '').replace('MUSIC_', '')
+                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
+                if ok and rid:
+                    res.append({
+                        "platform": "kw",
+                        "id": rid,
+                        "title": sname,
+                        "artist": sart,
+                        "album": salb,
+                        "duration": sdur,
+                        "score": round(score, 1)
+                    })
+    except Exception:
+        pass
+    return res
+
+def _search_netease(query_k: str, target_title: str, target_artist: str, limit: int) -> list:
+    """网易云轻量检索通道"""
+    res = []
+    try:
+        url_ne = f"http://music.163.com/api/search/get?s={urllib.parse.quote(query_k)}&type=1&offset=0&limit={limit}"
+        req = urllib.request.Request(url_ne, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=2.0) as r:
+            data = json.loads(r.read().decode('utf-8'))
+            for s in data.get('result', {}).get('songs', []):
+                sname = s.get('name', '')
+                sart = "/".join([a.get('name', '') for a in s.get('artists', []) if a.get('name')])
+                salb = s.get('album', {}).get('name', '')
+                sdur = round(s.get('duration', 0) / 1000) if s.get('duration') else None
+                sid = str(s.get('id', ''))
+                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
+                if ok and sid:
+                    res.append({
+                        "platform": "wy",
+                        "id": sid,
+                        "title": sname,
+                        "artist": sart,
+                        "album": salb,
+                        "duration": sdur,
+                        "score": round(score, 1)
+                    })
+    except Exception:
+        pass
+    return res
+
 def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, target_title: str = "") -> list:
     """
     轻量快速检索歌曲候选列表，全链路经过繁转简与高容错打分清洗
-    返回按匹配得分从高到低排序的正规候选列表
+    返回按匹配得分从高到低排序的正规候选列表（酷我与网易云双线并发检索）
     """
     # 1. 规范化输入：OpenCC 繁转简
     simplified_k = to_simple(clean_brackets(keyword))
@@ -228,63 +287,24 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
         target_title = simplified_k
         target_artist = to_simple(target_artist)
 
-    results = []
     # 清理查询词中的连接符号，避免音源平台按特殊语法处理导致搜空
     query_k = re.sub(r'[&/、+]+', ' ', simplified_k).strip()
     if not query_k:
         query_k = simplified_k
 
-    # 3. 酷我轻量检索通道
-    try:
-        url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
-        req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
-            data = json.loads(r.read().decode('utf-8'))
-            for it in data.get('abslist', []):
-                sname = it.get('SONGNAME', '')
-                sart = it.get('ARTIST', '')
-                salb = it.get('ALBUM', '')
-                sdur = it.get('DURATION')
-                rid = it.get('MUSICRID', '').replace('MUSIC_', '')
-                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
-                if ok and rid:
-                    results.append({
-                        "platform": "kw",
-                        "id": rid,
-                        "title": sname,
-                        "artist": sart,
-                        "album": salb,
-                        "duration": sdur,
-                        "score": round(score, 1)
-                    })
-    except Exception:
-        pass
-
-    # 4. 网易云轻量检索通道
-    try:
-        url_ne = f"http://music.163.com/api/search/get?s={urllib.parse.quote(query_k)}&type=1&offset=0&limit={limit}"
-        req = urllib.request.Request(url_ne, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
-            data = json.loads(r.read().decode('utf-8'))
-            for s in data.get('result', {}).get('songs', []):
-                sname = s.get('name', '')
-                sart = "/".join([a.get('name', '') for a in s.get('artists', []) if a.get('name')])
-                salb = s.get('album', {}).get('name', '')
-                sdur = round(s.get('duration', 0) / 1000) if s.get('duration') else None
-                sid = str(s.get('id', ''))
-                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
-                if ok and sid:
-                    results.append({
-                        "platform": "wy",
-                        "id": sid,
-                        "title": sname,
-                        "artist": sart,
-                        "album": salb,
-                        "duration": sdur,
-                        "score": round(score, 1)
-                    })
-    except Exception:
-        pass
+    # 3. 酷我 + 网易云 双通道并发轻量检索（消除串行等待延迟，耗时由 max(T_kw, T_wy) 决定）
+    results = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit)
+        f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit)
+        try:
+            results.extend(f_kw.result())
+        except Exception:
+            pass
+        try:
+            results.extend(f_ne.result())
+        except Exception:
+            pass
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
