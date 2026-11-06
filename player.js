@@ -60,6 +60,7 @@
       // 直链预解析缓存 (Map: songKey -> { url, bytes, sourceName, costMs })
       this.resolveCache = new Map();
       this.prefetchTimer = null;
+      this._retriedProxy = false;
 
       // 回调钩子 (用于更新 UI)
       this.listeners = {
@@ -124,9 +125,53 @@
       this.audio.addEventListener('error', (e) => {
         if (!this.audio.src || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
         const code = this.audio.error ? this.audio.error.code : 0;
-        if (code === 1) return; // MEDIA_ERR_ABORTED
-        console.warn("音频播放异常, code:", code, e);
-        this._emit('stateChange', { isPlaying: false, isResolving: false, error: "音频流加载异常" });
+        if (code === 1) return; // MEDIA_ERR_ABORTED (正常切歌中断，忽略)
+
+        const song = this.playlist[this.currentIndex];
+        const songName = song ? (song.title || song.name || "当前曲目") : "当前曲目";
+        const songKey = song ? this._getSongKey(song) : null;
+        if (songKey) {
+          // 清除失效的直链缓存，避免后续切歌再次命中失效死链
+          this.resolveCache.delete(songKey);
+        }
+
+        const currentSrc = this.audio.src;
+        // 1. 若当前是直链且尚未走过中继代理，尝试自动走 stream_proxy 中继流 (绕过 403 防盗链 / CORS 限制)
+        if (currentSrc && !currentSrc.includes('/api/stream_proxy') && !this._retriedProxy) {
+          this._retriedProxy = true;
+          console.warn(`[Player] 音频直链播放异常(code=${code})，尝试走安全中继流代理:`, currentSrc);
+          this.audio.src = `/api/stream_proxy?url=${encodeURIComponent(currentSrc)}`;
+          const retryPlay = this.audio.play();
+          if (retryPlay !== undefined) {
+            retryPlay.catch(err => {
+              console.warn("[Player] 中继代理自动起播受限:", err);
+            });
+          }
+          return;
+        }
+
+        this._retriedProxy = false;
+        console.warn(`[Player] 音频流加载彻底异常(code=${code}):`, e);
+
+        // 2. 歌单多曲目自动顺延下一首容灾
+        if (this.playlist.length > 1 && (this.autoSkipCount || 0) < 3) {
+          this.autoSkipCount = (this.autoSkipCount || 0) + 1;
+          if (typeof window !== 'undefined' && window.Shell?.showToast) {
+            window.Shell.showToast(`《${songName}》音频流失效，已自动顺延下一首`);
+          }
+          this._emit('stateChange', { isPlaying: false, isResolving: false, error: `《${songName}》音频流失效，已顺延` });
+          setTimeout(() => {
+            if (this.playMode === 'shuffle') {
+              const nextIdx = Math.floor(Math.random() * this.playlist.length);
+              this.playIndex(nextIdx, true);
+            } else {
+              const nextIdx = (this.currentIndex + 1) % this.playlist.length;
+              this.playIndex(nextIdx, true);
+            }
+          }, 800);
+        } else {
+          this._emit('stateChange', { isPlaying: false, isResolving: false, error: "音频流加载异常" });
+        }
       });
     }
 
@@ -256,6 +301,7 @@
       if (!isAutoSkip) {
         this.autoSkipCount = 0;
       }
+      this._retriedProxy = false;
       this.resolveToken = (this.resolveToken || 0) + 1;
       const currentToken = this.resolveToken;
 
