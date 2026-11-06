@@ -132,15 +132,17 @@
             <audio id="mainAudio" playsinline webkit-playsinline preload="auto"></audio>
         </footer>
 
-        <!-- 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行) -->
-        <div class="lyric-dock" id="lyricDock" onclick="window.Shell.expandLyricDock(event)" title="点击展开 6 行完整歌词">
+        <!-- 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行；支持上下拖拽浏览前后歌词，长按复制歌词) -->
+        <div class="lyric-dock" id="lyricDock" onclick="window.Shell.expandLyricDock(event)" title="点击展开完整歌词 / 上下拉动浏览前后歌词 / 长按复制歌词">
             <div class="lyric-dock-header">
                 <span class="lyric-dock-indicator">♪ 歌词实时同步</span>
                 <button class="lyric-close-btn" id="lyricCloseBtn" onclick="window.Shell.collapseLyricDock(event)" title="收回为两行">✕</button>
             </div>
             <div class="lyric-lines-wrapper" id="lyricLinesWrapper">
-                <div class="lyric-line lyric-line-current" id="lyricCurrentLine">♪ YY-Amusic 纯文本音乐底座已就绪</div>
-                <div class="lyric-line lyric-line-next" id="lyricNextLine">点播任意歌曲，歌词毫秒级同步滚屏</div>
+                <div class="lyric-lines-track" id="lyricLinesTrack">
+                    <div class="lyric-line lyric-line-current" id="lyricCurrentLine">♪ YY-Amusic 纯文本音乐底座已就绪</div>
+                    <div class="lyric-line lyric-line-next" id="lyricNextLine">点播任意歌曲，歌词毫秒级同步滚屏</div>
+                </div>
             </div>
         </div>
     </div>

@@ -439,11 +439,17 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    cursor: pointer;
+    cursor: grab;
     overflow: hidden;
     transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     user-select: none;
+    -webkit-user-select: none;
     flex-shrink: 0;
+    touch-action: none;
+}
+
+.lyric-dock.dragging {
+    cursor: grabbing;
 }
 
 .lyric-dock-header {
@@ -461,11 +467,23 @@ body {
 
 .lyric-lines-wrapper {
     width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    overflow: hidden;
+}
+
+.lyric-lines-track {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    will-change: transform;
+    pointer-events: auto;
 }
 
 .lyric-line {
@@ -473,20 +491,38 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 95%;
+    width: 100%;
+    text-align: center;
+    height: 18px;
+    line-height: 18px;
+    font-size: var(--fs-t4);
+    color: var(--text-muted);
+    opacity: 0.55;
+    transition: color 0.2s, opacity 0.2s, font-size 0.2s, background 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: 0 4px;
+    box-sizing: border-box;
 }
 
-.lyric-line-current {
+.lyric-line.lyric-line-current {
     font-size: var(--fs-t3);
     font-weight: 600;
     color: #7ee787;
     line-height: 1.35;
+    opacity: 1;
 }
 
-.lyric-line-next {
+.lyric-line.lyric-line-next {
     font-size: var(--fs-t4);
     color: var(--text-muted);
-    margin-top: 1px;
-    opacity: 0.8;
+    opacity: 0.85;
+}
+
+.lyric-line.lyric-copied {
+    background: rgba(126, 231, 135, 0.25) !important;
+    color: #7ee787 !important;
+    border-radius: 4px;
 }
 
 .lyric-dock.expanded {
@@ -495,8 +531,20 @@ body {
     background-color: #080a0d;
 }
 .lyric-dock.expanded .lyric-dock-header { display: flex; }
-.lyric-dock.expanded .lyric-lines-wrapper { flex: 1; overflow-y: auto; justify-content: flex-start; gap: 4px; padding: 2px 0; }
-.lyric-dock.expanded .lyric-line-current { font-size: var(--fs-t3); background: rgba(126, 231, 135, 0.08); padding: 2px 6px; border-radius: 4px; }
+.lyric-dock.expanded .lyric-lines-wrapper { flex: 1; height: auto; overflow: hidden; }
+.lyric-dock.expanded .lyric-line {
+    height: 24px;
+    line-height: 24px;
+    font-size: var(--fs-t4);
+    opacity: 0.7;
+    padding: 0 8px;
+}
+.lyric-dock.expanded .lyric-line.lyric-line-current {
+    font-size: var(--fs-t3);
+    opacity: 1;
+    background: rgba(126, 231, 135, 0.08);
+    border-radius: 4px;
+}
 
 /* 底部向上拉起抽屉 (队列与音源) */
 .drawer-backdrop {

@@ -8,7 +8,7 @@
  *   1. 顶栏搜索交互 (handleSearch / clearSearch / exitSearch)
  *   2. 音量直立弹窗交互 (toggleVolumePopup / handleVerticalVolumeChange)
  *   3. 播控与进度条 (updatePlayPauseButton / handleProgressBarClick / handleCycleMode)
- *   4. 时间轴歌词系统 (renderLyricsView / expandLyricDock / collapseLyricDock)
+ *   4. 时间轴歌词系统 (renderLyricsView / 上下拖拽浏览前后歌词 / 放手平滑回正 / 长按复制歌词)
  *   5. 侧拉抽屉与底层音源 (toggleQueueModal / toggleSourceModal / testSources / syncSources)
  *   6. 全局轻量 Toast 提示 (showToast)
  *   7. 业务弹窗代理转发 (向后兼容无缝代理至 window.Modals)
@@ -46,6 +46,16 @@ window.Shell = (function () {
     let isLyricExpanded = false;
     let lastLyricIdx = -1;
     let currentSongLyricLines = [];
+    let renderedLyricKey = null;
+    let currentTranslateY = 0;
+    let isUserDragging = false;
+    let hasDragged = false;
+    let isLongPress = false;
+    let longPressTimer = null;
+    let dragStartY = 0;
+    let dragStartX = 0;
+    let initialTranslateY = 0;
+    let isMouseDown = false;
 
     function escapeHtml(str) {
         if (!str) return "";
@@ -151,6 +161,9 @@ window.Shell = (function () {
                 }
             });
         }
+
+        // 初始化歌词栏手势拖拽浏览与长按复制
+        initLyricDockGesture();
     }
 
     /* -------------------- 顶栏搜索交互 -------------------- */
@@ -244,44 +257,337 @@ window.Shell = (function () {
         return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
     }
 
-    /* -------------------- 歌词系统 -------------------- */
-    function renderLyricsView(curText, nxtText) {
-        if (!lyricLinesWrapper) return;
-        if (!isLyricExpanded) {
-            lyricLinesWrapper.innerHTML = `
-                <div class="lyric-line lyric-line-current">${escapeHtml(curText || "♪ YY-Amusic 纯文本底座已就绪")}</div>
-                <div class="lyric-line lyric-line-next">${escapeHtml(nxtText || "点播任意歌曲，歌词毫秒级同步")}</div>
-            `;
-        } else {
-            if (!currentSongLyricLines || currentSongLyricLines.length === 0) {
-                lyricLinesWrapper.innerHTML = '<div class="lyric-line lyric-line-current">纯音乐或暂无歌词</div>';
-                return;
+    /* ========================================================
+     * 区块 4: 时间轴歌词系统 (手势拖拽浏览、放手回正与长按复制)
+     * ======================================================== */
+    function getTrackElement() {
+        let track = document.getElementById("lyricLinesTrack");
+        if (!track && lyricLinesWrapper) {
+            track = document.createElement("div");
+            track.className = "lyric-lines-track";
+            track.id = "lyricLinesTrack";
+            while (lyricLinesWrapper.firstChild) {
+                track.appendChild(lyricLinesWrapper.firstChild);
             }
-            const cur = lastLyricIdx >= 0 ? lastLyricIdx : 0;
-            const start = Math.max(0, cur - 2);
-            const end = Math.min(currentSongLyricLines.length, start + 6);
-            const slice = currentSongLyricLines.slice(start, end);
-            let html = '';
-            slice.forEach((item, wIdx) => {
-                const actualIdx = start + wIdx;
-                let cls = 'lyric-line';
-                if (actualIdx === cur) cls += ' lyric-line-current';
-                else if (actualIdx < cur) cls += ' lyric-line-prev';
-                else cls += ' lyric-line-next';
-                html += `<div class="${cls}">${escapeHtml(item.text)}</div>`;
-            });
-            lyricLinesWrapper.innerHTML = html;
+            lyricLinesWrapper.appendChild(track);
         }
+        return track;
+    }
+
+    function getLineHeight() {
+        return isLyricExpanded ? 24 : 18;
+    }
+
+    function getCenterOffset() {
+        return isLyricExpanded ? 24 : 0;
+    }
+
+    function getTargetY(idx) {
+        const total = (currentSongLyricLines && currentSongLyricLines.length > 0) ? currentSongLyricLines.length : 2;
+        const lh = getLineHeight();
+        const offset = getCenterOffset();
+        const clamped = Math.max(0, Math.min(total - 1, idx >= 0 ? idx : 0));
+        return offset - clamped * lh;
+    }
+
+    function renderLyricsView(curText, nxtText) {
+        const track = getTrackElement();
+        if (!track) return;
+
+        const curIdx = lastLyricIdx >= 0 ? lastLyricIdx : 0;
+
+        // 如果没有完整歌词（纯音乐或占位提示）
+        if (!currentSongLyricLines || currentSongLyricLines.length === 0) {
+            renderedLyricKey = "__empty__";
+            track.innerHTML = `
+                <div class="lyric-line lyric-line-current" id="lyricCurrentLine">${escapeHtml(curText || "♪ YY-Amusic 纯文本音乐底座已就绪")}</div>
+                <div class="lyric-line lyric-line-next" id="lyricNextLine">${escapeHtml(nxtText || "点播任意歌曲，歌词毫秒级同步滚屏")}</div>
+            `;
+            if (!isUserDragging) {
+                track.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
+                track.style.transform = 'translateY(0px)';
+                currentTranslateY = 0;
+            }
+            return;
+        }
+
+        // 检查是否需要重新构建曲目完整歌词行 DOM 树
+        const currentSongKey = currentSongLyricLines.length + "_" + (currentSongLyricLines[0]?.text || "") + "_" + (currentSongLyricLines[currentSongLyricLines.length - 1]?.text || "");
+        if (renderedLyricKey !== currentSongKey) {
+            renderedLyricKey = currentSongKey;
+            let html = '';
+            currentSongLyricLines.forEach((item, idx) => {
+                let cls = 'lyric-line';
+                if (idx === curIdx) cls += ' lyric-line-current';
+                else if (idx === curIdx + 1) cls += ' lyric-line-next';
+                else if (idx < curIdx) cls += ' lyric-line-prev';
+                html += `<div class="${cls}" data-idx="${idx}" title="上下拉动浏览前后歌词 / 长按复制">${escapeHtml(item.text)}</div>`;
+            });
+            track.innerHTML = html;
+        } else {
+            // 增量高效更新高亮与前后状态类名
+            const lineEls = track.querySelectorAll(".lyric-line");
+            lineEls.forEach((el, idx) => {
+                let cls = 'lyric-line';
+                if (idx === curIdx) cls += ' lyric-line-current';
+                else if (idx === curIdx + 1) cls += ' lyric-line-next';
+                else if (idx < curIdx) cls += ' lyric-line-prev';
+                el.className = cls;
+            });
+        }
+
+        // 若用户未处于手动拖拽拉扯状态，平滑滚入当前播放行
+        if (!isUserDragging) {
+            const targetY = getTargetY(curIdx);
+            track.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
+            track.style.transform = `translateY(${targetY}px)`;
+            currentTranslateY = targetY;
+        }
+    }
+
+    function snapBackToCurrent() {
+        const track = getTrackElement();
+        if (!track) return;
+        const targetY = getTargetY(lastLyricIdx >= 0 ? lastLyricIdx : 0);
+        track.style.transition = 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)';
+        track.style.transform = `translateY(${targetY}px)`;
+        currentTranslateY = targetY;
+    }
+
+    function applyDragOffset(dy) {
+        const track = getTrackElement();
+        if (!track) return;
+        const totalLines = (currentSongLyricLines && currentSongLyricLines.length > 0) ? currentSongLyricLines.length : 2;
+        const lh = getLineHeight();
+        const offset = getCenterOffset();
+
+        let newY = initialTranslateY + dy;
+        const maxY = offset + 40;
+        const minY = offset - (totalLines - 1) * lh - 40;
+
+        // 弹性阻尼算法
+        if (newY > maxY) {
+            newY = maxY + (newY - maxY) * 0.35;
+        } else if (newY < minY) {
+            newY = minY + (newY - minY) * 0.35;
+        }
+
+        track.style.transition = 'none';
+        track.style.transform = `translateY(${newY}px)`;
+        currentTranslateY = newY;
+    }
+
+    function triggerLongPressCopy(targetLine) {
+        isLongPress = true;
+        let textToCopy = "";
+        if (targetLine && targetLine.innerText) {
+            textToCopy = targetLine.innerText.trim();
+        } else if (lastLyricIdx >= 0 && currentSongLyricLines[lastLyricIdx]) {
+            textToCopy = currentSongLyricLines[lastLyricIdx].text;
+        } else {
+            const curEl = document.getElementById("lyricCurrentLine");
+            textToCopy = curEl ? curEl.innerText.trim() : "";
+        }
+
+        if (!textToCopy) return;
+
+        // 触感震动反馈
+        if (navigator.vibrate) {
+            try { navigator.vibrate(40); } catch (e) {}
+        }
+
+        // 视觉高亮闪烁反馈
+        if (targetLine) {
+            targetLine.classList.add("lyric-copied");
+            setTimeout(() => targetLine.classList.remove("lyric-copied"), 600);
+        }
+
+        copyTextToClipboard(textToCopy);
+    }
+
+    function copyTextToClipboard(text) {
+        if (!text) return;
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(`已复制歌词: ${text}`);
+            }).catch(() => {
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        let succeeded = false;
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.setAttribute("readonly", "");
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            textArea.setSelectionRange(0, 99999);
+            succeeded = document.execCommand('copy');
+            document.body.removeChild(textArea);
+        } catch (e) {}
+
+        showToast(`已复制歌词: ${text}`);
+    }
+
+    function initLyricDockGesture() {
+        if (!lyricDock) return;
+
+        // 1. 移动端触屏拖拽与长按手势
+        lyricDock.addEventListener("touchstart", (e) => {
+            if (e.target.closest("#lyricCloseBtn")) return;
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            dragStartY = touch.clientY;
+            dragStartX = touch.clientX;
+            initialTranslateY = currentTranslateY;
+            isUserDragging = false;
+            hasDragged = false;
+            isLongPress = false;
+
+            const targetLine = e.target.closest(".lyric-line");
+            clearTimeout(longPressTimer);
+            longPressTimer = setTimeout(() => {
+                triggerLongPressCopy(targetLine);
+            }, 400);
+        }, { passive: true });
+
+        lyricDock.addEventListener("touchmove", (e) => {
+            if (e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            const dy = touch.clientY - dragStartY;
+            const dx = touch.clientX - dragStartX;
+
+            if (!isUserDragging) {
+                if (Math.hypot(dx, dy) > 6) {
+                    clearTimeout(longPressTimer);
+                    if (Math.abs(dy) > Math.abs(dx)) {
+                        isUserDragging = true;
+                        hasDragged = true;
+                        lyricDock.classList.add("dragging");
+                    }
+                }
+            }
+
+            if (isUserDragging) {
+                if (e.cancelable) e.preventDefault();
+                applyDragOffset(dy);
+            }
+        }, { passive: false });
+
+        const endTouch = () => {
+            clearTimeout(longPressTimer);
+            if (isUserDragging) {
+                isUserDragging = false;
+                lyricDock.classList.remove("dragging");
+                snapBackToCurrent();
+            }
+            setTimeout(() => {
+                hasDragged = false;
+                isLongPress = false;
+            }, 120);
+        };
+        lyricDock.addEventListener("touchend", endTouch);
+        lyricDock.addEventListener("touchcancel", endTouch);
+
+        // 2. 桌面鼠标拖拽与长按
+        lyricDock.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
+            if (e.target.closest("#lyricCloseBtn")) return;
+            isMouseDown = true;
+            dragStartY = e.clientY;
+            dragStartX = e.clientX;
+            initialTranslateY = currentTranslateY;
+            isUserDragging = false;
+            hasDragged = false;
+            isLongPress = false;
+
+            const targetLine = e.target.closest(".lyric-line");
+            clearTimeout(longPressTimer);
+            longPressTimer = setTimeout(() => {
+                triggerLongPressCopy(targetLine);
+            }, 450);
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            if (!isMouseDown) return;
+            const dy = e.clientY - dragStartY;
+            const dx = e.clientX - dragStartX;
+
+            if (!isUserDragging) {
+                if (Math.hypot(dx, dy) > 5) {
+                    clearTimeout(longPressTimer);
+                    isUserDragging = true;
+                    hasDragged = true;
+                    lyricDock.classList.add("dragging");
+                }
+            }
+
+            if (isUserDragging) {
+                applyDragOffset(dy);
+            }
+        });
+
+        window.addEventListener("mouseup", () => {
+            if (!isMouseDown) return;
+            isMouseDown = false;
+            clearTimeout(longPressTimer);
+            if (isUserDragging) {
+                isUserDragging = false;
+                lyricDock.classList.remove("dragging");
+                snapBackToCurrent();
+            }
+            setTimeout(() => {
+                hasDragged = false;
+                isLongPress = false;
+            }, 120);
+        });
+
+        // 3. 滚轮平滑交互（拉动浏览前后歌词，静止 400ms 后自动回正）
+        let wheelTimer = null;
+        lyricDock.addEventListener("wheel", (e) => {
+            if (e.target.closest("#lyricCloseBtn")) return;
+            e.preventDefault();
+            clearTimeout(longPressTimer);
+            clearTimeout(wheelTimer);
+            hasDragged = true;
+            isUserDragging = true;
+            lyricDock.classList.add("dragging");
+
+            applyDragOffset(-e.deltaY);
+            wheelTimer = setTimeout(() => {
+                isUserDragging = false;
+                lyricDock.classList.remove("dragging");
+                snapBackToCurrent();
+                setTimeout(() => { hasDragged = false; }, 120);
+            }, 400);
+        }, { passive: false });
+
+        // 4. 点击事件拦截：发生拖拽或长按时拦截触发展开/收起
+        lyricDock.addEventListener("click", (e) => {
+            if (hasDragged || isLongPress) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }
+        }, true);
     }
 
     function expandLyricDock(e) {
         if (e && e.target.closest("#lyricCloseBtn")) return;
+        if (hasDragged || isLongPress) return;
         if (!lyricDock) return;
         isLyricExpanded = true;
         lyricDock.classList.add("expanded");
-        const curLine = (lastLyricIdx >= 0 && currentSongLyricLines[lastLyricIdx]) ? currentSongLyricLines[lastLyricIdx].text : "";
-        const nextLine = (lastLyricIdx + 1 < currentSongLyricLines.length) ? currentSongLyricLines[lastLyricIdx + 1].text : "";
-        renderLyricsView(curLine, nextLine);
+        snapBackToCurrent();
     }
 
     function collapseLyricDock(e) {
@@ -289,9 +595,7 @@ window.Shell = (function () {
         if (!lyricDock) return;
         isLyricExpanded = false;
         lyricDock.classList.remove("expanded");
-        const curLine = (lastLyricIdx >= 0 && currentSongLyricLines[lastLyricIdx]) ? currentSongLyricLines[lastLyricIdx].text : "";
-        const nextLine = (lastLyricIdx + 1 < currentSongLyricLines.length) ? currentSongLyricLines[lastLyricIdx + 1].text : "";
-        renderLyricsView(curLine, nextLine);
+        snapBackToCurrent();
     }
 
     /* -------------------- 抽屉与音源管理 -------------------- */
