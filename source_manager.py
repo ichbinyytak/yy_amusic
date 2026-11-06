@@ -14,6 +14,7 @@ import sys
 import time
 import json
 import re
+import shutil
 import threading
 import subprocess
 import urllib.request
@@ -39,10 +40,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "sources_cache")
 RUNNER_SCRIPT = os.path.join(BASE_DIR, "lx_runner.js")
 
+# 6.1 Vercel Serverless 及无 Node 环境智能嗅探与自适应旁路
+NODE_BIN = shutil.which("node")
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+HAS_NODE = bool(NODE_BIN) and not IS_VERCEL
+
 def _make_runner_probe(script_path: str, supported_platforms: list):
     """为每一个 LX 脚本源生成专属探测函数，支持传递完整歌名、歌手与目标平台"""
     def _probe(song_info, target_platform: str = "kw", timeout: float = 3.5):
-        if not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
+        if not HAS_NODE or not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
             return None
         
         # 兼容 dict 或 str 传参
@@ -297,6 +303,17 @@ class SourceManager:
                 pass
 
         # 1. 对比排班表注册本地 LX 音源
+        # 6.1 在 Vercel 或无 Node 环境下，直接跳过所有 LX 脚本源，仅更新原生直连源，专注原生通道
+        if not HAS_NODE:
+            for r_id, s_info in ranking_sources.items():
+                if not r_id.startswith("lx_") and r_id in self.sources:
+                    src = self.sources[r_id]
+                    src.latency_ms = float(s_info.get("latency_ms", src.latency_ms))
+                    src.status = s_info.get("status", src.status)
+                    if s_info.get("platform"):
+                        src.platform = s_info.get("platform")
+            return
+
         registered_sids = set()
         for r_id, s_info in ranking_sources.items():
             if not r_id.startswith("lx_"):
@@ -383,6 +400,8 @@ class SourceManager:
 
     def sync_from_lx_hub(self):
         """从用户维护的 lx-hub 动态同步并注册全部 32 个音源"""
+        if not HAS_NODE or os.environ.get("VERCEL"):
+            return False
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
         except Exception:
