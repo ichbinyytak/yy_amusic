@@ -6,6 +6,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
+const crypto = require('crypto');
 
 const origConsoleLog = console.log;
 console.log = (...args) => {};
@@ -59,8 +61,21 @@ try {
 
 let globalHandler = null;
 
-// 构建与 LX Music 完全兼容的 globalThis.lx 沙箱
-globalThis.lx = {
+// 构建沙箱允许的安全模块白名单 (严密隔离 child_process、fs 等系统提权模块)
+const ALLOWED_BUILTIN_MODULES = {
+    crypto: crypto,
+    buffer: require('buffer')
+};
+
+function safeRequire(modName) {
+    if (ALLOWED_BUILTIN_MODULES[modName]) {
+        return ALLOWED_BUILTIN_MODULES[modName];
+    }
+    throw new Error(`[Security Sandbox] Blocked unsafe module require: "${modName}"`);
+}
+
+// 构建与 LX Music 完全兼容的 lx 交互 API
+const lxApi = {
     EVENT_NAMES: {
         request: "request"
     },
@@ -111,11 +126,74 @@ globalThis.lx = {
     send: () => {}
 };
 
+const fakeModule = { exports: {} };
+
+// 构建独立的执行沙箱，彻底隔离 process 与宿主危险对象
+const sandbox = {
+    console: {
+        log: () => {},
+        warn: () => {},
+        error: () => {},
+        info: () => {}
+    },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    Buffer,
+    Uint8Array,
+    ArrayBuffer,
+    TextEncoder,
+    TextDecoder,
+    fetch,
+    AbortController,
+    FormData,
+    Headers,
+    Request,
+    Response,
+    URL,
+    URLSearchParams,
+    atob,
+    btoa,
+    encodeURIComponent,
+    decodeURIComponent,
+    JSON,
+    Math,
+    Date,
+    RegExp,
+    Promise,
+    Error,
+    TypeError,
+    RangeError,
+    SyntaxError,
+    Map,
+    Set,
+    WeakMap,
+    WeakSet,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    module: fakeModule,
+    exports: fakeModule.exports,
+    require: safeRequire,
+    lx: lxApi
+};
+
+sandbox.globalThis = sandbox;
+sandbox.window = sandbox;
+sandbox.global = sandbox;
+
 try {
-    eval(scriptCode);
+    const context = vm.createContext(sandbox);
+    vm.runInContext(scriptCode, context, {
+        timeout: timeoutMs,
+        displayErrors: false
+    });
 } catch (e) {
     clearTimeout(killTimer);
-    finish({ success: false, error: `Script eval failed: ${e.message}` });
+    finish({ success: false, error: `Script sandbox execution failed: ${e.message}` });
 }
 
 if (!globalHandler || typeof globalHandler !== "function") {
