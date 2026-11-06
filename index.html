@@ -146,88 +146,88 @@
     </div>
 
     <!-- 弹窗：添加到自建歌单 -->
-    <div class="modal-overlay" id="addToPlaylistModal" onclick="if(event.target===this) window.Shell.closeAddToCustomModal()">
+    <div class="modal-overlay" id="addToPlaylistModal" onclick="if(event.target===this) window.Modals.closeAddToCustomModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3>＋ 添加到我的歌单</h3>
-                <button class="modal-close-btn" onclick="window.Shell.closeAddToCustomModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.Modals.closeAddToCustomModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div class="add-to-song-info" id="addToSongInfo" style="font-size:var(--fs-t4); margin-bottom:8px; color:var(--accent);">歌曲名 - 歌手</div>
                 <div class="playlist-choice-list" id="playlistChoiceList" style="max-height:160px; overflow-y:auto; margin-bottom:8px;"></div>
                 <div class="create-playlist-inline" style="display:flex; gap:4px;">
-                    <input type="text" id="newPlaylistInput" placeholder="输入新歌单名称..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Shell.confirmCreateAndAdd()" />
-                    <button class="btn btn-sm btn-primary" onclick="window.Shell.confirmCreateAndAdd()">新建并加入</button>
+                    <input type="text" id="newPlaylistInput" placeholder="输入新歌单名称..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Modals.confirmCreateAndAdd()" />
+                    <button class="btn btn-sm btn-primary" onclick="window.Modals.confirmCreateAndAdd()">新建并加入</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- 弹窗：添加到收藏分类 -->
-    <div class="modal-overlay" id="addToFavModal" onclick="if(event.target===this) window.Shell.closeAddToFavModal()">
+    <div class="modal-overlay" id="addToFavModal" onclick="if(event.target===this) window.Modals.closeAddToFavModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3>★ 收藏到我的分类</h3>
-                <button class="modal-close-btn" onclick="window.Shell.closeAddToFavModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.Modals.closeAddToFavModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div class="add-to-song-info" id="favModalPlaylistInfo" style="font-size:var(--fs-t4); margin-bottom:8px; color:var(--accent);">歌单名称</div>
                 <div class="playlist-choice-list" id="favCategoryChoiceList" style="max-height:160px; overflow-y:auto; margin-bottom:8px;"></div>
                 <div class="create-playlist-inline" style="display:flex; gap:4px;">
-                    <input type="text" id="newFavCategoryInput" placeholder="输入新分类名称..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Shell.confirmCreateCategoryAndFav()" />
-                    <button class="btn btn-sm btn-primary" onclick="window.Shell.confirmCreateCategoryAndFav()">新建并加入</button>
+                    <input type="text" id="newFavCategoryInput" placeholder="输入新分类名称..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Modals.confirmCreateCategoryAndFav()" />
+                    <button class="btn btn-sm btn-primary" onclick="window.Modals.confirmCreateCategoryAndFav()">新建并加入</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- 弹窗：移动歌单到分组 (遵照 SITE_ARCHITECTURE.md 规范) -->
-    <div class="modal-overlay" id="moveCategoryModal" onclick="if(event.target===this) window.Shell.closeMoveCategoryModal()">
+    <div class="modal-overlay" id="moveCategoryModal" onclick="if(event.target===this) window.Modals.closeMoveCategoryModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3>⇄ 移动至分组</h3>
-                <button class="modal-close-btn" onclick="window.Shell.closeMoveCategoryModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.Modals.closeMoveCategoryModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div class="add-to-song-info" id="moveModalPlaylistInfo" style="font-size:var(--fs-t4); margin-bottom:8px; color:var(--accent);">歌单名称</div>
                 <div class="playlist-choice-list" id="moveCategoryChoiceList" style="max-height:160px; overflow-y:auto; margin-bottom:8px;"></div>
                 <div class="create-playlist-inline" style="display:flex; gap:4px;">
-                    <input type="text" id="newMoveCategoryInput" placeholder="新建分组并移动至此..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Shell.confirmCreateCategoryAndMove()" />
-                    <button class="btn btn-sm btn-primary" onclick="window.Shell.confirmCreateCategoryAndMove()">新建并移入</button>
+                    <input type="text" id="newMoveCategoryInput" placeholder="新建分组并移动至此..." style="flex:1; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:3px 6px; border-radius:4px; font-size:var(--fs-t4);" onkeydown="if(event.key==='Enter') window.Modals.confirmCreateCategoryAndMove()" />
+                    <button class="btn btn-sm btn-primary" onclick="window.Modals.confirmCreateCategoryAndMove()">新建并移入</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- 弹窗：批量打包下载确认 (遵照 SITE_ARCHITECTURE.md 规范) -->
-    <div class="modal-overlay" id="batchDownloadModal" onclick="if(event.target===this) window.Shell.closeBatchDownloadModal()">
+    <div class="modal-overlay" id="batchDownloadModal" onclick="if(event.target===this) window.Modals.closeBatchDownloadModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3 id="batchDownloadTitle">↓ 确认打包下载</h3>
-                <button class="modal-close-btn" onclick="window.Shell.closeBatchDownloadModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.Modals.closeBatchDownloadModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div style="font-size:var(--fs-t4); margin-bottom:8px; color:var(--text-muted);" id="batchDownloadSummary">已选中 0 首歌曲，将打包为单个 ZIP 文件下载：</div>
                 <div class="playlist-choice-list" id="batchDownloadSongList" style="max-height:180px; overflow-y:auto; margin-bottom:12px; font-size:var(--fs-t4); border:1px solid var(--border-color); border-radius:4px; padding:6px; background:rgba(0,0,0,0.2);"></div>
                 <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button class="btn btn-sm btn-outline" onclick="window.Shell.closeBatchDownloadModal()">取消</button>
-                    <button class="btn btn-sm btn-primary" id="btnConfirmBatchDownload" onclick="window.Shell.confirmBatchDownload()">确认下载 (ZIP)</button>
+                    <button class="btn btn-sm btn-outline" onclick="window.Modals.closeBatchDownloadModal()">取消</button>
+                    <button class="btn btn-sm btn-primary" id="btnConfirmBatchDownload" onclick="window.Modals.confirmBatchDownload()">确认下载 (ZIP)</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- 弹窗：应用内统一确认弹窗 (防误触) -->
-    <div class="modal-overlay" id="confirmActionModal" onclick="if(event.target===this) window.Shell.closeConfirmActionModal()">
+    <div class="modal-overlay" id="confirmActionModal" onclick="if(event.target===this) window.Modals.closeConfirmActionModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3 id="confirmActionTitle">操作确认</h3>
-                <button class="modal-close-btn" onclick="window.Shell.closeConfirmActionModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.Modals.closeConfirmActionModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div style="font-size:var(--fs-t3); margin-bottom:14px; color:var(--text-primary); line-height:1.5;" id="confirmActionMessage">确认执行此操作吗？</div>
                 <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button class="btn btn-sm btn-outline" id="btnConfirmActionCancel" onclick="window.Shell.closeConfirmActionModal()">取消</button>
+                    <button class="btn btn-sm btn-outline" id="btnConfirmActionCancel" onclick="window.Modals.closeConfirmActionModal()">取消</button>
                     <button class="btn btn-sm btn-primary" id="btnConfirmActionSubmit">确认</button>
                 </div>
             </div>
@@ -235,17 +235,17 @@
     </div>
 
     <!-- 弹窗：应用内统一文本输入/重命名弹窗 -->
-    <div class="modal-overlay" id="inputPromptModal" onclick="if(event.target===this) window.Shell.closeInputPromptModal()">
+    <div class="modal-overlay" id="inputPromptModal" onclick="if(event.target===this) window.Modals.closeInputPromptModal()">
         <div class="modal-content modal-sm">
             <div class="modal-header">
                 <h3 id="inputPromptTitle">✎ 重命名</h3>
-                <button class="modal-close-btn" onclick="window.Shell.closeInputPromptModal()">✕</button>
+                <button class="modal-close-btn" onclick="window.Modals.closeInputPromptModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div style="font-size:var(--fs-t4); margin-bottom:8px; color:var(--text-muted);" id="inputPromptDesc">请输入新名称：</div>
                 <input type="text" id="inputPromptValue" style="width:100%; box-sizing:border-box; background:var(--bg-main); border:1px solid var(--border-color); color:#fff; padding:6px 8px; border-radius:4px; font-size:var(--fs-t3); margin-bottom:12px;" />
                 <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button class="btn btn-sm btn-outline" onclick="window.Shell.closeInputPromptModal()">取消</button>
+                    <button class="btn btn-sm btn-outline" onclick="window.Modals.closeInputPromptModal()">取消</button>
                     <button class="btn btn-sm btn-primary" id="btnInputPromptSubmit">保存</button>
                 </div>
             </div>
@@ -295,7 +295,8 @@
     <script src="js/search.js?v=5.9"></script>
     <script src="js/left.js?v=6.0"></script>
     <script src="js/right.js?v=6.1"></script>
-    <script src="js/shell.js?v=6.1"></script>
+    <script src="js/modals.js?v=6.0"></script>
+    <script src="js/shell.js?v=6.2"></script>
     <script src="js/main.js?v=6.0"></script>
 </body>
 </html>
