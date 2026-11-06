@@ -452,6 +452,11 @@ body {
     cursor: grabbing;
 }
 
+.lyric-dock.lyric-copied {
+    background-color: rgba(126, 231, 135, 0.15) !important;
+    transition: background-color 0.3s ease;
+}
+
 .lyric-dock-header {
     width: 100%;
     display: none;

@@ -377,16 +377,20 @@ window.Shell = (function () {
         currentTranslateY = newY;
     }
 
-    function triggerLongPressCopy(targetLine) {
+    function triggerLongPressCopy() {
         isLongPress = true;
         let textToCopy = "";
-        if (targetLine && targetLine.innerText) {
-            textToCopy = targetLine.innerText.trim();
-        } else if (lastLyricIdx >= 0 && currentSongLyricLines[lastLyricIdx]) {
-            textToCopy = currentSongLyricLines[lastLyricIdx].text;
+        let lineCount = 0;
+
+        if (currentSongLyricLines && currentSongLyricLines.length > 0) {
+            // 复制整首歌曲的全部歌词
+            const lines = currentSongLyricLines.map(item => item.text).filter(Boolean);
+            textToCopy = lines.join("\n");
+            lineCount = lines.length;
         } else {
             const curEl = document.getElementById("lyricCurrentLine");
             textToCopy = curEl ? curEl.innerText.trim() : "";
+            lineCount = textToCopy ? 1 : 0;
         }
 
         if (!textToCopy) return;
@@ -396,30 +400,32 @@ window.Shell = (function () {
             try { navigator.vibrate(40); } catch (e) {}
         }
 
-        // 视觉高亮闪烁反馈
-        if (targetLine) {
-            targetLine.classList.add("lyric-copied");
-            setTimeout(() => targetLine.classList.remove("lyric-copied"), 600);
+        // 整个歌词栏背景闪烁高亮反馈
+        if (lyricDock) {
+            lyricDock.classList.add("lyric-copied");
+            setTimeout(() => lyricDock.classList.remove("lyric-copied"), 600);
         }
 
-        copyTextToClipboard(textToCopy);
+        const toastMsg = lineCount > 1 ? `已复制全部歌词 (共 ${lineCount} 行)` : `已复制歌词: ${textToCopy}`;
+        copyTextToClipboard(textToCopy, toastMsg);
     }
 
-    function copyTextToClipboard(text) {
+    function copyTextToClipboard(text, toastMsg) {
         if (!text) return;
+        const msg = toastMsg || "已复制全部歌词";
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(text).then(() => {
-                showToast(`已复制歌词: ${text}`);
+                showToast(msg);
             }).catch(() => {
-                fallbackCopy(text);
+                fallbackCopy(text, msg);
             });
         } else {
-            fallbackCopy(text);
+            fallbackCopy(text, msg);
         }
     }
 
-    function fallbackCopy(text) {
-        let succeeded = false;
+    function fallbackCopy(text, toastMsg) {
+        const msg = toastMsg || "已复制全部歌词";
         try {
             const textArea = document.createElement("textarea");
             textArea.value = text;
@@ -431,11 +437,11 @@ window.Shell = (function () {
             textArea.focus();
             textArea.select();
             textArea.setSelectionRange(0, 99999);
-            succeeded = document.execCommand('copy');
+            document.execCommand('copy');
             document.body.removeChild(textArea);
         } catch (e) {}
 
-        showToast(`已复制歌词: ${text}`);
+        showToast(msg);
     }
 
     function initLyricDockGesture() {
@@ -453,10 +459,9 @@ window.Shell = (function () {
             hasDragged = false;
             isLongPress = false;
 
-            const targetLine = e.target.closest(".lyric-line");
             clearTimeout(longPressTimer);
             longPressTimer = setTimeout(() => {
-                triggerLongPressCopy(targetLine);
+                triggerLongPressCopy();
             }, 400);
         }, { passive: true });
 
@@ -510,10 +515,9 @@ window.Shell = (function () {
             hasDragged = false;
             isLongPress = false;
 
-            const targetLine = e.target.closest(".lyric-line");
             clearTimeout(longPressTimer);
             longPressTimer = setTimeout(() => {
-                triggerLongPressCopy(targetLine);
+                triggerLongPressCopy();
             }, 450);
         });
 
