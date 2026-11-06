@@ -41,11 +41,22 @@ def sanitize_filename(name: str) -> str:
 def download_script(item: dict) -> tuple:
     """下载单个音源脚本，支持主 URL 与多镜像源自动容灾降级"""
     sid = item.get("id", "")[:8]
-    seq = item.get("seq", 0)
     raw_name = item.get("name", "未命名音源")
     safe_name = sanitize_filename(raw_name)
-    filename = f"{seq:02d}_{safe_name}_{sid}.js"
+    # 彻底剔除容易波动的 seq 序号前缀，统一命名规范，杜绝因上游排名浮动导致历史脚本无限堆叠
+    filename = f"source_{safe_name}_{sid}.js"
     target_path = os.path.join(CACHE_DIR, filename)
+
+    # 预先清理当前 sid 存在的不同名陈旧历史文件
+    try:
+        for old_f in os.listdir(CACHE_DIR):
+            if sid in old_f and old_f != filename and old_f.endswith(".js"):
+                try:
+                    os.remove(os.path.join(CACHE_DIR, old_f))
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
     urls = []
     if item.get("url"):

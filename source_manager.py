@@ -325,8 +325,10 @@ class SourceManager:
                         elif '酷狗' in p or p == 'kg': plat_set.add('kg')
                         elif '咪咕' in p or p == 'mg': plat_set.add('mg')
 
-                    target_file = next((f for f in cached_files if sid[:8] in f), None)
-                    if target_file:
+                    matching = [f for f in cached_files if sid[:8] in f and f.endswith(".js")]
+                    if matching:
+                        # 严格挑选文件修改时间最新（mtime）的脚本，彻底避免绑定到陈旧历史版本
+                        target_file = max(matching, key=lambda f: os.path.getmtime(os.path.join(CACHE_DIR, f)))
                         script_path = os.path.join(CACHE_DIR, target_file)
                         # 源码级防漏标扫描：检测脚本实际实现平台，弥补上游元数据漏标
                         try:
