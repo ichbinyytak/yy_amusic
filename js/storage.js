@@ -136,18 +136,63 @@ window.StorageManager = (function () {
         return { ok: true, playlist: pl };
     }
 
-    function removeTrackFromCustomPlaylist(playlistId, trackIndex) {
+    /**
+     * 从自建歌单中移除曲目
+     * @param {string} playlistId 歌单ID
+     * @param {number|number[]|string|object} trackTarget 单个索引、索引数组、歌名或歌曲对象
+     * @param {string} [artist] 歌手名（可选，配合歌名匹配）
+     */
+    function removeTrackFromCustomPlaylist(playlistId, trackTarget, artist) {
         const list = getCustomPlaylists();
         const pl = list.find(p => p.id === playlistId);
         if (!pl || !Array.isArray(pl.tracks)) return false;
 
-        if (trackIndex >= 0 && trackIndex < pl.tracks.length) {
-            pl.tracks.splice(trackIndex, 1);
-            // 重新排列 index 序号
+        // 1. 单个数字索引
+        if (typeof trackTarget === 'number' && trackTarget >= 0 && trackTarget < pl.tracks.length) {
+            pl.tracks.splice(trackTarget, 1);
             pl.tracks.forEach((t, idx) => { t.index = idx + 1; });
             saveCustomPlaylists(list);
             return true;
         }
+
+        // 2. 批量数字索引数组
+        if (Array.isArray(trackTarget)) {
+            const indexSet = new Set(trackTarget.filter(i => typeof i === 'number' && i >= 0 && i < pl.tracks.length));
+            if (indexSet.size === 0) return false;
+            pl.tracks = pl.tracks.filter((_, idx) => !indexSet.has(idx));
+            pl.tracks.forEach((t, idx) => { t.index = idx + 1; });
+            saveCustomPlaylists(list);
+            return true;
+        }
+
+        // 3. 兼容歌名/歌手匹配
+        let targetName = "";
+        let targetArtist = "";
+        if (typeof trackTarget === 'string') {
+            targetName = trackTarget.trim().toLowerCase();
+            targetArtist = (artist || "").trim().toLowerCase();
+        } else if (trackTarget && typeof trackTarget === 'object') {
+            targetName = (trackTarget.name || "").trim().toLowerCase();
+            targetArtist = (trackTarget.artist || "").trim().toLowerCase();
+        }
+
+        if (targetName) {
+            const idx = pl.tracks.findIndex(t => {
+                const n = (t.name || "").trim().toLowerCase();
+                const a = (t.artist || "").trim().toLowerCase();
+                if (targetArtist) {
+                    return n === targetName && (a === targetArtist || a.includes(targetArtist) || targetArtist.includes(a));
+                }
+                return n === targetName;
+            });
+            if (idx !== -1) {
+                pl.tracks.splice(idx, 1);
+                pl.tracks.forEach((t, i) => { t.index = i + 1; });
+                saveCustomPlaylists(list);
+                return true;
+            }
+        }
+
         return false;
     }
 

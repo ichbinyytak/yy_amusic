@@ -257,6 +257,12 @@ window.RightPanel = (function () {
 
         if (selCount > 0) {
             // 多选激活状态：歌单头部右侧集中承载批量操作，彻底无需底部悬浮弹窗
+            const removeCustomBtn = isViewingCustomPlaylist ? `
+                <button class="btn-action-icon" onclick="window.RightPanel.removeBatchSelectedFromCustom()" title="从当前自建歌单移出 (${selCount} 首)">
+                    －
+                </button>
+            ` : '';
+
             detailActions.innerHTML = `
                 <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playBatchSelected()" title="播放所选 (${selCount} 首)">
                     ▶
@@ -264,6 +270,7 @@ window.RightPanel = (function () {
                 <button class="btn-action-icon" onclick="window.RightPanel.openBatchAddToPlaylistModal()" title="加入自建歌单 (${selCount} 首)">
                     ＋
                 </button>
+                ${removeCustomBtn}
                 <button class="btn-action-icon" onclick="window.RightPanel.downloadSelectedTracks()" title="下载所选 (${selCount} 首)">
                     ↓
                 </button>
@@ -272,15 +279,27 @@ window.RightPanel = (function () {
                 </button>
             `;
         } else {
-            // 默认未勾选状态：遵照用户指令3：歌单名字右侧常驻【播放 ▶】与【添加 ＋】图标
-            detailActions.innerHTML = `
-                <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
-                    ▶
-                </button>
-                <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.openPlaylistGroupingModal()" title="分组管理 / 收藏">
-                    ＋
-                </button>
-            `;
+            // 默认未勾选状态：
+            // 自建歌单显示 ✕ 删除歌单；其它歌单显示 ＋ 分组管理/收藏
+            if (isViewingCustomPlaylist) {
+                detailActions.innerHTML = `
+                    <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
+                        ▶
+                    </button>
+                    <button class="btn-action-icon" id="btnDeleteCustomCurrent" onclick="window.RightPanel.deleteCurrentCustomPlaylist()" title="删除当前自建歌单">
+                        ✕
+                    </button>
+                `;
+            } else {
+                detailActions.innerHTML = `
+                    <button class="btn-action-icon btn-play-all" onclick="window.RightPanel.playCurrentAll()" title="播放全部">
+                        ▶
+                    </button>
+                    <button class="btn-action-icon ${isFav ? 'active' : ''}" id="btnFavCurrent" onclick="window.RightPanel.openPlaylistGroupingModal()" title="分组管理 / 收藏">
+                        ＋
+                    </button>
+                `;
+            }
         }
     }
 
@@ -624,15 +643,33 @@ window.RightPanel = (function () {
     // 删除当前自建歌单
     function deleteCurrentCustomPlaylist() {
         if (!isViewingCustomPlaylist || !currentCustomPlaylistId) return;
-        if (confirm(`确认删除自建歌单《${currentPlaylistData.name}》吗？`)) {
+        const plName = currentPlaylistData?.name || "当前歌单";
+        const doDelete = () => {
             window.StorageManager.deleteCustomPlaylist(currentCustomPlaylistId);
-            window.Shell?.showToast?.(`已删除歌单《${currentPlaylistData.name}》`);
+            window.Shell?.showToast?.(`已删除歌单《${plName}》`);
             if (detailTitle) detailTitle.innerText = "YY-Amusic";
             if (detailSubtitle) detailSubtitle.innerText = "请从左侧选择歌单或专辑";
             if (detailActions) detailActions.style.display = "none";
             if (detailBody) detailBody.innerHTML = '<div class="placeholder-box"><p>👈 请从左侧选择歌单或专辑浏览。</p></div>';
             currentTracks = [];
             currentPlaylistData = null;
+            isViewingCustomPlaylist = false;
+            currentCustomPlaylistId = null;
+            // 联动刷新左侧面板
+            window.LibraryPanel?.renderLibrary?.();
+        };
+
+        if (window.Shell?.openConfirmModal) {
+            window.Shell.openConfirmModal({
+                title: '✕ 删除歌单确认',
+                message: `确定彻底删除自建歌单《${plName}》吗？此操作无法撤销。`,
+                confirmText: '确认删除',
+                onConfirm: doDelete
+            });
+        } else {
+            if (confirm(`确认删除自建歌单《${plName}》吗？`)) {
+                doDelete();
+            }
         }
     }
 
@@ -665,12 +702,58 @@ window.RightPanel = (function () {
         }
     }
 
+    // 单曲从自建歌单移除
     function removeSongFromCustom(idx) {
         if (!isViewingCustomPlaylist || !currentCustomPlaylistId || !currentTracks[idx]) return;
         const track = currentTracks[idx];
-        window.StorageManager.removeTrackFromCustomPlaylist(currentCustomPlaylistId, track.name, track.artist);
-        selectCustomPlaylist(currentCustomPlaylistId);
-        window.Shell?.showToast?.(`已从歌单移除《${track.name}》`);
+        const doRemove = () => {
+            window.StorageManager.removeTrackFromCustomPlaylist(currentCustomPlaylistId, idx);
+            selectCustomPlaylist(currentCustomPlaylistId);
+            window.Shell?.showToast?.(`已从歌单移除《${track.name}》`);
+        };
+
+        if (window.Shell?.openConfirmModal) {
+            window.Shell.openConfirmModal({
+                title: '✕ 移出歌曲确认',
+                message: `确定将《${track.name}》从当前歌单移出吗？`,
+                confirmText: '确认移出',
+                onConfirm: doRemove
+            });
+        } else {
+            doRemove();
+        }
+    }
+
+    // 批量从自建歌单移出所选歌曲
+    function removeBatchSelectedFromCustom() {
+        if (!isViewingCustomPlaylist || !currentCustomPlaylistId) return;
+        const selIndices = Array.from(selectedTrackIndices);
+        if (selIndices.length === 0) return;
+
+        const count = selIndices.length;
+        const confirmMsg = count === 1
+            ? `确定从当前自建歌单移除《${currentTracks[selIndices[0]]?.name || '所选歌曲'}》吗？`
+            : `确定从当前自建歌单移除所选的 ${count} 首歌曲吗？`;
+
+        const doBatchRemove = () => {
+            window.StorageManager.removeTrackFromCustomPlaylist(currentCustomPlaylistId, selIndices);
+            clearSelection();
+            selectCustomPlaylist(currentCustomPlaylistId);
+            window.Shell?.showToast?.(`已从歌单移除 ${count} 首歌曲`);
+        };
+
+        if (window.Shell?.openConfirmModal) {
+            window.Shell.openConfirmModal({
+                title: '✕ 批量移出确认',
+                message: confirmMsg,
+                confirmText: '确认移出',
+                onConfirm: doBatchRemove
+            });
+        } else {
+            if (confirm(confirmMsg)) {
+                doBatchRemove();
+            }
+        }
     }
 
     /**
@@ -783,6 +866,7 @@ window.RightPanel = (function () {
         openAddToPlaylistModal,
         confirmAddPendingToPlaylist,
         removeSongFromCustom,
+        removeBatchSelectedFromCustom,
         handleCheckboxChange,
         handleCheckAll,
         clearSelection,
