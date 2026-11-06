@@ -117,7 +117,7 @@
       });
 
       this.audio.addEventListener('ended', () => {
-        if (this.isResolving || !this.isPlaying) return;
+        if (this.isResolving) return;
         this._handleTrackEnded();
       });
 
@@ -132,7 +132,7 @@
 
     // 歌轨自然结束时的处理
     _handleTrackEnded() {
-      if (this.isResolving || !this.isPlaying) return;
+      if (this.isResolving) return;
       if (this.playMode === 'single') {
         this.audio.currentTime = 0;
         this.audio.play().catch(() => {});
