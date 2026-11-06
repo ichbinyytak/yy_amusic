@@ -15,7 +15,13 @@ window.BackupManager = (function () {
      */
     function exportData() {
         const jsonStr = window.StorageManager.exportBackup();
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        if (!jsonStr || typeof jsonStr !== 'string') {
+            console.error("[BackupManager] 导出数据异常，未获取到合法的 JSON 字符串");
+            window.Shell?.showToast?.("导出失败，数据异常");
+            return;
+        }
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
         const filename = `amusic_backup_${dateStr}.json`;
 
         try {

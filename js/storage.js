@@ -453,7 +453,8 @@ window.StorageManager = (function () {
     /* -------------------- 4. 一键导出备份与导入恢复 -------------------- */
 
     /**
-     * 导出完整备份数据为 JSON 文件并由浏览器直接下载
+     * 导出完整备份数据为 JSON 字符串
+     * @returns {string} 格式化后的 JSON 字符串
      */
     function exportBackup() {
         const customs = getCustomPlaylists();
@@ -482,25 +483,7 @@ window.StorageManager = (function () {
             }
         };
 
-        const jsonStr = JSON.stringify(backupData, null, 2);
-        const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
-        const now = new Date();
-        const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-        const fileName = `amusic_backup_${dateStr}.json`;
-
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-
-        return {
-            fileName,
-            customsCount: customs.length,
-            favsCount: favs.length
-        };
+        return JSON.stringify(backupData, null, 2);
     }
 
     /**
