@@ -317,18 +317,35 @@ class SourceManager:
                     name = it.get('name', '未命名音源')
                     raw_plats = it.get('platforms', [])
                     
-                    plat_list = []
+                    plat_set = set()
                     for p in raw_plats:
-                        if '酷我' in p or p == 'kw': plat_list.append('kw')
-                        elif '网易' in p or p == 'wy': plat_list.append('wy')
-                        elif 'QQ' in p or p == 'tx': plat_list.append('tx')
-                        elif '酷狗' in p or p == 'kg': plat_list.append('kg')
-                        elif '咪咕' in p or p == 'mg': plat_list.append('mg')
-                    if not plat_list: plat_list = ['kw']
+                        if '酷我' in p or p == 'kw': plat_set.add('kw')
+                        elif '网易' in p or p == 'wy': plat_set.add('wy')
+                        elif 'QQ' in p or p == 'tx': plat_set.add('tx')
+                        elif '酷狗' in p or p == 'kg': plat_set.add('kg')
+                        elif '咪咕' in p or p == 'mg': plat_set.add('mg')
 
                     target_file = next((f for f in cached_files if sid[:8] in f), None)
                     if target_file:
                         script_path = os.path.join(CACHE_DIR, target_file)
+                        # 源码级防漏标扫描：检测脚本实际实现平台，弥补上游元数据漏标
+                        try:
+                            with open(script_path, 'r', encoding='utf-8', errors='ignore') as sf:
+                                scode = sf.read(8000)
+                                if re.search(r'[\'"]?kw[\'"]?\s*:', scode) or 'kuwo' in scode.lower():
+                                    plat_set.add('kw')
+                                if re.search(r'[\'"]?wy[\'"]?\s*:', scode) or '163' in scode:
+                                    plat_set.add('wy')
+                                if re.search(r'[\'"]?tx[\'"]?\s*:', scode) or 'qq' in scode.lower():
+                                    plat_set.add('tx')
+                                if re.search(r'[\'"]?kg[\'"]?\s*:', scode) or 'kugou' in scode.lower():
+                                    plat_set.add('kg')
+                                if re.search(r'[\'"]?mg[\'"]?\s*:', scode) or 'migu' in scode.lower():
+                                    plat_set.add('mg')
+                        except Exception:
+                            pass
+
+                        plat_list = list(plat_set) if plat_set else ['kw']
                         test_tid = "5886682" if 'kw' in plat_list else ("347230" if 'wy' in plat_list else "95769")
                         probe = _make_runner_probe(script_path, plat_list)
                         self.register(AudioSource(f"lx_{sid[:8]}", f"[LX] {name}", plat_list, probe, test_tid))
@@ -387,7 +404,8 @@ class SourceManager:
         if not song_id:
             return {"error": "缺少歌曲内部有效 ID"}
 
-        # 优先使用同平台音源，再顺延所有其他跨平台音源兜底，实现 100% 全量覆盖
+        # 优先使用同平台音源（第一梯队优先冲刺）
+        # 再顺延跨平台音源作为第二梯队兜底，确保 100% 覆盖的同时避免超时风暴
         same_plat_sources = self.get_ordered_sources(platform=target_plat)
         other_sources = [s for s in self.get_ordered_sources() if s not in same_plat_sources]
         all_ordered = same_plat_sources + other_sources
@@ -407,11 +425,14 @@ class SourceManager:
             }
 
             with ThreadPoolExecutor(max_workers=len(batch)) as exec_pool:
+                # 动态超时分配：本命源给予充裕 2.5s；跨平台尝试收紧至 1.2s，防止延迟雪崩
                 future_map = {
-                    exec_pool.submit(s.probe_func, cand_song, target_plat, 2.5): s for s in batch
+                    exec_pool.submit(s.probe_func, cand_song, target_plat, 2.5 if target_plat in s.platforms else 1.2): s
+                    for s in batch
                 }
                 for f in as_completed(future_map):
                     src = future_map[f]
+                    is_native_plat = target_plat in src.platforms
                     try:
                         res = f.result()
                         if res and res.get("url"):
@@ -432,9 +453,13 @@ class SourceManager:
                                 "rounds_log": rounds_log
                             }
                         else:
-                            src.record_miss()
+                            # 核心免责保护：只有在音源自身的本命支持平台失败时，才记录 miss；
+                            # 跨平台尝试失败绝对免责，杜绝误伤优质音源健康度！
+                            if is_native_plat:
+                                src.record_miss()
                     except Exception:
-                        src.record_miss()
+                        if is_native_plat:
+                            src.record_miss()
 
             rounds_log.append(r_log)
 
