@@ -72,6 +72,7 @@
       };
 
       this._bindAudioEvents();
+      this._initMediaSession();
     }
 
     // 解锁移动端与浏览器音频限制 (由用户手势触摸同步触发)
@@ -90,15 +91,113 @@
       } catch (e) {}
     }
 
+    // 4.1 集成 W3C 标准 navigator.mediaSession 媒体中枢 (锁屏/车载/蓝牙切歌与封面)
+    _initMediaSession() {
+      if (typeof window === 'undefined' || !('mediaSession' in navigator)) return;
+
+      const handlers = [
+        ['play', () => this.togglePlay()],
+        ['pause', () => this.togglePlay()],
+        ['previoustrack', () => this.prev()],
+        ['nexttrack', () => this.next()],
+        ['stop', () => { try { this.audio.pause(); this.audio.currentTime = 0; } catch (e) {} }],
+        ['seekto', (details) => {
+          if (details && details.seekTime !== undefined && this.audio.duration) {
+            this.audio.currentTime = Math.min(Math.max(0, details.seekTime), this.audio.duration);
+            this._updateMediaPositionState();
+          }
+        }],
+        ['seekbackward', (details) => {
+          const skip = (details && details.seekOffset) || 10;
+          this.audio.currentTime = Math.max(0, this.audio.currentTime - skip);
+          this._updateMediaPositionState();
+        }],
+        ['seekforward', (details) => {
+          const skip = (details && details.seekOffset) || 10;
+          if (this.audio.duration) {
+            this.audio.currentTime = Math.min(this.audio.duration, this.audio.currentTime + skip);
+            this._updateMediaPositionState();
+          }
+        }]
+      ];
+
+      for (const [action, handler] of handlers) {
+        try {
+          navigator.mediaSession.setActionHandler(action, handler);
+        } catch (e) {
+          // 浏览器未实现该特定 action，忽略
+        }
+      }
+    }
+
+    _updateMediaMetadata(song) {
+      if (typeof window === 'undefined' || !('mediaSession' in navigator)) return;
+      if (!song) return;
+
+      const MetaClass = window.MediaMetadata || (typeof MediaMetadata !== 'undefined' ? MediaMetadata : null);
+      if (!MetaClass) return;
+
+      const title = song.title || song.name || "未知曲目";
+      const artist = song.artist || "Apple Music";
+      const album = song.album || "Amusic";
+      const artworkUrl = song.artwork || song.cover || song.picUrl || "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍎</text></svg>";
+
+      try {
+        navigator.mediaSession.metadata = new MetaClass({
+          title: title,
+          artist: artist,
+          album: album,
+          artwork: [
+            { src: artworkUrl, sizes: '96x96', type: 'image/jpeg' },
+            { src: artworkUrl, sizes: '128x128', type: 'image/jpeg' },
+            { src: artworkUrl, sizes: '256x256', type: 'image/jpeg' },
+            { src: artworkUrl, sizes: '512x512', type: 'image/jpeg' }
+          ]
+        });
+      } catch (e) {
+        try {
+          navigator.mediaSession.metadata = new MetaClass({
+            title: title,
+            artist: artist,
+            album: album
+          });
+        } catch (err) {}
+      }
+    }
+
+    _updateMediaPlaybackState(isPlaying) {
+      if (typeof window === 'undefined' || !('mediaSession' in navigator)) return;
+      try {
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      } catch (e) {}
+    }
+
+    _updateMediaPositionState() {
+      if (typeof window === 'undefined' || !('mediaSession' in navigator) || !('setPositionState' in navigator.mediaSession)) return;
+      try {
+        const dur = this.audio.duration;
+        if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
+          navigator.mediaSession.setPositionState({
+            duration: dur,
+            playbackRate: this.audio.playbackRate || 1.0,
+            position: Math.min(Math.max(0, this.audio.currentTime || 0), dur)
+          });
+        }
+      } catch (e) {}
+    }
+
     // 绑定底层音频事件
     _bindAudioEvents() {
       this.audio.addEventListener('play', () => {
         this.isPlaying = true;
+        this._updateMediaPlaybackState(true);
+        this._updateMediaPositionState();
         this._emit('stateChange', { isPlaying: true, isResolving: this.isResolving });
       });
 
       this.audio.addEventListener('pause', () => {
         this.isPlaying = false;
+        this._updateMediaPlaybackState(false);
         this._emit('stateChange', { isPlaying: false, isResolving: this.isResolving });
       });
 
@@ -115,6 +214,7 @@
         });
 
         this._syncLyrics(cur);
+        this._updateMediaPositionState();
       });
 
       this.audio.addEventListener('ended', () => {
@@ -318,6 +418,7 @@
 
       // 1. 毫秒级即时视觉反馈：第 0 毫秒立即高亮与切歌名，杜绝卡顿感
       this._emit('trackChange', { index: idx, song });
+      this._updateMediaMetadata(song);
 
       // 并行请求歌词
       this.fetchLyrics(song);
@@ -521,6 +622,10 @@
       let prevIdx = this.currentIndex - 1;
       if (prevIdx < 0) prevIdx = this.playlist.length - 1;
       this.playIndex(prevIdx);
+    }
+
+    previous() {
+      this.prev();
     }
 
     seek(percent) {
