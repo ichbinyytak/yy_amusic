@@ -14,6 +14,7 @@ import sys
 import time
 import json
 import re
+import gzip
 import shutil
 import threading
 import subprocess
@@ -40,10 +41,37 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "sources_cache")
 RUNNER_SCRIPT = os.path.join(BASE_DIR, "lx_runner.js")
 
-# 6.1 Vercel Serverless 及无 Node 环境智能嗅探与自适应旁路
-NODE_BIN = shutil.which("node")
-IS_VERCEL = bool(os.environ.get("VERCEL"))
-HAS_NODE = bool(NODE_BIN) and not IS_VERCEL
+# 6.1 Vercel Serverless 及便携式 Node.js 沙箱自适应定位与极速解压
+def get_node_binary():
+    """获取可用的 node 可执行程序路径：
+    1. 优先使用系统 PATH 中的 node（如本地 Linux 环境、自建服务器）
+    2. 若不存在（如 Vercel 纯 Python Serverless），检查 /tmp/node 是否已存在且可执行
+    3. 若未解压，从仓库自带的 bin/node.gz 极速解压到 /tmp/node 并赋予可执行权限
+    """
+    sys_node = shutil.which("node")
+    if sys_node:
+        return sys_node
+
+    tmp_node = "/tmp/node"
+    if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
+        return tmp_node
+
+    # 尝试从 bin/node.gz 解压
+    gz_path = os.path.join(BASE_DIR, "bin", "node.gz")
+    if os.path.exists(gz_path):
+        try:
+            with gzip.open(gz_path, "rb") as f_in:
+                with open(tmp_node, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+            os.chmod(tmp_node, 0o755)
+            if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
+                return tmp_node
+        except Exception as e:
+            print(f"[SourceManager] 解压便携 Node 二进制异常: {e}")
+    return None
+
+NODE_BIN = get_node_binary()
+HAS_NODE = bool(NODE_BIN)
 
 def _make_runner_probe(script_path: str, supported_platforms: list):
     """为每一个 LX 脚本源生成专属探测函数，支持传递完整歌名、歌手与目标平台"""
@@ -72,7 +100,7 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
             "timeout": int(timeout * 1000)
         }
         cmd = [
-            "node",
+            NODE_BIN or "node",
             RUNNER_SCRIPT,
             script_path,
             plat,
