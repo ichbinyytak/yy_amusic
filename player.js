@@ -48,6 +48,8 @@
 
       // 播放模式: 'loop' (列表循环) | 'single' (单曲循环) | 'shuffle' (随机播放)
       this.playMode = 'loop';
+      this.shuffledNextIndex = null;
+      this.historyStack = [];
 
       // 状态标志
       this.isResolving = false;
@@ -281,11 +283,8 @@
       if (this.playMode === 'single') {
         this.audio.currentTime = 0;
         this.audio.play().catch(() => {});
-      } else if (this.playMode === 'shuffle') {
-        const nextIdx = Math.floor(Math.random() * this.playlist.length);
-        this.playIndex(nextIdx);
       } else {
-        // 默认列表循环
+        // 4.3 列表循环或随机播放模式下自然播完统一调用 next()，随机模式下直接复用已预解析的 shuffledNextIndex
         this.next();
       }
     }
@@ -356,7 +355,23 @@
       if (!this.playlist || this.playlist.length <= 1) return;
 
       this.prefetchTimer = setTimeout(() => {
-        const nextIdx = (this.currentIndex + 1) % this.playlist.length;
+        let nextIdx;
+        if (this.playMode === 'shuffle') {
+          // 4.3 随机模式：提前锁定随机下一首曲目目标（排除当前播放中的曲目）
+          const candidates = [];
+          for (let i = 0; i < this.playlist.length; i++) {
+            if (i !== this.currentIndex) candidates.push(i);
+          }
+          nextIdx = candidates.length > 0 
+            ? candidates[Math.floor(Math.random() * candidates.length)]
+            : 0;
+          this.shuffledNextIndex = nextIdx;
+        } else if (this.playMode === 'single') {
+          nextIdx = this.currentIndex;
+        } else {
+          nextIdx = (this.currentIndex + 1) % this.playlist.length;
+        }
+
         const nextSong = this.playlist[nextIdx];
         if (!nextSong) return;
         const key = this._getSongKey(nextSong);
@@ -396,7 +411,7 @@
     }
 
     // 播放指定索引的曲目 (首曲支持最长 5 秒寻链缓冲，中间曲目支持秒级预解析与快速顺延)
-    async playIndex(idx, isAutoSkip = false, isPlaylistFirstTrack = false) {
+    async playIndex(idx, isAutoSkip = false, isPlaylistFirstTrack = false, isHistoryBack = false) {
       if (idx < 0 || idx >= this.playlist.length) return;
       if (!isAutoSkip) {
         this.autoSkipCount = 0;
@@ -405,8 +420,18 @@
       this.resolveToken = (this.resolveToken || 0) + 1;
       const currentToken = this.resolveToken;
 
+      // 4.4 维护播放历史栈：非历史回退触发时，将当前有效歌曲索引压入栈
+      if (!isHistoryBack && this.currentIndex >= 0 && this.currentIndex !== idx && this.currentIndex < this.playlist.length) {
+        if (!this.historyStack) this.historyStack = [];
+        this.historyStack.push(this.currentIndex);
+        if (this.historyStack.length > 50) {
+          this.historyStack.shift();
+        }
+      }
+
       this.unlockAudio();
       this.currentIndex = idx;
+      this.shuffledNextIndex = null;
       const song = this.playlist[idx];
 
       // 立即停止正在播放的上一首音频，彻底切断前一首歌的声音与 ended 事件
@@ -608,7 +633,18 @@
       if (this.playlist.length === 0) return;
       this.unlockAudio();
       if (this.playMode === 'shuffle') {
-        const nextIdx = Math.floor(Math.random() * this.playlist.length);
+        // 4.3 优先使用预解析阶段锁定的随机目标，确保秒开
+        let nextIdx;
+        if (this.shuffledNextIndex !== null && this.shuffledNextIndex >= 0 && this.shuffledNextIndex < this.playlist.length && this.shuffledNextIndex !== this.currentIndex) {
+          nextIdx = this.shuffledNextIndex;
+        } else {
+          const candidates = [];
+          for (let i = 0; i < this.playlist.length; i++) {
+            if (i !== this.currentIndex) candidates.push(i);
+          }
+          nextIdx = candidates.length > 0 ? candidates[Math.floor(Math.random() * candidates.length)] : 0;
+        }
+        this.shuffledNextIndex = null;
         this.playIndex(nextIdx);
       } else {
         const nextIdx = (this.currentIndex + 1) % this.playlist.length;
@@ -619,6 +655,15 @@
     prev() {
       if (this.playlist.length === 0) return;
       this.unlockAudio();
+      // 4.4 优先从播放历史回退栈中出栈（完美支持随机播放及任意切歌的回溯）
+      if (this.historyStack && this.historyStack.length > 0) {
+        const prevIdx = this.historyStack.pop();
+        if (prevIdx >= 0 && prevIdx < this.playlist.length && prevIdx !== this.currentIndex) {
+          this.playIndex(prevIdx, false, false, true); // isHistoryBack = true
+          return;
+        }
+      }
+      // 历史栈为空时的兜底逻辑（线性上一首）
       let prevIdx = this.currentIndex - 1;
       if (prevIdx < 0) prevIdx = this.playlist.length - 1;
       this.playIndex(prevIdx);
@@ -664,6 +709,8 @@
     // 播放外部传入的整套曲目列表 (如 Apple Music 当前歌单) 并立即从指定索引播放
     playTracklist(tracks, startIndex = 0) {
       if (!Array.isArray(tracks) || tracks.length === 0) return;
+      this.historyStack = [];
+      this.shuffledNextIndex = null;
       this.playlist = tracks.map((t, idx) => ({
         index: idx + 1,
         title: t.name || t.title || "未知歌曲",
@@ -690,16 +737,23 @@
       } else {
         this.playMode = 'loop';
       }
+      this.shuffledNextIndex = null;
+      this._schedulePrefetch();
       this._emit('modeChange', this.playMode);
       return this.playMode;
     }
 
     setMode(mode) {
       if (['loop', 'single', 'shuffle', 'list-loop', 'single-loop'].includes(mode)) {
-        if (mode === 'list-loop') this.playMode = 'loop';
-        else if (mode === 'single-loop') this.playMode = 'single';
-        else this.playMode = mode;
-        this._emit('modeChange', this.playMode);
+        let newMode = mode;
+        if (mode === 'list-loop') newMode = 'loop';
+        else if (mode === 'single-loop') newMode = 'single';
+        if (this.playMode !== newMode) {
+          this.playMode = newMode;
+          this.shuffledNextIndex = null;
+          this._schedulePrefetch();
+          this._emit('modeChange', this.playMode);
+        }
       }
     }
 
@@ -712,6 +766,8 @@
     // 替换/设置当前播放列表（如歌单曲目加载后同步至队列，或搜索结果直接成为当前列表）
     setPlaylist(newList, autoPlayIndex = -1) {
       if (!Array.isArray(newList)) return;
+      this.historyStack = [];
+      this.shuffledNextIndex = null;
       this.playlist = newList.map((t, idx) => ({
         index: idx + 1,
         title: t.name || t.title || "未知歌曲",
