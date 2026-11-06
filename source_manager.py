@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-source_manager.py - 音源核心管理、就地测试、智能排班与双核并发调度模块
+========================================================
+模块：source_manager.py - 音源核心管理、就地测试、智能排班与双核并发调度模块
+命名空间：source_hub (SourceManager 单例)
+依赖协同：lx_runner.js, song_search.py, server.py, bin/node.gz
+--------------------------------------------------------
 核心原则：
-1. 极简与高内聚，纯 Python 标准库，0 额外重依赖
-2. 双核并发竞速（前2强源同时冲刺，毫秒级出声）
-3. 严格执行“零试听”（> 1.5MB）与拦截 81KB 假语音
-4. 动态自适应奖惩：胜者保持高位，连续2次未命中自动降级
+  1. 极简与高内聚：纯 Python 标准库，0 额外 pip 依赖
+  2. 便携式 Node 运行时：自带 bin/node.gz 32MB 压缩包，Serverless 冷启秒级自解压
+  3. 双核并发竞速：前 2 强源并行冲刺，毫秒级即时响应出声
+  4. 严格执行“零试听”：拦截 81KB 假语音，拦截 < 1.5MB 试听截断残卷
+  5. 动态自适应奖惩：胜者保持高位，连续未命中自动阶梯式降级
+--------------------------------------------------------
+功能目录：
+  1. 便携式 Node.js 沙箱自适应定位与极速解压 (get_node_binary)
+  2. LX 脚本沙箱探针与原生音源定义 (_make_runner_probe / _probe_*)
+  3. 音频流有效性与“零试听”深度校验 (verify_audio_url)
+  4. AudioSource 单源实体与动态权重模型 (AudioSource)
+  5. SourceManager 音源中枢与双核并发冲刺调度 (SourceManager: resolve_best_stream)
+========================================================
 """
 
 import os
@@ -41,7 +54,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "sources_cache")
 RUNNER_SCRIPT = os.path.join(BASE_DIR, "lx_runner.js")
 
-# 6.1 Vercel Serverless 及便携式 Node.js 沙箱自适应定位与极速解压
+# ========================================================
+# 区块 1: 便携式 Node.js 沙箱自适应定位与极速解压
+# ========================================================
 def get_node_binary():
     """获取可用的 node 可执行程序路径：
     1. 优先使用系统 PATH 中的 node（如本地 Linux 环境、自建服务器）
@@ -73,6 +88,9 @@ def get_node_binary():
 NODE_BIN = get_node_binary()
 HAS_NODE = bool(NODE_BIN)
 
+# ========================================================
+# 区块 2: LX 脚本沙箱探针与内置原生通道探针
+# ========================================================
 def _make_runner_probe(script_path: str, supported_platforms: list):
     """为每一个 LX 脚本源生成专属探测函数，支持传递完整歌名、歌手与目标平台"""
     def _probe(song_info, target_platform: str = "kw", timeout: float = 3.5):
@@ -121,6 +139,9 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
         return None
     return _probe
 
+# ========================================================
+# 区块 3: 音频直链真实性校验与“零试听”截断拦截
+# ========================================================
 def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
     """
     轻量秒级校验音频有效性：仅获取 HEAD 或 Range 请求头，不下载几兆音频 Body
@@ -217,7 +238,9 @@ def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
                 return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
     return None
 
-
+# ========================================================
+# 区块 4: AudioSource 单源模型实体与自适应排班模型
+# ========================================================
 class AudioSource:
     """音源模型实体，追踪本地网络实测延迟与动态战绩"""
     def __init__(self, source_id, name, platforms, probe_func, test_track_id):
@@ -280,7 +303,9 @@ class AudioSource:
         bonus = min(250.0, self.success_count * 25.0)
         return max(1.0, self.latency_ms + penalty - bonus)
 
-
+# ========================================================
+# 区块 5: SourceManager 音源中枢与双核并发冲刺调度
+# ========================================================
 class SourceManager:
     """音源调度总管：管理、测速、重排、双核并发全量冲刺"""
     def __init__(self):

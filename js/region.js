@@ -1,11 +1,20 @@
 /**
  * ========================================================
- * js/region.js - 区域板块控制器 (遵照 SITE_ARCHITECTURE.md)
- * 职责：
- * 1. 6大地区切换 (中国大陆|香港|台湾|美国|日本|英国) - 紧凑微型下拉
- * 2. 最新发布 (/new 13个音乐板块手风琴展开)
- * 3. 类别探索 (/search 48+ 官方音乐专区与排行榜多层就地展开)
- * 4. 严格执行按需懒加载 (Lazy Loading) 与 SWR 缓存
+ * 模块：js/region.js - 区域板块与官方分类控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.RegionPanel
+ * 依赖协同：window.currentStorefront, window.swrFetch, window.RightPanel
+ * --------------------------------------------------------
+ * 职责定位：
+ *   1. 6大地区切换 (中国大陆|香港|台湾|美国|日本|英国) - 紧凑微型下拉
+ *   2. 最新发布 (/new 13个音乐板块手风琴展开)
+ *   3. 类别探索 (/search 48+ 官方音乐专区与排行榜多层就地展开)
+ *   4. 严格执行按需懒加载 (Lazy Loading) 与 SWR 缓存
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 初始化与地区切换 (init / getStorefront)
+ *   2. 区域骨架手风琴渲染 (renderRegion - 最新发布与类别探索双抽屉)
+ *   3. 最新发布 13 音乐板块加载 (loadNewPage / renderNewSections)
+ *   4. 类别探索 48+ 专区与二级嵌套展开 (loadCategories / renderAllPartitions / loadPartitionSections)
  * ========================================================
  */
 
@@ -42,6 +51,9 @@ window.RegionPanel = (function () {
         return window.currentStorefront || (storefrontSelectEl ? storefrontSelectEl.value : "cn") || "cn";
     }
 
+    /* ========================================================
+     * 区块 1: 初始化与地区切换事件绑定
+     * ======================================================== */
     function init(containerEl, selectEl) {
         regionContainerEl = containerEl;
         storefrontSelectEl = selectEl;
@@ -59,11 +71,9 @@ window.RegionPanel = (function () {
         renderRegion();
     }
 
-    /**
-     * 渲染“区域”手风琴下属内容：
-     * 1. 包含“最新发布”子板块手风琴
-     * 2. 包含“类别探索”子板块手风琴
-     */
+    /* ========================================================
+     * 区块 2: 区域手风琴骨架渲染 (最新发布与类别探索双抽屉)
+     * ======================================================== */
     function renderRegion() {
         if (!regionContainerEl) return;
         regionContainerEl.innerHTML = "";
@@ -169,9 +179,9 @@ window.RegionPanel = (function () {
         regionContainerEl.appendChild(exploreSecBlock);
     }
 
-    /**
-     * 加载最新发布 (/new) 13 个音乐板块
-     */
+    /* ========================================================
+     * 区块 3: 最新发布 13 音乐板块按需懒加载 (SWR 缓存)
+     * ======================================================== */
     function loadNewPage(bodyEl) {
         const sf = getStorefront();
         const cacheKey = `new_page_${sf}`;
@@ -259,9 +269,9 @@ window.RegionPanel = (function () {
         });
     }
 
-    /**
-     * 加载全部 48+ 官方音乐分类
-     */
+    /* ========================================================
+     * 区块 4: 类别探索 48+ 专区与二级多层折叠展开
+     * ======================================================== */
     function loadCategories(bodyEl) {
         const sf = getStorefront();
         const cacheKey = `search_categories_${sf}`;

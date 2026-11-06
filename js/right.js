@@ -1,11 +1,15 @@
 /**
  * ========================================================
- * js/right.js - 右侧实体详情栏、响应式曲目表与批量操作控制器 (遵照 SITE_ARCHITECTURE.md)
- * 核心规范：
- * 1. 实体总览纯图标：▶ 播放全部 / ★ 收藏 / ✕ 删除 / ↓ 下载整单
- * 2. 曲目表格自适应排版：歌手名默认在歌曲名后 (· 歌手)，宽度受限时自动折行沉降至下方
- * 3. 极简复选框交互：默认仅显示纯净序号，悬停或多选时平滑变为复选框；已选>0时浮现批量操作栏
- * 4. 全局搜索结果直接在右侧详情区域展示
+ * 模块：js/right.js - 右侧实体详情栏、响应式曲目表与批量操作控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.RightPanel
+ * 依赖协同：window.player, window.StorageManager, window.Modals, window.ContextMenu, window.Downloader
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 歌单与专辑实体加载 (selectPlaylist / selectCuratedCollection / selectCustomPlaylist)
+ *   2. 实体操作头渲染 (renderHeaderActions —— ▶ 播放全部 / ★ 收藏 / ✕ 删除 / ↓ 打包)
+ *   3. 响应式自适应曲目表 (renderTracklist —— 序号/复选框无缝互斥切换、双击快速点播、单曲收藏)
+ *   4. 浮动批量多选工具栏 (floatingBatchBar —— 批量播放、批量添加到歌单、批量ZIP下载、批量删除)
+ *   5. 全局搜索结果与歌手联动路由 (renderSearchResults / searchArtistByName / openAlbumByTrack)
  * ========================================================
  */
 

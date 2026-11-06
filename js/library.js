@@ -1,13 +1,22 @@
 /**
  * ========================================================
- * js/library.js - 我的音乐库控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 模块：js/library.js - 我的音乐库手风琴与分组控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.LibraryPanel
+ * 依赖协同：window.StorageManager, window.RightPanel, window.Shell, window.ContextMenu
+ * --------------------------------------------------------
  * 扁平直接的分组层级：
- * - 顶部工具栏（备份歌单 | 恢复歌单）由 left.js 的 #libraryToolbarRow 承载
- * - 下方直接展示分组列表：
- *   1. 【未分组】(常驻置顶，不能变，不可重命名/删除，长按不弹出菜单)
- *   2. 自定义分组 (长按支持重命名、删除；不出现新建歌单)
- * - 歌单卡片：纯标题展示，点击仅在右侧展开曲目列表（绝不播放全部）；
- *   长按支持移动至分组、重命名(自建)、删除
+ *   - 顶部工具栏（备份歌单 | 恢复歌单）由 left.js 的 #libraryToolbarRow 承载
+ *   - 下方直接展示分组列表：
+ *     1. 【未分组】(常驻置顶，不能变，不可重命名/删除，长按不弹出菜单)
+ *     2. 自定义分组 (长按支持重命名、删除；不出现新建歌单)
+ *   - 歌单卡片：纯标题展示，点击仅在右侧展开曲目列表（绝不播放全部）；
+ *     长按支持移动至分组、重命名(自建)、删除
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 初始化与存储监听 (init / amusic-storage-changed)
+ *   2. 主渲染聚合驱动 (renderLibrary - 自建+收藏歌单聚合分组)
+ *   3. 分组手风琴容器生成 (createCategoryGroupBlock)
+ *   4. 分组与歌单交互控制 (promptRenameCategory / promptDeleteCategory / promptRenamePlaylist)
  * ========================================================
  */
 
@@ -30,6 +39,9 @@ window.LibraryPanel = (function () {
             .replace(/'/g, "&#039;");
     }
 
+    /* ========================================================
+     * 区块 1: 音乐库生命周期与数据驱动主渲染
+     * ======================================================== */
     function init(container) {
         containerElement = container;
         renderLibrary();
@@ -94,6 +106,9 @@ window.LibraryPanel = (function () {
         });
     }
 
+    /* ========================================================
+     * 区块 2: 分组手风琴容器生成 (支持嵌套歌单卡片与长按菜单)
+     * ======================================================== */
     function createCategoryGroupBlock(catName, items) {
         const groupSecId = `lib_cat_${catName}`;
         const isGroupOpen = expandedLibraryGroups.has(groupSecId);
@@ -192,6 +207,9 @@ window.LibraryPanel = (function () {
         return groupDiv;
     }
 
+    /* ========================================================
+     * 区块 3: 分组与歌单交互控制 (重命名、删除保护与二次确认)
+     * ======================================================== */
     function promptRenameCategory(oldName) {
         if (oldName === "未分组") {
             alert("【未分组】不可重命名");

@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Amusic - Apple 音乐纯文本数据库浏览器本地服务
-核心定位: 0 图片下载开销，直连 Apple Music 官方数据库与 SSR 渲染树，极速提取歌单与专辑。
-运行方式: python3 server.py
-访问地址: http://127.0.0.1:8088
+========================================================
+模块：server.py - 本地 HTTP 网关与 Apple Music / 音源底座调度服务
+核心定位：0 图片下载开销，直连 Apple Music 官方数据库与 SSR 渲染树，极速提取歌单与专辑
+依赖协同：source_manager.py, song_search.py, apple_catalog.py
+--------------------------------------------------------
+功能目录：
+  1. 网络安全校验与 SSRF 防护 (is_safe_external_url)
+  2. HTTP 统一响应与 ETag 304 快速协商 (Handler: send_json / send_error_json)
+  3. GET 路由矩阵 (/api/apple_new, /api/apple_search_page, /api/lyric, /api/stream_proxy)
+  4. POST 路由矩阵 (/api/resolve 双核冲刺, /api/sources/test, /api/sources/sync)
+  5. 多线程异步 TCP 服务器引导 (ThreadingTCPServer)
+========================================================
 """
 
 import http.server
@@ -35,6 +43,9 @@ from apple_catalog import (
     fetch_apple_room
 )
 
+# ========================================================
+# 区块 1: 网络安全校验与 SSRF / 私网穿透探测防护
+# ========================================================
 def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
     """
     网络安全防御：校验外部请求 URL 是否合法安全，严防 SSRF、本地敏感文件读取 (file://) 及私有内网穿透探测。
@@ -88,6 +99,9 @@ DEFAULT_TOKEN = (
     "wcf_7U-zcgUjY2L8d4HWFkdxP1YSJCkkqEpEtVPKpRARrlaag0DHyIpRcoUEWZU8kJlvx5Q7ZNp04OabfuiuAw"
 )
 
+# ========================================================
+# 区块 2: HTTP 统一响应封装与 ETag 304 缓存协商
+# ========================================================
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, directory=DIRECTORY, **kwargs):
         super().__init__(*args, directory=directory, **kwargs)
@@ -136,6 +150,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         data.sort(key=lambda x: x["latency_ms"])
         return data
 
+    # ========================================================
+    # 区块 3: GET 路由分发矩阵 (Apple 数据代理、歌词与音频流中继)
+    # ========================================================
     def do_GET(self):
         # 1. /new 页面结构化抓取 (全歌单/专辑模式)
         if self.path.startswith("/api/apple_new"):
@@ -306,6 +323,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         super().do_GET()
 
+    # ========================================================
+    # 区块 4: POST 路由分发矩阵 (音源测速、同步与全源双核冲刺)
+    # ========================================================
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -404,6 +424,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             pass
 
+# ========================================================
+# 区块 5: 多线程 TCP 服务实体与异步测速预热引导
+# ========================================================
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True

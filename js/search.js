@@ -1,10 +1,19 @@
 /**
  * ========================================================
- * js/search.js - 搜索与艺人中枢控制器 (遵照 SITE_ARCHITECTURE.md)
- * 职责：
- * 1. 统一管理全站搜索（顶栏搜索框、点击单曲歌手名触发联动搜索）
- * 2. 负责左侧搜索视图 (viewSearch) 的挂载与渲染（精选歌单、精选专辑）
- * 3. 管理 [← 返回] 机制，随时平滑恢复到搜索前的专区或音乐库视图
+ * 模块：js/search.js - 搜索与艺人中枢控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.SearchPanel
+ * 依赖协同：window.LeftPanel, window.RightPanel, window.apiRequest
+ * --------------------------------------------------------
+ * 职责定位：
+ *   1. 统一管理全站搜索（顶栏搜索框、点击单曲歌手名触发联动搜索）
+ *   2. 负责左侧搜索视图 (viewSearch) 的挂载与渲染（精选歌单、精选专辑）
+ *   3. 管理 [← 返回] 机制，随时平滑恢复到搜索前的专区或音乐库视图
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 搜索统一调度主入口 (init / search - 联动左侧歌单专辑与右侧单曲)
+ *   2. 结果与状态渲染 (renderLoadingState / renderResults / renderErrorState)
+ *   3. 搜索折叠分类区块生成 (createSearchSection)
+ *   4. 搜索退出与视图恢复 (exitSearch)
  * ========================================================
  */
 
@@ -27,6 +36,9 @@ window.SearchPanel = (function () {
             .replace(/'/g, "&#039;");
     }
 
+    /* ========================================================
+     * 区块 1: 搜索统一调度主入口与联动分发
+     * ======================================================== */
     function init(container) {
         containerElement = container;
     }
@@ -81,6 +93,9 @@ window.SearchPanel = (function () {
         }
     }
 
+    /* ========================================================
+     * 区块 2: 搜索视图加载/结果/异常状态渲染
+     * ======================================================== */
     function renderLoadingState(query) {
         if (!containerElement) return;
         containerElement.innerHTML = `
@@ -180,6 +195,9 @@ window.SearchPanel = (function () {
         `;
     }
 
+    /* ========================================================
+     * 区块 3: 搜索折叠分类区块生成 (歌单与专辑分组)
+     * ======================================================== */
     function createSearchSection(secId, title, count) {
         const block = document.createElement("div");
         block.className = "library-group-container";
@@ -213,9 +231,9 @@ window.SearchPanel = (function () {
         return { blockEl: block, bodyEl: body };
     }
 
-    /**
-     * 退出搜索，平滑恢复
-     */
+    /* ========================================================
+     * 区块 4: 退出搜索与平滑状态回退
+     * ======================================================== */
     function exitSearch() {
         currentQuery = "";
         const searchInput = document.getElementById("searchInput");

@@ -1,11 +1,17 @@
 /**
  * ========================================================
- * js/shell.js - 主页外壳控制器 (遵照 SITE_ARCHITECTURE.md)
- * 职责：
- * 1. 顶部紧凑搜索栏：输入后直接将结果路由到右侧详情区域
- * 2. 底部全局播放器播控与双行时间轴歌词
- * 3. 垂直音量直立滑块弹窗 (🔊 纯图标点击向上弹出，滑到底为 0，无静音按钮)
- * 4. 抽屉与收藏弹窗管理
+ * 模块：js/shell.js - 主页外壳控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.Shell
+ * 依赖协同：window.player, window.Modals, window.LeftPanel, window.RightPanel
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 顶栏搜索交互 (handleSearch / clearSearch / exitSearch)
+ *   2. 音量直立弹窗交互 (toggleVolumePopup / handleVerticalVolumeChange)
+ *   3. 播控与进度条 (updatePlayPauseButton / handleProgressBarClick / handleCycleMode)
+ *   4. 时间轴歌词系统 (renderLyricsView / expandLyricDock / collapseLyricDock)
+ *   5. 侧拉抽屉与底层音源 (toggleQueueModal / toggleSourceModal / testSources / syncSources)
+ *   6. 全局轻量 Toast 提示 (showToast)
+ *   7. 业务弹窗代理转发 (向后兼容无缝代理至 window.Modals)
  * ========================================================
  */
 

@@ -1,6 +1,19 @@
 /**
  * ========================================================
- * js/api.js - SWR 轻量缓存与 Apple Music API 网络底座
+ * 模块：js/api.js - SWR 缓存与 Apple Music API 网络底座 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.ClientCache, window.swrFetch, window.apiRequest, window.escapeHtml, window.formatDuration
+ * 依赖协同：原生 fetch / localStorage，服务于全站所有网络交互模块
+ * --------------------------------------------------------
+ * 核心特性：
+ *   1. 客户端 SWR (Stale-While-Revalidate) 缓存与严格 LRU 淘汰
+ *   2. ETag / If-None-Match 304 快速协商，0 冗余带宽
+ *   3. Apple Music Catalog API 直连调度
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 客户端 LRU 缓存引擎 (ClientCache)
+ *   2. SWR 验鲜请求驱动 (swrFetch)
+ *   3. Apple Catalog 请求器 (apiRequest)
+ *   4. 通用基础工具函数 (escapeHtml / formatDuration / showToast)
  * ========================================================
  */
 
@@ -12,7 +25,9 @@ try {
 } catch (e) {}
 window.currentStorefront = currentStorefront;
 
-// 客户端轻量持久化缓存引擎 (SWR: Stale-While-Revalidate)
+/* ========================================================
+ * 区块 1: 客户端轻量持久化缓存引擎 (SWR + LRU 淘汰)
+ * ======================================================== */
 const ClientCache = {
     PREFIX: 'amusic_swr_',
 
@@ -62,6 +77,9 @@ const ClientCache = {
     }
 };
 
+/* ========================================================
+ * 区块 2: SWR 验鲜网络请求驱动器 (ETag 协商)
+ * ======================================================== */
 /**
  * 通用 SWR 网络请求器：
  * 优先使用客户端本地缓存 0ms 秒开；后台携带 If-None-Match 向服务端验鲜 (304 / 200)
@@ -110,7 +128,9 @@ async function swrFetch(url, cacheKey, { onCached, onUpdated, onError, showLoadi
     }
 }
 
-// 核心 Apple Music Catalog API 请求函数 (支持 304 快速协商)
+/* ========================================================
+ * 区块 3: Apple Music Catalog 目录网络网关
+ * ======================================================== */
 async function apiRequest(endpoint, etag = '') {
     try {
         const headers = {};
@@ -131,7 +151,9 @@ async function apiRequest(endpoint, etag = '') {
     }
 }
 
-// 通用工具函数
+/* ========================================================
+ * 区块 4: 全局基础通用工具箱与命名空间挂载
+ * ======================================================== */
 function escapeHtml(str) {
     if (!str) return "";
     return String(str)

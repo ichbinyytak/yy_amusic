@@ -1,18 +1,26 @@
 /**
  * ========================================================
- * js/backup.js - 数据管理与备份恢复引擎 (遵照 SITE_ARCHITECTURE.md)
- * 纯符号极简：
- * ↑ 导出备份 JSON
- * ↓ 导入恢复 JSON
+ * 模块：js/backup.js - 数据备份与恢复控制器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.BackupManager
+ * 依赖协同：window.StorageManager, window.Shell (Toast), window.LibraryPanel
+ * --------------------------------------------------------
+ * 纯符号极简设计：
+ *   ↑ 导出备份 JSON
+ *   ↓ 导入恢复 JSON
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 一键全量导出 (exportData)
+ *   2. 本地文件导入恢复 (triggerImport)
+ *   3. 备份操作栏渲染 (renderBackupSection)
  * ========================================================
  */
 
 window.BackupManager = (function () {
     'use strict';
 
-    /**
-     * 一键导出完整数据为 JSON 备份文件
-     */
+    /* ========================================================
+     * 区块 1: 一键全量导出备份数据 (JSON Blob 下载)
+     * ======================================================== */
     function exportData() {
         const jsonStr = window.StorageManager.exportBackup();
         if (!jsonStr || typeof jsonStr !== 'string') {
@@ -44,9 +52,9 @@ window.BackupManager = (function () {
         }
     }
 
-    /**
-     * 触发外部 JSON 备份文件导入
-     */
+    /* ========================================================
+     * 区块 2: 本地 JSON 备份异步读取与还原合并
+     * ======================================================== */
     function triggerImport() {
         const input = document.createElement("input");
         input.type = "file";
@@ -80,9 +88,9 @@ window.BackupManager = (function () {
         setTimeout(() => document.body.removeChild(input), 1000);
     }
 
-    /**
-     * 渲染“数据管理”手风琴内容
-     */
+    /* ========================================================
+     * 区块 3: 数据管理手风琴面板渲染
+     * ======================================================== */
     function renderBackupSection(containerEl) {
         if (!containerEl) return;
         containerEl.innerHTML = `

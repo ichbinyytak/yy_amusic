@@ -1,10 +1,15 @@
 /**
  * ========================================================
- * js/left.js - 左侧大一统总装调度入口与公共卡片构造器 (遵照 SITE_ARCHITECTURE.md)
- * 职责：
- * 1. 挂载 3 大同级单窗口就地手风琴 (我的音乐库 / 区域 / 数据管理)
- * 2. 公共卡片构造器 (脱水清洗 Apple Music 前缀、彻底消除 🔗 官方精选、纯图标操作)
- * 3. 抽屉打开/关闭管理
+ * 模块：js/left.js - 左侧大一统总装调度入口与公共卡片构造器 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.LeftPanel
+ * 依赖协同：window.RegionPanel, window.LibraryPanel, window.RightPanel, window.Modals
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 顶部主标签页装配 (assembleTopAccordions —— Apple专区 / 我的音乐库 50/50 切换)
+ *   2. 单窗口就地手风琴折叠卡片 (createTopAccordion)
+ *   3. 公共歌单卡片构造器 (createPlaylistCard —— 自动清洗 Apple 前缀、快捷收藏与点播)
+ *   4. 侧边栏抽屉状态控制器 (toggleDrawer / openDrawer / closeDrawer)
+ *   5. 手势与鼠标拉动侧边栏 (initGestures —— 实时跟手、方向锁定、防误触与 Flick 快速轻扫)
  * ========================================================
  */
 

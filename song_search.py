@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-song_search.py - 歌曲检索、系统级 OpenCC 繁简转换与多维容错打分过滤模块
+========================================================
+模块：song_search.py - 歌曲检索、系统级 OpenCC 繁简转换与多维容错打分过滤模块
+核心接口：to_simple, calculate_song_match_score, search_candidates, get_song_lyric
+依赖协同：系统原生 libopencc.so, source_manager.py, server.py
+--------------------------------------------------------
 核心原则：
-1. 极简与极轻量（纯 Python 标准库 + 原生 C 库直连，0 pip 外部依赖）
-2. 系统原生 OpenCC 繁简自动转化（支持词组级惯用语转简体，< 0.1ms）
-3. 高容错模糊打分漏斗：
-   - 支持错别字、漏字、多字（结合字符重叠度与 SequenceMatcher 模糊比对）
-   - 支持语序颠倒（无序 Token 集合交集对齐）
-   - 负面词一票否决（-60分，绝对卡死翻唱/伴奏/DJ）
+  1. 极简与极轻量：纯 Python 标准库 + 原生 C 库直连，0 pip 外部依赖
+  2. 系统原生 OpenCC 繁简自动转化：词组级繁简对齐，单次调用 < 0.05ms
+  3. 工业级多维容错打分漏斗：
+     - 支持错别字、漏字、多字（SequenceMatcher 模糊比对）
+     - 支持歌手语序颠倒（无序 Token 集合交集对齐）
+     - 负面词大额重罚 (-60 分，绝对拦截翻唱/伴奏/DJ)
+  4. 双通道并发检索：酷我 + 网易云同时搜曲，耗时取决于最快通道
+--------------------------------------------------------
+功能目录：
+  1. 系统原生 OpenCC 繁简转换与词条清洗 (to_simple / clean_brackets)
+  2. 工业级多维加权打分模型 (calculate_song_match_score)
+  3. 酷我与网易云双通道并发搜索 (search_candidates / _search_kuwo / _search_netease)
+  4. 时间轴歌词直通提取与秒级解析 (get_song_lyric / _parse_lrc_text)
+========================================================
 """
 
 import os
@@ -24,7 +36,7 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # ========================================================
-# 1. 系统原生 OpenCC 繁简转换引擎 (调用 libopencc.so, 0.05ms)
+# 区块 1: 系统原生 OpenCC 繁简转换引擎 (调用 libopencc.so, 0.05ms)
 # ========================================================
 _opencc_lock = threading.Lock()
 _opencc_convert = None
@@ -152,7 +164,7 @@ def clean_punctuation(text: str) -> str:
 
 
 # ========================================================
-# 2. 工业级多维加权打分模型 (0 ~ 100 分，及格线 60 分)
+# 区块 2: 工业级多维加权打分模型 (0 ~ 100 分，及格线 60 分)
 # ========================================================
 
 def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: str = "",
@@ -261,7 +273,7 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 
 
 # ========================================================
-# 3. 歌曲检索接口 (自动繁转简 + 智能分词提取)
+# 区块 3: 酷我与网易云双通道并发搜索与聚合打分
 # ========================================================
 
 def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int) -> list:
@@ -372,7 +384,7 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
 
 
 # ========================================================
-# 4. 歌词直通提取接口 (纯文本解析 -> 毫秒级时间轴)
+# 区块 4: 时间轴歌词直通提取与秒级解析 (get_song_lyric)
 # ========================================================
 
 def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", artist: str = "") -> list:

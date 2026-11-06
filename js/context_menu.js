@@ -1,8 +1,19 @@
 /**
- * js/context_menu.js - YY-Amusic 全站通用轻量单例上下文菜单引擎 (遵照 SITE_ARCHITECTURE.md)
- * 1. 桌面端鼠标右键 (contextmenu)
- * 2. 触屏端长按 500ms (支持移动阈值防误触)
- * 3. 单例 DOM 动态复用，零冗余开销
+ * ========================================================
+ * 模块：js/context_menu.js - 全站通用轻量单例上下文菜单引擎 (遵照 SITE_ARCHITECTURE.md)
+ * 命名空间：window.ContextMenu
+ * 依赖协同：无外部依赖（全局单例 DOM 动态挂载），供 LeftPanel, RightPanel, LibraryPanel 深度消费
+ * --------------------------------------------------------
+ * 核心特性：
+ *   1. 桌面端鼠标右键 (contextmenu) 原生事件拦截
+ *   2. 触屏端 500ms 长按判定（支持 10px 移动阈值防误触与震动反馈）
+ *   3. 单例 DOM 动态复用，视口边缘自动贴边防溢出
+ * --------------------------------------------------------
+ * 功能目录：
+ *   1. 单例 DOM 创建与隐匿 (getMenuElement / hide)
+ *   2. 菜单渲染与视口边缘自适应 (show)
+ *   3. 元素交互双模监听绑定 (bind - 触屏长按与右键结合)
+ * ========================================================
  */
 
 window.ContextMenu = (function () {
@@ -10,6 +21,9 @@ window.ContextMenu = (function () {
 
     let menuEl = null;
 
+    /* ========================================================
+     * 区块 1: 单例 DOM 容器创建与隐藏监听
+     * ======================================================== */
     function getMenuElement() {
         if (!menuEl) {
             menuEl = document.createElement("div");
@@ -42,6 +56,9 @@ window.ContextMenu = (function () {
         }
     }
 
+    /* ========================================================
+     * 区块 2: 菜单项动态组装与视口边缘防溢出定位
+     * ======================================================== */
     /**
      * 显示上下文菜单
      * @param {Array<{icon?: string, label: string, onClick: Function, danger?: boolean, separator?: boolean}>} items
@@ -98,6 +115,9 @@ window.ContextMenu = (function () {
         el.style.top = `${Math.round(posY)}px`;
     }
 
+    /* ========================================================
+     * 区块 3: 元素交互双模监听绑定 (长按与右键互斥唤出)
+     * ======================================================== */
     /**
      * 绑定目标元素：触屏 500ms 长按与鼠标右键
      * @param {HTMLElement} element
