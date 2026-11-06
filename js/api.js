@@ -42,14 +42,23 @@ const ClientCache = {
     },
 
     cleanOldest() {
-        const keys = [];
+        const entries = [];
         for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
             if (k && k.startsWith(this.PREFIX)) {
-                keys.push(k);
+                try {
+                    const raw = localStorage.getItem(k);
+                    const parsed = JSON.parse(raw);
+                    entries.push({ key: k, time: (parsed && parsed.time) ? parsed.time : 0 });
+                } catch (e) {
+                    entries.push({ key: k, time: 0 });
+                }
             }
         }
-        keys.slice(0, 25).forEach(k => localStorage.removeItem(k));
+        // 按 time 升序排序：最久远、最陈旧的数据排在最前面
+        entries.sort((a, b) => a.time - b.time);
+        // 严格 LRU 淘汰最老旧的前 25 个条目，坚决保护活跃缓存
+        entries.slice(0, 25).forEach(item => localStorage.removeItem(item.key));
     }
 };
 
