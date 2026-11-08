@@ -282,7 +282,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             q = qs.get("q", [""])[0]
             artist = qs.get("artist", [""])[0]
-            cands = search_candidates(q, artist)
+            dur = qs.get("duration", [None])[0]
+            if dur:
+                try:
+                    dur = float(dur)
+                except Exception:
+                    dur = None
+            cands = search_candidates(q, artist, target_duration=dur)
             self.send_json(cands)
             return
 
@@ -373,7 +379,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 duration = round(cand.get("durationMillis", 0) / 1000)
 
             # 0. 快速检查内存热点缓存：同歌单重复切歌或复听 0ms 秒开
-            cache_key = f"{title.lower()}_{artist.lower()}".strip() if (title and not cand.get("id")) else ""
+            # 兼容 Apple Music 歌单切歌（即便带有 Apple ID，只要不是已知具体音源平台 platform 即适用标题缓存）
+            cache_key = f"{title.lower()}_{artist.lower()}".strip() if (title and not cand.get("platform")) else ""
             if cache_key:
                 with _RESOLVE_CACHE_LOCK:
                     entry = _RESOLVE_CACHE.get(cache_key)
@@ -401,7 +408,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # ----------------------------------------------------
             # 策略 A 第一阶梯（主力冲刺）：酷我 (代表TME) + 网易云 并发
             # ----------------------------------------------------
-            cands = search_candidates(search_key, target_artist=artist, target_title=title)
+            cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
             for c in cands:
                 c["duration"] = c.get("duration") or duration
                 res = source_hub.resolve_best_stream(c)
@@ -423,7 +430,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 策略 A 第二阶梯（独家兜底）：当第一梯队搜空或全失败时激活 QQ 音乐补漏
             # 彻底废除原有在酷我/网易原地打转的无效重试，直奔 QQ 音乐救活独家版权
             # ----------------------------------------------------
-            fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title)
+            fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
             for fc in fallback_cands:
                 fc["duration"] = fc.get("duration") or duration
                 res = source_hub.resolve_best_stream(fc)

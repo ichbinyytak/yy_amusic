@@ -31,10 +31,26 @@ import time
 import ctypes
 import threading
 import difflib
+import socket
 import urllib.request
 import urllib.parse
 import ssl
 from concurrent.futures import ThreadPoolExecutor
+
+# ----------------------------------------------------
+# 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
+# ----------------------------------------------------
+try:
+    _orig_getaddrinfo = socket.getaddrinfo
+
+    def _ipv4_first_getaddrinfo(*args, **kwargs):
+        res = _orig_getaddrinfo(*args, **kwargs)
+        ipv4 = [r for r in res if r[0] == socket.AF_INET]
+        return ipv4 if ipv4 else res
+
+    socket.getaddrinfo = _ipv4_first_getaddrinfo
+except Exception:
+    pass
 
 # ========================================================
 # 区块 1: 系统原生 OpenCC 繁简转换引擎 (调用 libopencc.so, 0.05ms)
@@ -195,7 +211,8 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
     # 1. 负面词重罚 (-60 分)
     forbidden_kws = [
         'cover', '翻唱', '伴奏', '伴奏版', '纯伴奏', 'instrumental',
-        'remix', 'dj', '电音版', '慢摇', '降调', '升调', '片段', '铃声'
+        'remix', 'dj', '电音版', '慢摇', '降调', '升调', '片段', '铃声',
+        '治愈版', '正式版', '抖音版', '热播版', '加速版'
     ]
     target_all = f"{tgt_t_simp} {tgt_art_simp}"
     for kw in forbidden_kws:
@@ -264,8 +281,10 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
                 score += 10.0
             elif diff <= 12:
                 score += 5.0
-            elif diff > 25:
-                score -= 25.0
+            elif diff > 30:
+                score -= 40.0  # 大幅扣分，直接淘汰截断与盗版短版本
+            elif diff > 18:
+                score -= 15.0
         except Exception as e:
             # print("kw lyric error:", e)
             pass
@@ -277,7 +296,7 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 # 区块 3: 酷我与网易云双通道并发搜索与聚合打分
 # ========================================================
 
-def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int) -> list:
+def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
     """酷我轻量检索通道"""
     res = []
     try:
@@ -292,7 +311,7 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
                 salb = it.get('ALBUM', '')
                 sdur = it.get('DURATION')
                 rid = it.get('MUSICRID', '').replace('MUSIC_', '')
-                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
+                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur, target_duration=target_duration)
                 if ok and rid:
                     res.append({
                         "platform": "kw",
@@ -307,7 +326,7 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
         pass
     return res
 
-def _search_netease(query_k: str, target_title: str, target_artist: str, limit: int) -> list:
+def _search_netease(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
     """网易云轻量检索通道"""
     res = []
     try:
@@ -322,7 +341,7 @@ def _search_netease(query_k: str, target_title: str, target_artist: str, limit: 
                 salb = s.get('album', {}).get('name', '')
                 sdur = round(s.get('duration', 0) / 1000) if s.get('duration') else None
                 sid = str(s.get('id', ''))
-                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
+                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur, target_duration=target_duration)
                 if ok and sid:
                     res.append({
                         "platform": "wy",
@@ -337,7 +356,7 @@ def _search_netease(query_k: str, target_title: str, target_artist: str, limit: 
         pass
     return res
 
-def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, target_title: str = "") -> list:
+def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, target_title: str = "", target_duration = None) -> list:
     """
     轻量快速检索歌曲候选列表，全链路经过繁转简与高容错打分清洗
     返回按匹配得分从高到低排序的正规候选列表（酷我与网易云双线并发检索）
@@ -372,8 +391,8 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     results = []
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
-            f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit)
-            f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit)
+            f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit, target_duration)
+            f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit, target_duration)
             try:
                 results.extend(f_kw.result(timeout=4.0))
             except Exception:
@@ -388,12 +407,12 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     # 若线程池在 Serverless 受限沙箱环境未成功返回，平滑同步降级单次抓取
     if not results:
         try:
-            results.extend(_search_kuwo(query_k, target_title, target_artist, limit))
+            results.extend(_search_kuwo(query_k, target_title, target_artist, limit, target_duration))
         except Exception:
             pass
         if not results:
             try:
-                results.extend(_search_netease(query_k, target_title, target_artist, limit))
+                results.extend(_search_netease(query_k, target_title, target_artist, limit, target_duration))
             except Exception:
                 pass
 
@@ -401,7 +420,7 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     return results
 
 
-def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int = 5) -> list:
+def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int = 5, target_duration = None) -> list:
     """QQ 音乐轻量公开检索通道 (用于策略 A 第二阶梯兜底，挽救独家与最新版本)"""
     res = []
     try:
@@ -418,7 +437,7 @@ def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int =
                 smid = s.get('songmid', '')
                 if not smid:
                     continue
-                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
+                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur, target_duration=target_duration)
                 if ok:
                     res.append({
                         "platform": "tx",
@@ -435,7 +454,7 @@ def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int =
     return res
 
 
-def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int = 5, target_title: str = "") -> list:
+def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int = 5, target_title: str = "", target_duration = None) -> list:
     """
     策略 A 第二阶梯兜底检索：
     当第一阶梯（酷我+网易云）搜空或无可用音频流时，向 QQ 音乐发起精准补漏，100% 挽救腾讯独家版权
@@ -459,7 +478,7 @@ def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int
         target_artist = to_simple(target_artist)
 
     query_k = re.sub(r'[&/、+]+', ' ', simplified_k).strip() or simplified_k
-    cands = _search_qq(query_k, target_title, target_artist, limit)
+    cands = _search_qq(query_k, target_title, target_artist, limit, target_duration=target_duration)
     cands.sort(key=lambda x: x["score"], reverse=True)
     return cands
 
