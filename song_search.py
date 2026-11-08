@@ -542,9 +542,10 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
 
 def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int = 5, target_title: str = "", target_duration = None) -> list:
     """
-    策略 A 第二阶梯兼容接口：因第一阶段已实现五路全息并发，此处作为备用防空接口
+    策略 A 第二阶梯兜底检索：
+    当第一阶梯（酷我/网易云）虽然搜到但全为 11 秒假音频或死链时，
+    立即向 QQ 音乐发起精准补漏，100% 挽救腾讯独家版权！
     """
-    return []
     simplified_k = to_simple(clean_brackets(keyword))
     if not simplified_k:
         return []
@@ -552,10 +553,11 @@ def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int
         target_title = to_simple(clean_brackets(target_title))
         target_artist = to_simple(target_artist) if target_artist else ""
     elif not target_artist:
-        parts = simplified_k.split()
-        if len(parts) >= 2:
-            target_title = " ".join(parts[:-1])
-            target_artist = parts[-1]
+        split_parts = re.split(r'\s*[\-_/|]\s*|\s+', simplified_k)
+        split_parts = [p.strip() for p in split_parts if p.strip()]
+        if len(split_parts) >= 2:
+            target_title = " ".join(split_parts[:-1])
+            target_artist = split_parts[-1]
         else:
             target_title = simplified_k
             target_artist = ""
@@ -563,7 +565,10 @@ def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int
         target_title = simplified_k
         target_artist = to_simple(target_artist)
 
-    query_k = re.sub(r'[&/、+]+', ' ', simplified_k).strip() or simplified_k
+    query_k = re.sub(r'[\-_&/、+|]+', ' ', simplified_k).strip() or simplified_k
+    if target_artist and target_artist not in query_k:
+        query_k = f"{query_k} {target_artist}".strip()
+
     cands = _search_qq(query_k, target_title, target_artist, limit, target_duration=target_duration)
     cands.sort(key=lambda x: x["score"], reverse=True)
     return cands
