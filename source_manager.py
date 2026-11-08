@@ -721,14 +721,14 @@ class SourceManager:
             }
 
             # 【方案 A 阶梯残酷筛选制】：
-            # 前 2 轮 (前 8 个源)：残酷卡 0.7 秒极限！给王牌源留出物理安全缓冲，同时逼出能在 300~600ms 内秒出流的神源，慢源超时立即降权避让
-            # 第 3 轮 (安全气囊兜底)：放宽至 1.0 秒，杜绝极端孤品或轻微跨网抖动下被误杀
+            # 前 2 轮 (前 8 个源)：单源 0.9 秒极限！正常 300~500ms 即出声秒退，给跨国微抖动留足物理缓冲，杜绝误杀王牌海棠/车机源
+            # 第 3 轮 (安全气囊兜底)：放宽至 1.2 秒，确保极端冷门或需跑外部脚本的孤品曲目稳妥出声
             if round_idx < 2:
-                single_probe_timeout = 0.7
-                round_timeout = 0.75
+                single_probe_timeout = 0.9
+                round_timeout = 0.95
             else:
-                single_probe_timeout = 1.0
-                round_timeout = 1.05
+                single_probe_timeout = 1.2
+                round_timeout = 1.25
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:

@@ -296,23 +296,14 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 # 区块 3: 五大天王全息并发检索与聚合打分 (QQ + 酷我 + 网易 + 酷狗 + 咪咕)
 # ========================================================
 
-_KW_SEARCH_FAILS = 0
-_KW_SEARCH_LAST_FAIL = 0
-_MG_SEARCH_FAILS = 0
-_MG_SEARCH_LAST_FAIL = 0
-
 def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
-    """酷我轻量检索通道 (带海外阻断快速熔断)"""
-    global _KW_SEARCH_FAILS, _KW_SEARCH_LAST_FAIL
-    if _KW_SEARCH_FAILS >= 2 and (time.time() - _KW_SEARCH_LAST_FAIL) < 300:
-        return []
+    """酷我轻量检索通道"""
     res = []
     try:
         url_kw = f"http://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        with urllib.request.urlopen(req, timeout=0.8) as r:
+        with urllib.request.urlopen(req, timeout=1.5) as r:
             data = json.loads(r.read().decode('utf-8', errors='ignore'))
-            _KW_SEARCH_FAILS = 0
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
                 sart = it.get('ARTIST', '')
@@ -331,8 +322,7 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
                         "score": round(score, 1)
                     })
     except Exception:
-        _KW_SEARCH_FAILS += 1
-        _KW_SEARCH_LAST_FAIL = time.time()
+        pass
     return res
 
 def _search_netease(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
@@ -521,8 +511,8 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
             for fn, lim in search_funcs
         }
         # 找房子闪电并发：酷我 + 网易云 原生秒开通道 + QQ 音乐兜底
-        # 正常 200~350ms 即返回；上限紧凑收紧至 0.8s，超时未归即刻硬截断，绝不死等慢源
-        for f in as_completed(future_to_fn, timeout=0.8):
+        # 绝大多数情况下 200~350ms 命中即短路秒退；给 1.2s 安全缓冲，避免跨网抖动时误杀王牌酷我源
+        for f in as_completed(future_to_fn, timeout=1.2):
             try:
                 cands = f.result()
                 if cands:
