@@ -449,6 +449,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if cand.get("platform") and cand.get("id"):
                 res = source_hub.resolve_best_stream(cand)
                 if res and res.get("success"):
+                    try:
+                        res["lyrics"] = get_song_lyric(cand.get("platform", ""), cand.get("id", ""), title, artist)
+                    except Exception:
+                        res["lyrics"] = []
                     self.send_json(res)
                     return
 
@@ -463,6 +467,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         res["target_title"] = title
                         res["target_artist"] = artist
                         res["source_name"] = str(res.get("source_name", "")) + " ☁️云快取"
+                        try:
+                            res["lyrics"] = get_song_lyric(cloud_cand.get("platform", ""), cloud_cand.get("id", ""), title, artist)
+                        except Exception:
+                            res["lyrics"] = []
                         if cache_key:
                             with _RESOLVE_CACHE_LOCK:
                                 if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
@@ -515,6 +523,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     res["matched_candidate"] = c
                     res["target_title"] = title
                     res["target_artist"] = artist
+                    try:
+                        res["lyrics"] = get_song_lyric(c.get("platform", ""), c.get("id", ""), title, artist)
+                    except Exception:
+                        res["lyrics"] = []
                     if cache_key:
                         with _RESOLVE_CACHE_LOCK:
                             if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
@@ -546,6 +558,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         res["matched_candidate"] = fc
                         res["target_title"] = title
                         res["target_artist"] = artist
+                        try:
+                            res["lyrics"] = get_song_lyric(fc.get("platform", ""), fc.get("id", ""), title, artist)
+                        except Exception:
+                            res["lyrics"] = []
                         if cache_key:
                             with _RESOLVE_CACHE_LOCK:
                                 if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:

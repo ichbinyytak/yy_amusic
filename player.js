@@ -303,13 +303,16 @@
       }
     }
 
-    // 毫秒级歌词同步
+    // 毫秒级歌词同步 (带 150ms 听觉-视觉感知前置补偿)
     _syncLyrics(currentTime) {
       if (!this.lyrics || this.lyrics.length === 0) return;
 
+      // 引入 150ms 听觉感知前置补偿，抵消 HTML5 audio timeupdate 事件 250ms 采样周期滞后感
+      const syncTime = (currentTime || 0) + 0.15;
+
       let idx = -1;
       for (let i = 0; i < this.lyrics.length; i++) {
-        if (currentTime >= this.lyrics[i].time) {
+        if (syncTime >= this.lyrics[i].time) {
           idx = i;
         } else {
           break;
@@ -631,6 +634,20 @@
       try {
         if (data && data.success && data.url) {
           this.autoSkipCount = 0;
+
+          // 音画同源原子化：优先直接装配随 resolve 一并下发的高精同源正版歌词
+          if (data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
+            this.lyrics = data.lyrics;
+            this.currentLyricIdx = -1;
+            this._syncLyrics(0);
+            this._emit('lyricUpdate', {
+              index: 0,
+              currentLine: this.lyrics[0] ? this.lyrics[0].text : "",
+              nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
+              allLines: this.lyrics
+            });
+          }
+
           // 写入前端短效缓存供回切与复听使用 (45分钟TTL)
           this._setCachedResolve(songKey, {
             url: data.url,

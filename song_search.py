@@ -592,78 +592,239 @@ def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int
 # 区块 4: 时间轴歌词直通提取与秒级解析 (get_song_lyric)
 # ========================================================
 
-def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", artist: str = "") -> list:
-    """获取并统一解析标准歌词列表: [{"time": float, "text": str}]"""
-    lines = []
+# 歌词内存短效缓存 (cache_key -> (lines, ts))，容量 256 首，存活 2 小时
+_LYRIC_CACHE = {}
+_LYRIC_CACHE_LOCK = threading.Lock()
+_LYRIC_CACHE_MAX = 256
+_LYRIC_TTL_SEC = 7200
 
-    def _parse_lrc_text(lrc_text: str) -> list:
-        parsed = []
-        for line in lrc_text.splitlines():
-            m = re.match(r'\[(\d+):(\d+(?:\.\d+)?)\](.*)', line)
-            if m:
-                mins, secs, txt = m.groups()
-                t = round(int(mins) * 60 + float(secs), 2)
-                txt = txt.strip()
-                if txt:
-                    parsed.append({"time": t, "text": txt})
-        return parsed
+def _parse_lrc_text(lrc_text: str) -> list:
+    """
+    工业级标准 LRC 时间轴解析器：
+    1. 支持 [offset:xxx] (毫秒) 全局时间轴平移修正
+    2. 支持一行多时间戳语法展开（如 [01:00.00][02:00.00]副歌歌词）
+    3. 过滤 ti/ar/al/by/offset 等无意义元数据行
+    4. 严格执行时间单调递增排序，杜绝错位
+    """
+    if not lrc_text:
+        return []
 
-    # 1. 尝试网易云直连
-    if platform == "wy" and song_id and str(song_id).isdigit():
+    # 1. 提取全局偏移量 [offset:xxx] (单位毫秒)
+    offset_sec = 0.0
+    offset_m = re.search(r'\[offset:\s*([+-]?\d+)\s*\]', lrc_text, re.IGNORECASE)
+    if offset_m:
         try:
-            url = f"http://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            offset_sec = int(offset_m.group(1)) / 1000.0
+        except Exception:
+            offset_sec = 0.0
+
+    parsed = []
+    # 2. 逐行解析时间戳与歌词
+    for line in lrc_text.splitlines():
+        line = line.strip()
+        if not line or re.match(r'^\[(ti|ar|al|by|offset|length|tool|re|ve):.*\]$', line, re.IGNORECASE):
+            continue
+
+        matches = list(re.finditer(r'\[(\d+):(\d+(?:\.\d+)?)\]', line))
+        if not matches:
+            continue
+
+        txt = re.sub(r'\[\d+:\d+(?:\.\d+)?\]', '', line).strip()
+        if not txt:
+            continue
+
+        for m in matches:
+            mins, secs = m.groups()
+            t = round(int(mins) * 60 + float(secs) + offset_sec, 2)
+            if t < 0:
+                t = 0.0
+            parsed.append({"time": t, "text": txt})
+
+    parsed.sort(key=lambda x: x["time"])
+    return parsed
+
+def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", artist: str = "") -> list:
+    """
+    获取并统一解析标准歌词列表: [{"time": float, "text": str}]
+    核心原则：音画绝对同源优先；若无源则按 QQ(正版华语主流) -> 酷我 -> 网易云 顺序严格防伪过滤
+    """
+    plat_str = (platform or "").strip().lower()
+    sid_str = str(song_id or "").strip()
+    cache_key = f"{plat_str}_{sid_str}_{title.strip().lower()}_{artist.strip().lower()}"
+
+    with _LYRIC_CACHE_LOCK:
+        entry = _LYRIC_CACHE.get(cache_key)
+        if entry and (time.time() - entry[1]) < _LYRIC_TTL_SEC:
+            return entry[0]
+
+    lines = []
+    clean_t = clean_brackets(to_simple(title))
+    clean_a = to_simple(artist)
+
+    # 1. 优先尝试 QQ 音乐 (tx) 官方正版录音室标准 LRC (覆盖华语顶级版权池)
+    if plat_str in ("tx", "qq") and sid_str:
+        try:
+            url = f"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={sid_str}&format=json&nobase64=1"
+            req = urllib.request.Request(url, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=2.2) as r:
+                d = json.loads(r.read().decode('utf-8'))
+                lrc = d.get('lyric', '')
+                if lrc:
+                    if not lrc.strip().startswith('['):
+                        import base64
+                        try:
+                            lrc = base64.b64decode(lrc).decode('utf-8', errors='ignore')
+                        except Exception:
+                            pass
+                    lines = _parse_lrc_text(lrc)
+                    if lines:
+                        with _LYRIC_CACHE_LOCK:
+                            if len(_LYRIC_CACHE) >= _LYRIC_CACHE_MAX:
+                                _LYRIC_CACHE.pop(next(iter(_LYRIC_CACHE)))
+                            _LYRIC_CACHE[cache_key] = (lines, time.time())
+                        return lines
+        except Exception:
+            pass
+
+    # 2. 尝试网易云 (wy) 直连
+    if plat_str in ("wy", "netease") and sid_str and sid_str.isdigit():
+        try:
+            url = f"http://music.163.com/api/song/lyric?os=pc&id={sid_str}&lv=-1"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=2.0) as r:
                 data = json.loads(r.read().decode('utf-8'))
                 lrc_text = data.get('lrc', {}).get('lyric', '')
                 if lrc_text:
                     lines = _parse_lrc_text(lrc_text)
                     if lines:
+                        with _LYRIC_CACHE_LOCK:
+                            if len(_LYRIC_CACHE) >= _LYRIC_CACHE_MAX:
+                                _LYRIC_CACHE.pop(next(iter(_LYRIC_CACHE)))
+                            _LYRIC_CACHE[cache_key] = (lines, time.time())
                         return lines
         except Exception:
             pass
 
-    # 2. 尝试酷我直连 (仅当是纯数字有效酷我 RID 时尝试，超时 1.0s 快速放行)
-    if platform == "kw" and song_id and str(song_id).isdigit() and len(str(song_id)) <= 10:
+    # 3. 尝试酷我 (kw) 直连
+    if plat_str in ("kw", "kuwo") and sid_str:
+        kw_rid = sid_str.replace("MUSIC_", "")
+        if kw_rid.isdigit():
+            try:
+                url = f"http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={kw_rid}&httpsStatus=1"
+                req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'})
+                with urllib.request.urlopen(req, timeout=1.5) as r:
+                    raw = r.read().decode('utf-8', errors='ignore').strip()
+                    data = json.loads(raw)
+                    items = (data.get('data') or {}).get('lrclist') or []
+                    for item in items:
+                        if not item: continue
+                        t = round(float(item.get('time', 0)), 2)
+                        txt = item.get('lineLyric', '').strip()
+                        if txt:
+                            lines.append({"time": t, "text": txt})
+                    if lines:
+                        with _LYRIC_CACHE_LOCK:
+                            if len(_LYRIC_CACHE) >= _LYRIC_CACHE_MAX:
+                                _LYRIC_CACHE.pop(next(iter(_LYRIC_CACHE)))
+                            _LYRIC_CACHE[cache_key] = (lines, time.time())
+                        return lines
+            except Exception:
+                pass
+
+    # 4. 万能歌名+歌手全息兜底检索 (优先 QQ 音乐官方原版，杜绝网易云野生翻唱张冠李戴)
+    q_str = f"{clean_t} {clean_a}".strip()
+    if q_str:
+        # 4.1 优先 QQ 音乐检索正版单曲 LRC
         try:
-            url = f"http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={song_id}&httpsStatus=1"
-            req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'})
-            with urllib.request.urlopen(req, timeout=1.0) as r:
-                raw = r.read().decode('utf-8', errors='ignore').strip()
-                data = json.loads(raw)
-                items = (data.get('data') or {}).get('lrclist') or []
-                for item in items:
-                    if not item: continue
-                    t = round(float(item.get('time', 0)), 2)
-                    txt = item.get('lineLyric', '').strip()
-                    if txt:
-                        lines.append({"time": t, "text": txt})
-                if lines:
-                    return lines
+            url_qq_search = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n=5&w={urllib.parse.quote(q_str)}&format=json"
+            req = urllib.request.Request(url_qq_search, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=2.0) as r:
+                data = json.loads(r.read().decode('utf-8'))
+                songs = (data.get('data') or {}).get('song', {}).get('list', [])
+                for s in songs:
+                    mid = s.get('songmid')
+                    s_name = s.get('songname', '')
+                    s_arts = [a.get('name', '') for a in s.get('singer', [])]
+                    s_art = "/".join(s_arts)
+                    score, ok = calculate_song_match_score(s_name, s_art, "", clean_t, clean_a)
+                    if ok and mid:
+                        url_lrc = f"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={mid}&format=json&nobase64=1"
+                        req_l = urllib.request.Request(url_lrc, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req_l, timeout=2.0) as rl:
+                            ld = json.loads(rl.read().decode('utf-8'))
+                            lrc = ld.get('lyric', '')
+                            if lrc:
+                                if not lrc.strip().startswith('['):
+                                    import base64
+                                    try: lrc = base64.b64decode(lrc).decode('utf-8', errors='ignore')
+                                    except Exception: pass
+                                lines = _parse_lrc_text(lrc)
+                                if lines:
+                                    with _LYRIC_CACHE_LOCK:
+                                        if len(_LYRIC_CACHE) >= _LYRIC_CACHE_MAX:
+                                            _LYRIC_CACHE.pop(next(iter(_LYRIC_CACHE)))
+                                        _LYRIC_CACHE[cache_key] = (lines, time.time())
+                                    return lines
         except Exception:
             pass
 
-    # 3. 万能歌名+歌手直通解析 (0 封禁，99.9% 覆盖所有华语流行正版单曲)
-    clean_t = clean_brackets(to_simple(title))
-    clean_a = to_simple(artist)
-    q_str = f"{clean_t} {clean_a}".strip()
-    if q_str:
+        # 4.2 次选酷我音乐检索
+        try:
+            url_kw_search = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q_str)}&pn=0&rn=3&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
+            req = urllib.request.Request(url_kw_search, headers={'User-Agent': 'okhttp/3.10.0'})
+            with urllib.request.urlopen(req, timeout=1.5) as r:
+                data = json.loads(r.read().decode('utf-8', errors='ignore'))
+                for it in (data.get('abslist') or []):
+                    rid = it.get('MUSICRID', '').replace('MUSIC_', '')
+                    if rid.isdigit():
+                        u_lrc = f"http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={rid}&httpsStatus=1"
+                        req_kl = urllib.request.Request(u_lrc, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'})
+                        with urllib.request.urlopen(req_kl, timeout=1.5) as rl:
+                            kl_raw = rl.read().decode('utf-8', errors='ignore').strip()
+                            kl_data = json.loads(kl_raw)
+                            items = (kl_data.get('data') or {}).get('lrclist') or []
+                            for item in items:
+                                if not item: continue
+                                t = round(float(item.get('time', 0)), 2)
+                                txt = item.get('lineLyric', '').strip()
+                                if txt:
+                                    lines.append({"time": t, "text": txt})
+                            if lines:
+                                with _LYRIC_CACHE_LOCK:
+                                    if len(_LYRIC_CACHE) >= _LYRIC_CACHE_MAX:
+                                        _LYRIC_CACHE.pop(next(iter(_LYRIC_CACHE)))
+                                    _LYRIC_CACHE[cache_key] = (lines, time.time())
+                                return lines
+        except Exception:
+            pass
+
+        # 4.3 最后网易云严格过滤匹配 (严禁无版权翻唱盲入)
         try:
             q_enc = urllib.parse.quote(q_str)
-            u_search = f"http://music.163.com/api/search/get?s={q_enc}&type=1&offset=0&limit=1"
+            u_search = f"http://music.163.com/api/search/get?s={q_enc}&type=1&offset=0&limit=3"
             req = urllib.request.Request(u_search, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=2.2) as r:
+            with urllib.request.urlopen(req, timeout=2.0) as r:
                 d = json.loads(r.read().decode('utf-8'))
                 songs = (d.get('result') or {}).get('songs') or []
-                if songs and songs[0].get('id'):
-                    wid = songs[0]['id']
-                    u_lrc = f"http://music.163.com/api/song/lyric?os=pc&id={wid}&lv=-1"
-                    req_l = urllib.request.Request(u_lrc, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req_l, timeout=2.5) as rl:
-                        l_data = json.loads(rl.read().decode('utf-8'))
-                        lrc_text = (l_data.get('lrc') or {}).get('lyric', '')
-                        if lrc_text:
-                            return _parse_lrc_text(lrc_text)
+                for s in songs:
+                    s_name = s.get('name', '')
+                    s_art = "/".join(a.get('name', '') for a in s.get('artists', []))
+                    score, ok = calculate_song_match_score(s_name, s_art, "", clean_t, clean_a)
+                    if ok and s.get('id'):
+                        wid = s['id']
+                        u_lrc = f"http://music.163.com/api/song/lyric?os=pc&id={wid}&lv=-1"
+                        req_l = urllib.request.Request(u_lrc, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req_l, timeout=2.0) as rl:
+                            l_data = json.loads(rl.read().decode('utf-8'))
+                            lrc_text = (l_data.get('lrc') or {}).get('lyric', '')
+                            if lrc_text:
+                                lines = _parse_lrc_text(lrc_text)
+                                if lines:
+                                    with _LYRIC_CACHE_LOCK:
+                                        if len(_LYRIC_CACHE) >= _LYRIC_CACHE_MAX:
+                                            _LYRIC_CACHE.pop(next(iter(_LYRIC_CACHE)))
+                                        _LYRIC_CACHE[cache_key] = (lines, time.time())
+                                    return lines
         except Exception:
             pass
 
