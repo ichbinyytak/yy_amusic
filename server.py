@@ -283,6 +283,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             q = qs.get("q", [""])[0]
             artist = qs.get("artist", [""])[0]
             dur = qs.get("duration", [None])[0]
+            if qs.get("debug"):
+                import song_search
+                debug_info = {}
+                try:
+                    debug_info["kw"] = song_search._search_kuwo(q, q, artist, 5)
+                    debug_info["kw_last_err"] = getattr(song_search, "_search_kuwo_last_err", "")
+                except Exception as e:
+                    debug_info["kw_err"] = f"{type(e)}: {e}"
+                try:
+                    debug_info["ne"] = song_search._search_netease(q, q, artist, 5)
+                except Exception as e:
+                    debug_info["ne_err"] = f"{type(e)}: {e}"
+                self.send_json(debug_info)
+                return
             if dur:
                 try:
                     dur = float(dur)
