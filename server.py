@@ -285,7 +285,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 artist = qs.get("artist", [""])[0]
                 dur = qs.get("duration", [None])[0]
                 if qs.get("debug"):
-                    import urllib.request, ssl
                     debug_info = {}
                     try:
                         url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q)}&pn=0&rn=5&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
