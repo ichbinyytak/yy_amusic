@@ -162,10 +162,16 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
 def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
     """
     轻量秒级校验音频有效性：仅获取 HEAD 或 Range 请求头，不下载几兆音频 Body
+    【方案 2: 语义特征 + 时长残卷双重防线，彻底铲除 11 秒假音频提示音刺客】
     返回: (is_valid: bool, content_length: int, final_url: str)
     """
     if not url or not url.startswith("http"):
         return False, 0, ""
+
+    # 1. 第一防线：酷我假音频官方下架提示音特征识别 (588957081)
+    if "588957081" in url:
+        return False, 0, url
+
     try:
         req = urllib.request.Request(url, headers={
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
@@ -174,9 +180,20 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
         ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             final_url = resp.geturl()
+
+            # 严格重定向目标语义检查
+            if "588957081" in final_url:
+                return False, 0, final_url
+
             # 严格校验 HTTP 状态码必须是 200 或 206
             if resp.status not in (200, 206):
                 return False, 0, ""
+
+            # 过滤非音频 MIME 类型 (如返回 HTML 报错页或 JSON 授权失败)
+            content_type = (resp.headers.get('Content-Type') or '').lower()
+            if content_type and ('text/' in content_type or 'application/json' in content_type):
+                return False, 0, final_url
+
             # 从 Content-Range 或 Content-Length 获取文件总字节数
             cr = resp.headers.get('Content-Range', '')
             total_size = 0
@@ -191,10 +208,10 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
                 except Exception:
                     pass
 
-            # 拦截语音刺客与残卷
+            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与 < 1.2MB 试听截断残卷
             if total_size in FAKE_AUDIO_LENGTHS:
                 return False, total_size, final_url
-            if 0 < total_size < MIN_VALID_BYTES:
+            if 0 < total_size < 1200000:
                 return False, total_size, final_url
             return True, total_size, final_url
     except urllib.error.HTTPError:
@@ -352,30 +369,28 @@ class AudioSource:
                 self.platform_latencies[platform] = round(self.platform_latencies[platform] * 0.7 + cost_ms * 0.3, 1)
 
     def record_miss(self, platform: str = None):
-        """找不到歌 / 报错：实战惩罚"""
+        """找不到歌 / 报错：实战温和避让 (封顶避免无限膨胀打入冷宫)"""
         self.fail_count += 1
-        self.consecutive_fails += 1
+        self.consecutive_fails = min(5, self.consecutive_fails + 1)
         if platform:
-            self.platform_fails[platform] = self.platform_fails.get(platform, 0) + 1
+            self.platform_fails[platform] = min(5, self.platform_fails.get(platform, 0) + 1)
 
     def get_sort_weight(self, platform: str = None) -> float:
         """
         计算排序综合权重（越小排越前）：
-        支持按目标平台细分排序，实战连败熔断入冷宫，实战高频出流自动晋升
+        【方案 3: 科学奖惩模型，解耦“网络/服务故障”与“单曲版权缺失”】
+        单曲无版权只触发温和临时避让 (+400ms/次，封顶 2000ms)，严禁将优质神源打入 90000ms 永久冷宫！
         """
         if platform:
             if platform not in self.platforms:
                 return 999999.0  # 根本不支持此平台
 
             p_fails = self.platform_fails.get(platform, 0)
-            # 铁律：连败 2 次及以上直接熔断进冷宫，排到最后，杜绝耽误后续歌曲
-            if p_fails >= 2 or self.consecutive_fails >= 2:
-                return 90000.0 + max(p_fails, self.consecutive_fails) * 1000.0
 
-            # 若该平台尚未有独立实测成绩：非本命平台降权至 5000ms+，确保实测有效的本命源绝对优先
+            # 若该平台尚未有独立实测成绩：未测过的跨平台源先予 3500ms 保守排班
             if platform not in self.platform_latencies:
                 if self.platform != platform:
-                    p_lat = 5000.0
+                    p_lat = 3500.0
                     p_status = "untested"
                 else:
                     p_lat = self.latency_ms
@@ -384,21 +399,22 @@ class AudioSource:
                 p_lat = self.platform_latencies[platform]
                 p_status = self.platform_status.get(platform, "ok")
 
-            if p_status != "ok" or p_lat >= 9000.0:
-                return 90000.0 + p_fails * 1000.0
+            # 仅当在探活测试中明确状态为 failed (整个服务宕机/超时)，才降入 80000 级底仓
+            if p_status == "failed" or p_lat >= 9000.0:
+                return 80000.0 + min(5000.0, p_fails * 500.0)
 
-            # 实战失败单次加罚 2000ms，确保一旦失败立刻避让给其它候选源
-            penalty = p_fails * 2000.0
-            # 该平台实战成功过给予极高奖励 (-2000ms/次)，优先锁定已知能打的源
+            # 实战单曲失败温和避让 (每次 +400ms，封顶 2000ms)，绝不破坏神源基础排名
+            penalty = min(2000.0, p_fails * 400.0)
+            # 实战出声成功给予持续正向奖励
             p_succ = self.platform_successes.get(platform, 0)
-            bonus = min(3500.0, p_succ * 1000.0) + min(300.0, self.success_count * 30.0)
+            bonus = min(2500.0, p_succ * 500.0) + min(300.0, self.success_count * 20.0)
             return max(1.0, p_lat + penalty - bonus)
 
         # 全局回退排序
-        if self.consecutive_fails >= 2 or self.status != "ok":
-            return 90000.0 + self.consecutive_fails * 1000.0
-        penalty = self.consecutive_fails * 300.0
-        bonus = min(250.0, self.success_count * 25.0)
+        if self.status == "failed" or self.latency_ms >= 9000.0:
+            return 80000.0 + min(5000.0, self.consecutive_fails * 500.0)
+        penalty = min(2000.0, self.consecutive_fails * 300.0)
+        bonus = min(300.0, self.success_count * 25.0)
         return max(1.0, self.latency_ms + penalty - bonus)
 
 # ========================================================

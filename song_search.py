@@ -512,19 +512,18 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
         }
         # 找房子闪电并发：酷我 + 网易云 原生秒开通道 + QQ 音乐兜底
         # 绝大多数情况下 200~350ms 命中即短路秒退；给 1.2s 安全缓冲，避免跨网抖动时误杀王牌酷我源
+        found_platforms = set()
         for f in as_completed(future_to_fn, timeout=1.2):
             try:
                 cands = f.result()
                 if cands:
                     results.extend(cands)
-                    # 【核心第一性原理：酷我免 VIP 王牌优先稳赢短路】
-                    # 酷我 (kw) 拥有海棠/车机免 VIP 穿透直连通道，成功率与出声速度最高。
-                    # 一旦酷我交出 score >= 80 的正版原唱，稳赢短路交卷！
-                    has_kw = any(c.get("platform") == "kw" and c.get("score", 0) >= 80.0 for c in results)
-                    if has_kw:
-                        break
-                    # 若酷我尚未返回，但其他平台已有高分且候选数达到 >= 3，亦可提前截断防慢
-                    if any(c.get("score", 0) >= 85.0 for c in results) and len(results) >= 3:
+                    for c in cands:
+                        if c.get("score", 0) >= 80.0:
+                            found_platforms.add(c.get("platform"))
+                    # 方案 1: 必须具备跨平台多样性容灾保障 (至少 2 个独立平台交出 >=80 高分) 方可提前短路
+                    # 彻底废除原有“酷我只要交卷立即掐断网易/QQ”的狭隘假短路，防止假音频拖累死锁
+                    if len(found_platforms) >= 2:
                         break
             except Exception:
                 pass

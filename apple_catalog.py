@@ -13,10 +13,38 @@ apple_catalog.py - Apple Music 页面解构与专区数据爬虫中枢
 
 import json
 import re
+import time
+import threading
 import urllib.request
 import urllib.parse
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+# ========================================================
+# 方案 4: 服务端高命中二级内存缓存 (消灭 2~3s 页面与歌单抓取延迟)
+# ========================================================
+_CATALOG_CACHE = {}
+_CATALOG_CACHE_LOCK = threading.Lock()
+_CATALOG_TTL_SEC = 1800  # 30 分钟新鲜度保障
+
+def _cached_catalog_call(cache_key: str, fn, *args, **kwargs):
+    now = time.time()
+    with _CATALOG_CACHE_LOCK:
+        if cache_key in _CATALOG_CACHE:
+            data, expire_at = _CATALOG_CACHE[cache_key]
+            if now < expire_at:
+                return data
+
+    res = fn(*args, **kwargs)
+
+    # 仅缓存有有效数据的返回，杜绝空响应被持久化
+    if res:
+        with _CATALOG_CACHE_LOCK:
+            if len(_CATALOG_CACHE) > 200:
+                # 简单 LRU 淘汰最老条目
+                _CATALOG_CACHE.pop(next(iter(_CATALOG_CACHE)))
+            _CATALOG_CACHE[cache_key] = (res, now + _CATALOG_TTL_SEC)
+    return res
 
 def http_get_html(url, timeout=15):
     """发起 HTTP GET 请求抓取 HTML 页面 (自动安全转义中文等非 ASCII URL)"""
@@ -108,6 +136,10 @@ def parse_card_item(it, sec_title=""):
     }
 
 def fetch_apple_new_page(storefront="cn"):
+    """抓取 /new 页面并严格重构为【歌单/专辑】聚合实体 (带二级内存缓存)"""
+    return _cached_catalog_call(f"apple_new_{storefront}", _fetch_apple_new_page_raw, storefront)
+
+def _fetch_apple_new_page_raw(storefront="cn"):
     """
     抓取 /new 页面并严格重构为【歌单/专辑】聚合实体。
     单曲类板块（如新歌精选、正在流行中）自动升格为官方精选合集歌单。
@@ -184,6 +216,10 @@ def fetch_apple_new_page(storefront="cn"):
     return {"storefront": storefront, "sections": sections_out}
 
 def fetch_apple_search_page(storefront="cn"):
+    """抓取 /search 探索中枢，提取官方 50+ 个音乐专区 (带二级内存缓存)"""
+    return _cached_catalog_call(f"apple_search_page_{storefront}", _fetch_apple_search_page_raw, storefront)
+
+def _fetch_apple_search_page_raw(storefront="cn"):
     """
     抓取 /search 探索中枢，提取官方 50+ 个音乐专区 (Curator 与专区分类)
     """
@@ -213,6 +249,10 @@ def fetch_apple_search_page(storefront="cn"):
     return {"storefront": storefront, "categories": categories}
 
 def fetch_apple_curator_page(url):
+    """深度抓取 Apple Music 官方专区主页 (带二级内存缓存)"""
+    return _cached_catalog_call(f"apple_curator_{url}", _fetch_apple_curator_page_raw, url)
+
+def _fetch_apple_curator_page_raw(url):
     """
     深度抓取 Apple Music 官方专区主页 (如 /curator/apple-music-国语流行/1019400042 或 /new/top-charts 排行榜)
     100% 还原官网的焦点推荐、歌单、年度热门、明星曲目单与经典专辑等板块
@@ -286,6 +326,10 @@ def fetch_apple_curator_page(url):
     return {"url": url, "sections": sections_out}
 
 def fetch_apple_room(room_url):
+    """抓取 Apple Music 官方专题 Room (带二级内存缓存)"""
+    return _cached_catalog_call(f"apple_room_{room_url}", _fetch_apple_room_raw, room_url)
+
+def _fetch_apple_room_raw(room_url):
     """
     抓取 Apple Music 官方专题 Room (如新歌精选 100 首曲目大合集)
     """

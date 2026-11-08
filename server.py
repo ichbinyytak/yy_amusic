@@ -41,6 +41,11 @@ _RESOLVE_CACHE_LOCK = threading.Lock()
 _CACHE_MAX_ENTRIES = 256
 _CACHE_TTL_SEC = 7200  # 2 小时缓存期
 
+# 方案 4: Apple Catalog API 官方数据代理服务端缓存 (URL -> (bytes, etag, ts))，存活 20 分钟
+_APPLE_CATALOG_CACHE = {}
+_APPLE_CATALOG_CACHE_LOCK = threading.Lock()
+_APPLE_CATALOG_TTL_SEC = 1200
+
 # 引入 Apple Music 官方专区与页面解构模块
 from apple_catalog import (
     USER_AGENT,
@@ -219,6 +224,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             apple_path = re.sub(r'([?&]limit=)(?:[3-9]\d|\d{3,}|2[6-9])', r'\g<1>25', apple_path)
             apple_url = f"https://api.music.apple.com/{apple_path}"
             client_etag = self.headers.get("If-None-Match")
+
+            # 方案 4: 快速命中服务端内存二级缓存 (0ms 秒开，消除反复连 Apple 官方的物理延迟)
+            now_t = time.time()
+            with _APPLE_CATALOG_CACHE_LOCK:
+                cached_item = _APPLE_CATALOG_CACHE.get(apple_url)
+                if cached_item and (now_t - cached_item["ts"]) < _APPLE_CATALOG_TTL_SEC:
+                    etag = cached_item["etag"]
+                    if client_etag and client_etag.strip('"') == etag.strip('"'):
+                        self.send_response(304)
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.send_header("ETag", etag)
+                        self.end_headers()
+                        return
+                    res_bytes = cached_item["bytes"]
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "private, no-cache")
+                    self.send_header("Content-Length", str(len(res_bytes)))
+                    self.end_headers()
+                    self.wfile.write(res_bytes)
+                    return
+
             try:
                 headers = {
                     "Authorization": f"Bearer {DEFAULT_TOKEN}",
@@ -232,6 +261,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     with urllib.request.urlopen(req, timeout=12) as resp:
                         res_bytes = resp.read()
                         etag = resp.headers.get("ETag") or f'"{hashlib.md5(res_bytes).hexdigest()}"'
+
+                        # 写入服务端内存缓存
+                        with _APPLE_CATALOG_CACHE_LOCK:
+                            if len(_APPLE_CATALOG_CACHE) > 300:
+                                _APPLE_CATALOG_CACHE.pop(next(iter(_APPLE_CATALOG_CACHE)))
+                            _APPLE_CATALOG_CACHE[apple_url] = {"bytes": res_bytes, "etag": etag, "ts": time.time()}
+
                         if client_etag and client_etag.strip('"') == etag.strip('"'):
                             self.send_response(304)
                             self.send_header("Access-Control-Allow-Origin", "*")
@@ -409,11 +445,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             last_err = "未找到候选歌曲"
 
             # ----------------------------------------------------
-            # 策略 A 第一阶梯（主力冲刺）：五大天王全息并发检索与四核短路寻链
+            # 方案 1: 全息多通道并发检索与跨平台容灾冲刺
             # ----------------------------------------------------
             cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
-            resolve_deadline = time.time() + 5.5
-            for c in cands[:2]:
+
+            # 跨平台优选：优先提取不同平台的最高分候选 (如 kw 最优、wy 最优、tx 最优)，杜绝同平台假音频连续试错耗尽时间
+            selected_cands = []
+            seen_platforms = set()
+            for c in cands:
+                plat = c.get("platform")
+                if plat not in seen_platforms:
+                    selected_cands.append(c)
+                    seen_platforms.add(plat)
+                if len(selected_cands) >= 3:
+                    break
+            if len(selected_cands) < 3:
+                for c in cands:
+                    if c not in selected_cands:
+                        selected_cands.append(c)
+                    if len(selected_cands) >= 3:
+                        break
+
+            resolve_deadline = time.time() + 5.8
+            for c in selected_cands:
                 if time.time() > resolve_deadline:
                     break
                 c["duration"] = c.get("duration") or duration
@@ -432,27 +486,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 elif res and res.get("error"):
                     last_err = res["error"]
 
-            # ----------------------------------------------------
-            # 策略 A 第二阶梯（独家兜底）：当第一梯队搜空或全失败时激活 QQ 音乐补漏
-            # 彻底废除原有在酷我/网易原地打转的无效重试，直奔 QQ 音乐救活独家版权
-            # ----------------------------------------------------
-            fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
-            for fc in fallback_cands:
-                fc["duration"] = fc.get("duration") or duration
-                res = source_hub.resolve_best_stream(fc)
-                if res and res.get("success"):
-                    res["matched_candidate"] = fc
-                    res["target_title"] = title
-                    res["target_artist"] = artist
-                    if cache_key:
-                        with _RESOLVE_CACHE_LOCK:
-                            if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                                _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                            _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
-                    self.send_json(res)
-                    return  # 兜底成功，即刻出声
-                elif res and res.get("error"):
-                    last_err = res["error"]
+            # 仅当首轮检索完全无结果时，才启用最后兜底
+            if not selected_cands:
+                fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
+                for fc in fallback_cands:
+                    fc["duration"] = fc.get("duration") or duration
+                    res = source_hub.resolve_best_stream(fc)
+                    if res and res.get("success"):
+                        res["matched_candidate"] = fc
+                        res["target_title"] = title
+                        res["target_artist"] = artist
+                        if cache_key:
+                            with _RESOLVE_CACHE_LOCK:
+                                if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                                    _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                                _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                        self.send_json(res)
+                        return  # 兜底成功，即刻出声
+                    elif res and res.get("error"):
+                        last_err = res["error"]
 
             self.send_json({
                 "success": False,
