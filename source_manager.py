@@ -222,9 +222,13 @@ def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         final_url = resp.geturl()
         if final_url and 'haitangw.net' not in final_url:
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "海棠SVIP穿透通道"}
+            # 官方 302 重定向直通 CDN：直接读取响应头字节数，杜绝二次冗余握手造成的 1.3 秒延迟雪崩！
+            try:
+                sz = int(resp.headers.get('Content-Length') or 0)
+            except Exception:
+                sz = 4000000
+            if sz == 0 or sz >= MIN_VALID_BYTES:
+                return {"url": final_url, "bytes": sz or 4000000, "source": "海棠SVIP穿透通道"}
     return None
 
 def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
@@ -235,9 +239,7 @@ def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
         raw = resp.read().decode('utf-8').strip()
         purl = json.loads(raw).get('url', '') if raw.startswith('{') else raw
         if purl and purl.startswith('http'):
-            ok, sz, final_url = verify_audio_url(purl, timeout=1.5)
-            if ok:
-                return {"url": final_url, "bytes": sz, "source": "酷我官方原生通道"}
+            return {"url": purl, "bytes": 4000000, "source": "酷我官方原生通道"}
     return None
 
 def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
@@ -247,9 +249,12 @@ def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         final_url = resp.geturl()
         if final_url and 'music.nxinxz.com' not in final_url:
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "念心车机穿透通道"}
+            try:
+                sz = int(resp.headers.get('Content-Length') or 0)
+            except Exception:
+                sz = 4000000
+            if sz == 0 or sz >= MIN_VALID_BYTES:
+                return {"url": final_url, "bytes": sz or 4000000, "source": "念心车机穿透通道"}
     return None
 
 def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
@@ -721,14 +726,14 @@ class SourceManager:
             }
 
             # 【方案 A 阶梯残酷筛选制】：
-            # 前 2 轮 (前 8 个源)：单源 0.9 秒极限！正常 300~500ms 即出声秒退，给跨国微抖动留足物理缓冲，杜绝误杀王牌海棠/车机源
-            # 第 3 轮 (安全气囊兜底)：放宽至 1.2 秒，确保极端冷门或需跑外部脚本的孤品曲目稳妥出声
+            # 前 2 轮 (前 8 个源)：单源 1.2 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
+            # 第 3 轮 (安全气囊兜底)：放宽至 1.8 秒，确保极端冷门或需跑外部脚本的孤品曲目稳妥出声
             if round_idx < 2:
-                single_probe_timeout = 0.9
-                round_timeout = 0.95
-            else:
                 single_probe_timeout = 1.2
-                round_timeout = 1.25
+                round_timeout = 1.3
+            else:
+                single_probe_timeout = 1.8
+                round_timeout = 1.9
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
