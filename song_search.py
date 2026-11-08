@@ -33,6 +33,7 @@ import threading
 import difflib
 import urllib.request
 import urllib.parse
+import ssl
 from concurrent.futures import ThreadPoolExecutor
 
 # ========================================================
@@ -282,7 +283,8 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
     try:
         url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
+        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        with urllib.request.urlopen(req, timeout=3.5, context=ctx) as r:
             data = json.loads(r.read().decode('utf-8'))
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
@@ -309,9 +311,10 @@ def _search_netease(query_k: str, target_title: str, target_artist: str, limit: 
     """网易云轻量检索通道"""
     res = []
     try:
-        url_ne = f"http://music.163.com/api/search/get?s={urllib.parse.quote(query_k)}&type=1&offset=0&limit={limit}"
+        url_ne = f"https://music.163.com/api/search/get?s={urllib.parse.quote(query_k)}&type=1&offset=0&limit={limit}"
         req = urllib.request.Request(url_ne, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
+        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        with urllib.request.urlopen(req, timeout=3.5, context=ctx) as r:
             data = json.loads(r.read().decode('utf-8'))
             for s in data.get('result', {}).get('songs', []):
                 sname = s.get('name', '')
@@ -367,17 +370,32 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
 
     # 3. 酷我 + 网易云 双通道并发轻量检索（消除串行等待延迟，耗时由 max(T_kw, T_wy) 决定）
     results = []
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit)
-        f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit)
+            f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit)
+            try:
+                results.extend(f_kw.result(timeout=4.0))
+            except Exception:
+                pass
+            try:
+                results.extend(f_ne.result(timeout=4.0))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 若线程池在 Serverless 受限沙箱环境未成功返回，平滑同步降级单次抓取
+    if not results:
         try:
-            results.extend(f_kw.result())
+            results.extend(_search_kuwo(query_k, target_title, target_artist, limit))
         except Exception:
             pass
-        try:
-            results.extend(f_ne.result())
-        except Exception:
-            pass
+        if not results:
+            try:
+                results.extend(_search_netease(query_k, target_title, target_artist, limit))
+            except Exception:
+                pass
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
@@ -389,7 +407,8 @@ def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int =
     try:
         url_qq = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n={limit}&w={urllib.parse.quote(query_k)}&format=json"
         req = urllib.request.Request(url_qq, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
+        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        with urllib.request.urlopen(req, timeout=3.5, context=ctx) as r:
             data = json.loads(r.read().decode('utf-8'))
             for s in data.get('data', {}).get('song', {}).get('list', []):
                 sname = s.get('songname', '')

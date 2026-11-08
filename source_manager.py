@@ -29,6 +29,7 @@ import json
 import re
 import gzip
 import shutil
+import ssl
 import threading
 import subprocess
 import urllib.request
@@ -154,7 +155,8 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'Range': 'bytes=0-1024'  # 只嗅探前 1KB
         })
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             final_url = resp.geturl()
             # 从 Content-Range 或 Content-Length 获取文件总字节数
             cr = resp.headers.get('Content-Range', '')
@@ -199,7 +201,8 @@ def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
     url = f"https://musicapi.haitangw.net/music/kw.php?type=mp3&id={song_id}&level=standard"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         final_url = resp.geturl()
         if final_url and 'haitangw.net' not in final_url:
             ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
