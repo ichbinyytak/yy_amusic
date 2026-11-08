@@ -708,7 +708,7 @@ class SourceManager:
         start_t = time.perf_counter()
 
         for round_idx in range(total_rounds):
-            if (time.perf_counter() - start_t) > 4.5:
+            if (time.perf_counter() - start_t) > 2.5:
                 break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
             batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
@@ -720,14 +720,23 @@ class SourceManager:
                 "status": "miss"
             }
 
+            # 【方案 A 阶梯残酷筛选制】：
+            # 前 2 轮 (前 8 个源)：残酷卡 0.7 秒极限！给王牌源留出物理安全缓冲，同时逼出能在 300~600ms 内秒出流的神源，慢源超时立即降权避让
+            # 第 3 轮 (安全气囊兜底)：放宽至 1.0 秒，杜绝极端孤品或轻微跨网抖动下被误杀
+            if round_idx < 2:
+                single_probe_timeout = 0.7
+                round_timeout = 0.75
+            else:
+                single_probe_timeout = 1.0
+                round_timeout = 1.05
+
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
-                # 动态超时分配：本命源 2.2s；跨平台 1.2s
                 future_map = {
-                    exec_pool.submit(s.probe_func, cand_song, target_plat, 2.2 if target_plat in s.platforms else 1.2): s
+                    exec_pool.submit(s.probe_func, cand_song, target_plat, single_probe_timeout): s
                     for s in batch
                 }
-                for f in as_completed(future_map, timeout=2.5):
+                for f in as_completed(future_map, timeout=round_timeout):
                     src = future_map[f]
                     is_native_plat = target_plat in src.platforms
                     try:

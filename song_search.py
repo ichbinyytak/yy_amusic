@@ -520,7 +520,9 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
             executor.submit(fn, query_k, target_title, target_artist, lim, target_duration): fn
             for fn, lim in search_funcs
         }
-        for f in as_completed(future_to_fn, timeout=1.8):
+        # 找房子闪电并发：酷我 + 网易云 原生秒开通道 + QQ 音乐兜底
+        # 正常 200~350ms 即返回；上限紧凑收紧至 0.8s，超时未归即刻硬截断，绝不死等慢源
+        for f in as_completed(future_to_fn, timeout=0.8):
             try:
                 cands = f.result()
                 if cands:
