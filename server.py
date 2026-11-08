@@ -119,6 +119,57 @@ def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
     except Exception:
         return False
 
+
+def _fetch_apple_native_metadata(song_id: str):
+    """
+    针对海外/香港/台湾 Apple Storefront 将日韩等非英语曲目罗马音化/英译化的痛点，
+    通过 Apple 官方原生目录直接提取地道日文/母语标题与歌手，打通国内音源库检索
+    """
+    if not song_id or not str(song_id).isdigit():
+        return None
+    apple_url = f"https://api.music.apple.com/v1/catalog/jp/songs/{song_id}"
+    with _APPLE_CATALOG_CACHE_LOCK:
+        cached = _APPLE_CATALOG_CACHE.get(apple_url)
+        if cached and (time.time() - cached["ts"]) < _APPLE_CATALOG_TTL_SEC:
+            try:
+                d = json.loads(cached["bytes"].decode("utf-8"))
+                items = d.get("data", [])
+                if items:
+                    attrs = items[0].get("attributes", {})
+                    return {
+                        "title": attrs.get("name", "").strip(),
+                        "artist": attrs.get("artistName", "").strip(),
+                        "duration": round(attrs.get("durationInMillis", 0) / 1000) or None
+                    }
+            except Exception:
+                pass
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {DEFAULT_TOKEN}",
+            "Origin": "https://music.apple.com",
+            "User-Agent": USER_AGENT
+        }
+        req = urllib.request.Request(apple_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            raw_bytes = resp.read()
+            with _APPLE_CATALOG_CACHE_LOCK:
+                if len(_APPLE_CATALOG_CACHE) > 300:
+                    _APPLE_CATALOG_CACHE.pop(next(iter(_APPLE_CATALOG_CACHE)))
+                _APPLE_CATALOG_CACHE[apple_url] = {"bytes": raw_bytes, "etag": "", "ts": time.time()}
+            data = json.loads(raw_bytes.decode('utf-8'))
+            items = data.get("data", [])
+            if items:
+                attrs = items[0].get("attributes", {})
+                return {
+                    "title": attrs.get("name", "").strip(),
+                    "artist": attrs.get("artistName", "").strip(),
+                    "duration": round(attrs.get("durationInMillis", 0) / 1000) or None
+                }
+    except Exception:
+        pass
+    return None
+
 PORT = 8088
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
@@ -545,6 +596,48 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return  # 一击即中，立即短路！彻底截断一切后续网络开销！
                 elif res and res.get("error"):
                     last_err = res["error"]
+
+            # ----------------------------------------------------
+            # 策略 A 第 1.5 阶梯（原生母语转译）：
+            # 针对海外/香港/台湾 Apple Storefront 将日韩等非英语曲目英译/罗马音化（如 musubi, Shiwaawase, Lilac）导致国内音源搜空的物理痛点，
+            # 通过 Apple 官方原生目录反查母语原名（如 結び, しわあわせ, ライラック），打通多平台正版检索
+            # ----------------------------------------------------
+            apple_song_id = str(cand.get("id") or "").strip()
+            if apple_song_id.isdigit() and time.time() < (overall_deadline - 1.8):
+                native_meta = _fetch_apple_native_metadata(apple_song_id)
+                if native_meta and (native_meta.get("title") != title or native_meta.get("artist") != artist):
+                    native_t = native_meta.get("title")
+                    native_a = native_meta.get("artist") or artist
+                    native_dur = native_meta.get("duration") or duration
+                    native_cands = search_candidates(f"{native_t} {native_a}", target_artist=native_a, target_title=native_t, target_duration=native_dur)
+                    for nc in native_cands[:2]:
+                        if time.time() > overall_deadline:
+                            break
+                        nc["duration"] = nc.get("duration") or native_dur
+                        res = source_hub.resolve_best_stream(nc)
+                        if res and res.get("success"):
+                            res["matched_candidate"] = nc
+                            res["target_title"] = title
+                            res["target_artist"] = artist
+                            res["native_title"] = native_t
+                            res["native_artist"] = native_a
+                            res["source_name"] = str(res.get("source_name", "")) + " 🌸母语精配"
+                            try:
+                                res["lyrics"] = get_song_lyric(nc.get("platform", ""), nc.get("id", ""), native_t, native_a)
+                            except Exception:
+                                res["lyrics"] = []
+                            if cache_key:
+                                with _RESOLVE_CACHE_LOCK:
+                                    if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                                        _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                                    _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                            if nc.get("score", 0) >= 80.0:
+                                try:
+                                    set_cached_candidate(title, artist, nc)
+                                except Exception:
+                                    pass
+                            self.send_json(res)
+                            return
 
             # ----------------------------------------------------
             # 策略 A 第二阶梯（独家兜底）：当第一梯队全部候选尝试失败时激活 QQ 音乐精准补漏

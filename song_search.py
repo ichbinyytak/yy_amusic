@@ -548,6 +548,28 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
         except Exception:
             pass
 
+    # 智能降维：针对多歌手合唱、长括号修饰词或 feat 合作曲目，提取主艺人与纯净歌名进行重试
+    if not results and target_artist:
+        primary_artist = re.split(r'[,/&、]|feat\.?', target_artist, flags=re.IGNORECASE)[0].strip()
+        primary_artist = clean_brackets(primary_artist).strip()
+        clean_t = clean_brackets(target_title).strip()
+        if primary_artist and clean_t and (primary_artist != target_artist or clean_t != target_title):
+            sub_k = f"{clean_t} {primary_artist}"
+            try:
+                results.extend(_search_kuwo(sub_k, clean_t, primary_artist, limit, target_duration))
+            except Exception:
+                pass
+            if not results:
+                try:
+                    results.extend(_search_netease(sub_k, clean_t, primary_artist, limit, target_duration))
+                except Exception:
+                    pass
+            if not results:
+                try:
+                    results.extend(_search_qq(sub_k, clean_t, primary_artist, 5, target_duration=target_duration))
+                except Exception:
+                    pass
+
     # 排序权重：打分绝对优先；同分情况下，免 Node 原生极速通道优先调度 (kw > wy > tx > kg > mg)
     plat_priority = {"kw": 10, "wy": 8, "tx": 5, "kg": 2, "mg": 1}
     results.sort(key=lambda x: (x["score"], plat_priority.get(x["platform"], 0)), reverse=True)
@@ -584,6 +606,12 @@ def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int
         query_k = f"{query_k} {target_artist}".strip()
 
     cands = _search_qq(query_k, target_title, target_artist, limit, target_duration=target_duration)
+    if not cands and target_artist:
+        primary_artist = re.split(r'[,/&、]|feat\.?', target_artist, flags=re.IGNORECASE)[0].strip()
+        primary_artist = clean_brackets(primary_artist).strip()
+        clean_t = clean_brackets(target_title).strip()
+        if primary_artist and clean_t and (primary_artist != target_artist or clean_t != target_title):
+            cands = _search_qq(f"{clean_t} {primary_artist}", clean_t, primary_artist, limit, target_duration=target_duration)
     cands.sort(key=lambda x: x["score"], reverse=True)
     return cands
 

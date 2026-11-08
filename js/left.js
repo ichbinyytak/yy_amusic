@@ -91,7 +91,9 @@ window.LeftPanel = (function () {
             "cn": "中国大陆",
             "hk": "香港",
             "tw": "台湾",
-            "us": "美国"
+            "us": "美国",
+            "jp": "日本",
+            "gb": "英国"
         };
         const currentName = regionNames[currentSf] || "中国大陆";
 
@@ -141,6 +143,8 @@ window.LeftPanel = (function () {
                     <div class="region-dropdown-item ${currentSf === 'hk' ? 'active' : ''}" data-val="hk">香港</div>
                     <div class="region-dropdown-item ${currentSf === 'tw' ? 'active' : ''}" data-val="tw">台湾</div>
                     <div class="region-dropdown-item ${currentSf === 'us' ? 'active' : ''}" data-val="us">美国</div>
+                    <div class="region-dropdown-item ${currentSf === 'jp' ? 'active' : ''}" data-val="jp">日本</div>
+                    <div class="region-dropdown-item ${currentSf === 'gb' ? 'active' : ''}" data-val="gb">英国</div>
                 </div>
                 <!-- 隐式同步 select，确保自动化测试与既有 API 逻辑 100% 兼容 -->
                 <select class="region-micro-select" id="regionMicroSelect" title="切换地区" style="display:none;">
@@ -148,6 +152,8 @@ window.LeftPanel = (function () {
                     <option value="hk" ${currentSf === 'hk' ? 'selected' : ''}>香港</option>
                     <option value="tw" ${currentSf === 'tw' ? 'selected' : ''}>台湾</option>
                     <option value="us" ${currentSf === 'us' ? 'selected' : ''}>美国</option>
+                    <option value="jp" ${currentSf === 'jp' ? 'selected' : ''}>日本</option>
+                    <option value="gb" ${currentSf === 'gb' ? 'selected' : ''}>英国</option>
                 </select>
             </div>
         `;

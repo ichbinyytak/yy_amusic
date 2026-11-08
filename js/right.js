@@ -158,7 +158,14 @@ window.RightPanel = (function () {
         }
 
         const sf = window.RegionPanel?.getStorefront?.() || "cn";
-        const cacheKey = `playlist_${sf}_${id}`;
+        // 智能母语透视：当歌单属于日本排行榜/J-Pop专区时，优先以日本本土 storefront (jp) 拉取母语地道曲目名，彻底根除罗马音化痛点
+        const isJapanEntity = Boolean(
+            (name && (name.includes('日本') || name.includes('Japan') || name.includes('J-Pop') || name.includes('トップ100'))) ||
+            (curator && (curator.includes('日本') || curator.includes('J-Pop'))) ||
+            (id === 'pl.043a2c9876114d95a4659988497567be')
+        );
+        const querySf = (isJapanEntity && sf !== 'jp') ? 'jp' : sf;
+        const cacheKey = `playlist_${querySf}_${id}`;
         const cached = window.ClientCache?.get?.(cacheKey);
 
         if (cached && Array.isArray(cached.data)) {
@@ -176,12 +183,14 @@ window.RightPanel = (function () {
 
             let data;
             try {
-                data = await window.apiRequest(`${targetType}/${id}`);
+                data = await window.apiRequest(`${targetType}/${id}`, '', querySf);
             } catch (firstErr) {
-                if (targetType === "playlists") {
-                    data = await window.apiRequest(`albums/${id}`);
+                if (querySf !== sf) {
+                    data = await window.apiRequest(`${targetType}/${id}`, '', sf);
+                } else if (targetType === "playlists") {
+                    data = await window.apiRequest(`albums/${id}`, '', sf);
                 } else if (targetType === "albums") {
-                    data = await window.apiRequest(`playlists/${id}`);
+                    data = await window.apiRequest(`playlists/${id}`, '', sf);
                 } else {
                     throw firstErr;
                 }

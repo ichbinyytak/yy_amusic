@@ -476,6 +476,8 @@
           album: nextSong.album || "",
           id: nextSong.id || "",
           platform: nextSong.platform || "",
+          isrc: nextSong.isrc || "",
+          url: nextSong.url || "",
           durationMillis: nextSong.durationMillis,
           duration: nextSong.duration || (nextSong.durationMillis ? Math.round(nextSong.durationMillis / 1000) : undefined)
         };
@@ -607,6 +609,8 @@
             album: song.album || "",
             id: song.id || "",
             platform: song.platform || "",
+            isrc: song.isrc || "",
+            url: song.url || "",
             durationMillis: song.durationMillis,
             duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined)
           };

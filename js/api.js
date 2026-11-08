@@ -131,12 +131,12 @@ async function swrFetch(url, cacheKey, { onCached, onUpdated, onError, showLoadi
 /* ========================================================
  * 区块 3: Apple Music Catalog 目录网络网关
  * ======================================================== */
-async function apiRequest(endpoint, etag = '') {
+async function apiRequest(endpoint, etag = '', customSf = null) {
     try {
         const headers = {};
         if (etag) headers["If-None-Match"] = etag;
 
-        const sf = window.currentStorefront || currentStorefront || "cn";
+        const sf = customSf || window.currentStorefront || currentStorefront || "cn";
         const response = await fetch(`${APPLE_MUSIC_API}/${sf}/${endpoint}`, { headers });
         if (response.status === 304) {
             return 304;
