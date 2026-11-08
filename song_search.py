@@ -485,6 +485,10 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if not query_k:
         query_k = simplified_k
 
+    # 核心优化：若包含目标歌手且检索词中尚未显式包含，自动追加歌手名以确保五大平台首位命中正版原唱
+    if target_artist and target_artist not in query_k:
+        query_k = f"{query_k} {target_artist}".strip()
+
     # 3. 五大天王全息并发检索 (QQ + 酷我 + 网易云 + 酷狗 + 咪咕)
     results = []
     search_funcs = [
