@@ -222,13 +222,10 @@ def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         final_url = resp.geturl()
         if final_url and 'haitangw.net' not in final_url:
-            # 官方 302 重定向直通 CDN：直接读取响应头字节数，杜绝二次冗余握手造成的 1.3 秒延迟雪崩！
-            try:
-                sz = int(resp.headers.get('Content-Length') or 0)
-            except Exception:
-                sz = 4000000
-            if sz == 0 or sz >= MIN_VALID_BYTES:
-                return {"url": final_url, "bytes": sz or 4000000, "source": "海棠SVIP穿透通道"}
+            # 严格防线：必须通过 verify_audio_url 嗅探，绝不放行 181521/81629 假音频与截断残卷
+            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
+            if ok:
+                return {"url": purl, "bytes": sz, "source": "海棠SVIP穿透通道"}
     return None
 
 def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
@@ -239,7 +236,10 @@ def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
         raw = resp.read().decode('utf-8').strip()
         purl = json.loads(raw).get('url', '') if raw.startswith('{') else raw
         if purl and purl.startswith('http'):
-            return {"url": purl, "bytes": 4000000, "source": "酷我官方原生通道"}
+            # 铁律：酷我官方对下架歌曲返回 181521 字节的 11 秒假音频提示音，必须 100% 经过严格校验拦截！
+            ok, sz, final_url = verify_audio_url(purl, timeout=1.5)
+            if ok:
+                return {"url": final_url, "bytes": sz, "source": "酷我官方原生通道"}
     return None
 
 def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
@@ -249,12 +249,9 @@ def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         final_url = resp.geturl()
         if final_url and 'music.nxinxz.com' not in final_url:
-            try:
-                sz = int(resp.headers.get('Content-Length') or 0)
-            except Exception:
-                sz = 4000000
-            if sz == 0 or sz >= MIN_VALID_BYTES:
-                return {"url": final_url, "bytes": sz or 4000000, "source": "念心车机穿透通道"}
+            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
+            if ok:
+                return {"url": purl, "bytes": sz, "source": "念心车机穿透通道"}
     return None
 
 def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
