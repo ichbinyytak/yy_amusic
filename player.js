@@ -20,6 +20,11 @@
   // 1. 默认播放队列初始化为空（由首次访问或记忆歌单动态注入）
   const DEFAULT_PLAYLIST = [];
 
+  // 前端短效直链与歌词缓存配置 (45分钟生命周期，最多50首)
+  const RESOLVE_CACHE_TTL_MS = 45 * 60 * 1000;
+  const RESOLVE_CACHE_MAX_ENTRIES = 50;
+  const SESSION_CACHE_STORAGE_KEY = 'amusic_resolve_cache_v1';
+
   // 格式化秒数为 mm:ss
   function formatTime(sec) {
     if (!sec || isNaN(sec)) return "00:00";
@@ -67,8 +72,9 @@
       this.lyrics = [];
       this.currentLyricIdx = -1;
 
-      // 直链预解析缓存 (Map: songKey -> { url, bytes, sourceName, costMs })
+      // 直链预解析与短效复听缓存 (Map: songKey -> { url, bytes, sourceName, costMs, ts, lyrics })
       this.resolveCache = new Map();
+      this._loadSessionCache();
       this.prefetchTimer = null;
       this._retriedProxy = false;
 
@@ -242,7 +248,7 @@
         const songKey = song ? this._getSongKey(song) : null;
         if (songKey) {
           // 清除失效的直链缓存，避免后续切歌再次命中失效死链
-          this.resolveCache.delete(songKey);
+          this._removeCachedResolve(songKey);
         }
 
         const currentSrc = this.audio.src;
@@ -323,6 +329,68 @@
       }
     }
 
+    // 缓存持久化与生命周期维护
+    _loadSessionCache() {
+      try {
+        if (typeof window === 'undefined' || !window.sessionStorage) return;
+        const raw = window.sessionStorage.getItem(SESSION_CACHE_STORAGE_KEY);
+        if (!raw) return;
+        const list = JSON.parse(raw);
+        const now = Date.now();
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            if (item && item.key && item.data && (now - (item.data.ts || 0) < RESOLVE_CACHE_TTL_MS)) {
+              this.resolveCache.set(item.key, item.data);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    _saveSessionCache() {
+      try {
+        if (typeof window === 'undefined' || !window.sessionStorage) return;
+        const now = Date.now();
+        const list = [];
+        for (const [key, data] of this.resolveCache.entries()) {
+          if (data && (now - (data.ts || 0) < RESOLVE_CACHE_TTL_MS)) {
+            list.push({ key, data });
+          }
+        }
+        const trimmed = list.slice(-RESOLVE_CACHE_MAX_ENTRIES);
+        window.sessionStorage.setItem(SESSION_CACHE_STORAGE_KEY, JSON.stringify(trimmed));
+      } catch (e) {}
+    }
+
+    _getCachedResolve(songKey) {
+      if (!songKey) return null;
+      const cached = this.resolveCache.get(songKey);
+      if (!cached) return null;
+      if (Date.now() - (cached.ts || 0) > RESOLVE_CACHE_TTL_MS) {
+        this.resolveCache.delete(songKey);
+        this._saveSessionCache();
+        return null;
+      }
+      return cached;
+    }
+
+    _setCachedResolve(songKey, data) {
+      if (!songKey || !data || !data.url) return;
+      data.ts = data.ts || Date.now();
+      this.resolveCache.set(songKey, data);
+      if (this.resolveCache.size > RESOLVE_CACHE_MAX_ENTRIES) {
+        const oldestKey = this.resolveCache.keys().next().value;
+        this.resolveCache.delete(oldestKey);
+      }
+      this._saveSessionCache();
+    }
+
+    _removeCachedResolve(songKey) {
+      if (!songKey) return;
+      this.resolveCache.delete(songKey);
+      this._saveSessionCache();
+    }
+
     // 获取当前歌词
     async fetchLyrics(song) {
       this.lyrics = [];
@@ -342,19 +410,29 @@
         } else {
           this._syncLyrics(this.audio.currentTime || 0);
         }
+
+        // 将歌词关联同步至短效缓存池，复听 0 网络请求
+        const songKey = this._getSongKey(song);
+        const entry = this._getCachedResolve(songKey);
+        if (entry && this.lyrics.length > 0) {
+          entry.lyrics = this.lyrics;
+          this._saveSessionCache();
+        }
       } catch (e) {
         this.lyrics = [];
         this._emit('lyricUpdate', { index: -1, currentLine: "暂无歌词", nextLine: "", allLines: [] });
       }
     }
 
-    // 获取曲目唯一 Key
+    // 获取曲目唯一 Key (以标准化的 歌名+歌手 为核心主键，杜绝不同歌单 ID 差异)
     _getSongKey(song) {
       if (!song) return "";
-      const sid = song.id || song.songmid || "";
       const title = (song.title || song.name || "").trim().toLowerCase();
       const artist = (song.artist || "").trim().toLowerCase();
-      return `${sid}_${title}_${artist}`;
+      if (song.platform && ["kw", "wy", "tx", "kg", "mg"].includes(song.platform) && (song.id || song.songmid)) {
+        return `${song.platform}_${song.id || song.songmid}_${title}_${artist}`;
+      }
+      return `${title}_${artist}`;
     }
 
     // 后台静默预解析下一首曲目直链 (实现下一曲 0 毫秒秒切)
@@ -383,7 +461,7 @@
         const nextSong = this.playlist[nextIdx];
         if (!nextSong) return;
         const key = this._getSongKey(nextSong);
-        if (this.resolveCache.has(key)) return;
+        if (this._getCachedResolve(key)) return;
 
         const payload = {
           title: nextSong.title || nextSong.name || "",
@@ -402,17 +480,13 @@
           body: JSON.stringify(payload)
         }).then(r => r.json()).then(data => {
           if (data && data.success && data.url) {
-            this.resolveCache.set(key, {
+            this._setCachedResolve(key, {
               url: data.url,
               bytes: data.bytes,
               sourceName: data.source_name,
-              costMs: 0
+              costMs: 0,
+              ts: Date.now()
             });
-            // 缓存上限 30 首，超额淘汰老数据
-            if (this.resolveCache.size > 30) {
-              const firstKey = this.resolveCache.keys().next().value;
-              this.resolveCache.delete(firstKey);
-            }
           }
         }).catch(() => {});
       }, 1200); // 歌曲起播 1.2 秒后平稳静默预取
@@ -453,16 +527,29 @@
       this._emit('trackChange', { index: idx, song });
       this._updateMediaMetadata(song);
 
-      // 并行请求歌词
-      this.fetchLyrics(song);
-
       const songKey = this._getSongKey(song);
-      const cached = this.resolveCache.get(songKey);
+      const cached = this._getCachedResolve(songKey);
 
-      // 2. 命中预解析直链缓存：0 毫秒秒切出声！
+      // 2. 命中前端短效缓存：0 毫秒秒切出声，零 Vercel 网络开销！
       if (cached && cached.url) {
         this.autoSkipCount = 0;
         this.audio.src = cached.url;
+
+        // 若缓存已有解析好的歌词，直接装配，彻底免除 /api/lyric 请求
+        if (cached.lyrics && cached.lyrics.length > 0) {
+          this.lyrics = cached.lyrics;
+          this.currentLyricIdx = -1;
+          this._syncLyrics(0);
+          this._emit('lyricUpdate', {
+            index: 0,
+            currentLine: this.lyrics[0] ? this.lyrics[0].text : "",
+            nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
+            allLines: this.lyrics
+          });
+        } else {
+          this.fetchLyrics(song);
+        }
+
         const playPromise = this.audio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
@@ -470,7 +557,7 @@
               isPlaying: true,
               isResolving: false,
               song,
-              sourceName: cached.sourceName + ' ⚡秒开',
+              sourceName: (cached.sourceName || '') + ' ⚡快取秒开',
               costMs: 0,
               bytes: cached.bytes
             });
@@ -480,7 +567,7 @@
               isPlaying: false,
               isResolving: false,
               song,
-              sourceName: cached.sourceName + ' ⚡秒开',
+              sourceName: (cached.sourceName || '') + ' ⚡快取秒开',
               costMs: 0,
               bytes: cached.bytes
             });
@@ -491,7 +578,8 @@
         return;
       }
 
-      // 3. 未命中缓存时，走正常寻链流程
+      // 未命中缓存时，并行请求歌词与启动寻链
+      this.fetchLyrics(song);
       this.isResolving = true;
       this._emit('stateChange', { isPlaying: false, isResolving: true, song });
 
@@ -543,12 +631,14 @@
       try {
         if (data && data.success && data.url) {
           this.autoSkipCount = 0;
-          // 写入缓存供回切使用
-          this.resolveCache.set(songKey, {
+          // 写入前端短效缓存供回切与复听使用 (45分钟TTL)
+          this._setCachedResolve(songKey, {
             url: data.url,
             bytes: data.bytes,
             sourceName: data.source_name,
-            costMs: cost
+            costMs: cost,
+            ts: Date.now(),
+            lyrics: this.lyrics || []
           });
 
           this.audio.src = data.url;
