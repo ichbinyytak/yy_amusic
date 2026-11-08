@@ -504,18 +504,16 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if target_artist and target_artist not in query_k:
         query_k = f"{query_k} {target_artist}".strip()
 
-    # 3. 极速全息并发检索 (酷我 + 网易云 + QQ独家兜底 + 酷狗/咪咕并发)
+    # 3. 极速全息并发检索 (酷我 + 网易云 原生秒开通道 + QQ 音乐独家版权兜底)
     results = []
     search_funcs = [
         (_search_kuwo, limit),
         (_search_netease, limit),
-        (_search_qq, 5),
-        (_search_kugou, 3),
-        (_search_migu, 3)
+        (_search_qq, 5)
     ]
 
     from concurrent.futures import as_completed
-    executor = ThreadPoolExecutor(max_workers=5)
+    executor = ThreadPoolExecutor(max_workers=3)
     try:
         future_to_fn = {
             executor.submit(fn, query_k, target_title, target_artist, lim, target_duration): fn
@@ -526,21 +524,18 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
                 cands = f.result()
                 if cands:
                     results.extend(cands)
-                    # 【核心第一性原理：高分正版即刻短路 (Early Short-Circuit)】
+                    # 【核心第一性原理：高分原生即刻短路 (Early Short-Circuit)】
                     # 酷我 (kw) 与网易云 (wy) 拥有纯 Python 免 Node 原生秒开通道 (海棠/车机/Meting)。
-                    # 一旦任一原生平台交出 score >= 80 的正版原唱，无需在后台傻等慢速源，立刻截断交卷！
+                    # 一旦任一原生平台交出 score >= 80 的正版原唱，绝不在后台死等 QQ 音乐，立即截断交卷！
                     has_fast_native = any(c.get("platform") in ("kw", "wy") and c.get("score", 0) >= 80.0 for c in results)
                     if has_fast_native:
-                        break
-                    # 若其他平台已经命中 >= 90 满分原唱且候选数充足，亦可提前截断
-                    if any(c.get("score", 0) >= 90.0 for c in results) and len(results) >= 3:
                         break
             except Exception:
                 pass
     except Exception:
         pass
     finally:
-        # 彻底解除 Python ThreadPoolExecutor 阻塞：立即取消剩余未决 Future
+        # 彻底解除 Python ThreadPoolExecutor 阻塞：立即取消未决任务
         executor.shutdown(wait=False, cancel_futures=True)
 
     # 排序权重：打分绝对优先；同分情况下，免 Node 原生极速通道优先调度 (kw > wy > tx > kg > mg)
