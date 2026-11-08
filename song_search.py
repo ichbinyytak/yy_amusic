@@ -524,18 +524,18 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if target_artist and target_artist not in query_k:
         query_k = f"{query_k} {target_artist}".strip()
 
-    # 3. 极速全息并发检索 (酷我 + 网易云 原生秒开通道)
+    # 3. 极速全息并发检索 (酷我 + 网易云 原生秒开通道，严控 2.0s 单源预算，保障后续冲刺与兜底)
     results = []
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
             f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit, target_duration)
             f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit, target_duration)
             try:
-                results.extend(f_kw.result(timeout=2.5))
+                results.extend(f_kw.result(timeout=2.0))
             except Exception:
                 pass
             try:
-                results.extend(f_ne.result(timeout=2.5))
+                results.extend(f_ne.result(timeout=2.0))
             except Exception:
                 pass
     except Exception:

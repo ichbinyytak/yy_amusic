@@ -104,15 +104,17 @@ def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
                 return False
         except ValueError:
-            # 域名解析 A/AAAA 记录防 DNS 重绑定或内网解析绕过
+            # 域名解析 A/AAAA 记录防 DNS 重绑定或内网解析绕过 (Fail-Close 默认安全原则)
             try:
                 addrinfo = socket.getaddrinfo(hostname, None)
+                if not addrinfo:
+                    return False
                 for item in addrinfo:
                     resolved_ip = ipaddress.ip_address(item[4][0])
                     if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved:
                         return False
             except Exception:
-                pass
+                return False
         return True
     except Exception:
         return False
@@ -490,7 +492,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             last_err = "未找到候选歌曲"
 
-            overall_deadline = time.time() + 6.5
+            # 优化：放宽至 7.8 秒 (在 Vercel 10s 物理上限内留足 2.2s 安全余量，同时给香港跨网多争取 1.3s 缓冲)
+            overall_deadline = time.time() + 7.8
 
             # ----------------------------------------------------
             # 方案 1: 全息多通道并发检索与跨平台容灾冲刺
@@ -545,9 +548,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             # ----------------------------------------------------
             # 策略 A 第二阶梯（独家兜底）：当第一梯队全部候选尝试失败时激活 QQ 音乐精准补漏
-            # 严格受 overall_deadline 预算约束，杜绝死等与链式超时
+            # 弹性受 overall_deadline 预算约束 (保留 0.8 秒底线)，杜绝在香港机房跨网抖动时被误杀
             # ----------------------------------------------------
-            if time.time() < (overall_deadline - 1.5):
+            if time.time() < (overall_deadline - 0.8):
                 fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
                 for fc in fallback_cands[:2]:
                     if time.time() > overall_deadline:

@@ -55,7 +55,7 @@ except Exception:
 
 # 铁律：假音频与试听截断黑名单字节数
 FAKE_AUDIO_LENGTHS = {81629, 181521}
-MIN_VALID_BYTES = 1500000  # 1.5MB（低于此大小判定为 30 秒试听截断残卷）
+MIN_VALID_BYTES = 1200000  # 1.2MB（低于此大小判定为 30 秒试听截断残卷或语音片段）
 
 # 标准测速基准曲目（按平台严格对齐歌曲ID与元数据，杜绝跨平台ID错配）
 TEST_TRACKS = {
@@ -88,14 +88,16 @@ def get_node_binary():
     if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
         return tmp_node
 
-    # 尝试从 bin/node.gz 解压
+    # 尝试从 bin/node.gz 解压 (带原子重命名防并发冷启动竞态)
     gz_path = os.path.join(BASE_DIR, "bin", "node.gz")
     if os.path.exists(gz_path):
         try:
+            tmp_writing = f"{tmp_node}.tmp.{os.getpid()}"
             with gzip.open(gz_path, "rb") as f_in:
-                with open(tmp_node, "wb") as f_out:
+                with open(tmp_writing, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
-            os.chmod(tmp_node, 0o755)
+            os.chmod(tmp_writing, 0o755)
+            os.replace(tmp_writing, tmp_node)
             if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
                 return tmp_node
         except Exception as e:
@@ -209,10 +211,10 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
                 except Exception:
                     pass
 
-            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与无效超短残卷
+            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与无效截断试听残卷 (< 1.2MB)
             if total_size in FAKE_AUDIO_LENGTHS:
                 return False, total_size, final_url
-            if 0 < total_size < 350000:
+            if 0 < total_size < MIN_VALID_BYTES:
                 return False, total_size, final_url
             return True, total_size, final_url
     except urllib.error.HTTPError:
@@ -234,6 +236,8 @@ def _extract_id(song_info):
 
 def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"https://musicapi.haitangw.net/music/kw.php?type=mp3&id={song_id}&level=standard"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
@@ -248,6 +252,8 @@ def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
 
 def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"http://antiserver.kuwo.cn/anti.s?type=convert_url3&rid={song_id}&format=mp3&response=url"
     req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0'})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -262,6 +268,8 @@ def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
 
 def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"http://music.nxinxz.com/kw.php?id={song_id}&level=standard&type=mp3"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -807,10 +815,10 @@ class SourceManager:
                                 "rounds_log": rounds_log
                             }
                         else:
-                            if is_native_plat:
+                            if is_native_plat and (target_plat != "kw" or _extract_id(cand_song).isdigit()):
                                 src.record_miss(platform=target_plat)
                     except Exception:
-                        if is_native_plat:
+                        if is_native_plat and (target_plat != "kw" or _extract_id(cand_song).isdigit()):
                             src.record_miss(platform=target_plat)
             except Exception:
                 pass

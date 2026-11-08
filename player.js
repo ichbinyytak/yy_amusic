@@ -20,8 +20,8 @@
   // 1. 默认播放队列初始化为空（由首次访问或记忆歌单动态注入）
   const DEFAULT_PLAYLIST = [];
 
-  // 前端短效直链与歌词缓存配置 (45分钟生命周期，最多50首)
-  const RESOLVE_CACHE_TTL_MS = 45 * 60 * 1000;
+  // 前端短效直链与歌词缓存配置 (直链缓存收紧至 15 分钟，彻底避免 CDN 防盗链 Token 过期导致复听 403 挂起)
+  const RESOLVE_CACHE_TTL_MS = 15 * 60 * 1000;
   const RESOLVE_CACHE_MAX_ENTRIES = 50;
   const SESSION_CACHE_STORAGE_KEY = 'amusic_resolve_cache_v1';
 
@@ -741,6 +741,8 @@
         this.audio.play().catch(() => {});
       } else {
         this.audio.pause();
+        // 核心加固：用户主动暂停时，递增 token 立即作废任何后台异步挂起的跳歌顺延定时器，杜绝幽灵切歌
+        this.resolveToken = (this.resolveToken || 0) + 1;
       }
     }
 
