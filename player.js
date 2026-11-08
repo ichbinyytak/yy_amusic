@@ -239,7 +239,7 @@
       });
 
       this.audio.addEventListener('error', (e) => {
-        if (!this.audio.src || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
+        if (!this.audio.src || this.audio.src.startsWith('data:') || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
         const code = this.audio.error ? this.audio.error.code : 0;
         if (code === 1) return; // MEDIA_ERR_ABORTED (正常切歌中断，忽略)
 
@@ -396,6 +396,7 @@
 
     // 获取当前歌词
     async fetchLyrics(song) {
+      const currentToken = this.resolveToken;
       this.lyrics = [];
       this.currentLyricIdx = -1;
       this._emit('lyricUpdate', { index: -1, currentLine: "正在匹配歌词...", nextLine: "", allLines: [] });
@@ -407,6 +408,7 @@
         const artist = encodeURIComponent(song.artist || '');
         const res = await fetch(`/api/lyric?platform=${plat}&id=${sid}&title=${title}&artist=${artist}`);
         const lines = await res.json();
+        if (this.resolveToken !== currentToken) return; // 快速切歌防竞态覆盖
         this.lyrics = lines || [];
         if (this.lyrics.length === 0) {
           this._emit('lyricUpdate', { index: -1, currentLine: "纯音乐，请欣赏", nextLine: "", allLines: [] });
@@ -422,6 +424,7 @@
           this._saveSessionCache();
         }
       } catch (e) {
+        if (this.resolveToken !== currentToken) return;
         this.lyrics = [];
         this._emit('lyricUpdate', { index: -1, currentLine: "暂无歌词", nextLine: "", allLines: [] });
       }
@@ -581,8 +584,10 @@
         return;
       }
 
-      // 未命中缓存时，并行请求歌词与启动寻链
-      this.fetchLyrics(song);
+      // 未命中缓存时，先展示加载占位；/api/resolve 接口已内置音画同源正版歌词提取，避免并发冗余请求
+      this.lyrics = [];
+      this.currentLyricIdx = -1;
+      this._emit('lyricUpdate', { index: -1, currentLine: "正在匹配曲目与歌词...", nextLine: "", allLines: [] });
       this.isResolving = true;
       this._emit('stateChange', { isPlaying: false, isResolving: true, song });
 
@@ -646,6 +651,9 @@
               nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
               allLines: this.lyrics
             });
+          } else {
+            // 后端未能提取到同源歌词时，异步兜底独立抓取
+            this.fetchLyrics(song);
           }
 
           // 写入前端短效缓存供回切与复听使用 (45分钟TTL)
@@ -730,7 +738,7 @@
     // 播控方法
     togglePlay() {
       this.unlockAudio();
-      if (!this.audio.src) {
+      if (!this.audio.src || this.audio.src.startsWith('data:')) {
         if (this.playlist.length > 0) {
           this.playIndex(this.currentIndex >= 0 ? this.currentIndex : 0);
         }

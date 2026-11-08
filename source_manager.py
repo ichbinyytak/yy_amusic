@@ -282,14 +282,19 @@ def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
 
 def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"https://api.injahow.cn/meting/?server=netease&type=url&id={song_id}"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        final_url = resp.geturl()
-        if resp.status == 200 and 'music.126.net' in final_url:
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            final_url = resp.geturl()
+            if resp.status == 200 and 'music.126.net' in final_url:
+                ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
+                if ok:
+                    return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
+    except Exception:
+        pass
     return None
 
 def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
@@ -762,16 +767,35 @@ class SourceManager:
             # 仅当没有专用源时，才允许具备多平台能力的聚合源兜底
             all_ordered = [s for s in self.get_ordered_sources() if len(s.platforms) > 1]
 
+        # 架构演进：原生轻量通道极速先行，LX 沙箱脚本候补 (降低 Vercel 容器内的 Node.js 进程开销)
+        native_sources = [s for s in all_ordered if not s.id.startswith("lx_")]
+        lx_sources = [s for s in all_ordered if s.id.startswith("lx_")]
+
+        batches = []
+        if len(native_sources) >= 2:
+            # 酷我等平台原生源充足：第一轮派出全量纯 Python 原生源 (0 Node 进程，毫秒级响应)
+            batches.append(native_sources[:4])
+            if lx_sources:
+                batches.append(lx_sources[:4])
+        else:
+            # 原生源较少时，原生源与最强 LX 源混编第一轮
+            first_batch = native_sources + lx_sources[:max(0, 4 - len(native_sources))]
+            if first_batch:
+                batches.append(first_batch)
+            rem_lx = lx_sources[len(first_batch) - len(native_sources):]
+            if rem_lx:
+                batches.append(rem_lx[:4])
+
+        if not batches:
+            batches = [all_ordered[:4]]
+
         rounds_log = []
-        batch_size = 4  # 升级为四核并发冲刺
-        total_rounds = min(2, (len(all_ordered) + batch_size - 1) // batch_size)  # 最多冲刺 2 轮 (8个高位优质源)，严控整体耗时
         start_t = time.perf_counter()
 
-        for round_idx in range(total_rounds):
+        for round_idx, batch in enumerate(batches[:2]):
             if (time.perf_counter() - start_t) > 3.0:
                 break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
-            batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
             names = [s.name for s in batch]
             r_log = {
                 "round": round_idx + 1,
