@@ -296,14 +296,23 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 # 区块 3: 五大天王全息并发检索与聚合打分 (QQ + 酷我 + 网易 + 酷狗 + 咪咕)
 # ========================================================
 
+_KW_SEARCH_FAILS = 0
+_KW_SEARCH_LAST_FAIL = 0
+_MG_SEARCH_FAILS = 0
+_MG_SEARCH_LAST_FAIL = 0
+
 def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
-    """酷我轻量检索通道 (原生 HTTP 80 端口，避开海外 443 TLS 挂死)"""
+    """酷我轻量检索通道 (带海外阻断快速熔断)"""
+    global _KW_SEARCH_FAILS, _KW_SEARCH_LAST_FAIL
+    if _KW_SEARCH_FAILS >= 2 and (time.time() - _KW_SEARCH_LAST_FAIL) < 300:
+        return []
     res = []
     try:
         url_kw = f"http://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
+        with urllib.request.urlopen(req, timeout=0.8) as r:
             data = json.loads(r.read().decode('utf-8', errors='ignore'))
+            _KW_SEARCH_FAILS = 0
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
                 sart = it.get('ARTIST', '')
@@ -322,7 +331,8 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
                         "score": round(score, 1)
                     })
     except Exception:
-        pass
+        _KW_SEARCH_FAILS += 1
+        _KW_SEARCH_LAST_FAIL = time.time()
     return res
 
 def _search_netease(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
@@ -421,14 +431,18 @@ def _search_kugou(query_k: str, target_title: str, target_artist: str, limit: in
     return res
 
 def _search_migu(query_k: str, target_title: str, target_artist: str, limit: int = 5, target_duration = None) -> list:
-    """咪咕音乐国家队检索通道"""
+    """咪咕音乐国家队检索通道 (带海外阻断快速熔断)"""
+    global _MG_SEARCH_FAILS, _MG_SEARCH_LAST_FAIL
+    if _MG_SEARCH_FAILS >= 2 and (time.time() - _MG_SEARCH_LAST_FAIL) < 300:
+        return []
     res = []
     try:
         url_mg = f"https://pd.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?runmode=prod&text={urllib.parse.quote(query_k)}&pageNo=1&pageSize={limit}&searchSwitch=%7B%22song%22%3A1%7D"
         req = urllib.request.Request(url_mg, headers={'User-Agent': 'Mozilla/5.0', 'channel': '0146951'})
         ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=2.0, context=ctx) as r:
+        with urllib.request.urlopen(req, timeout=0.8, context=ctx) as r:
             data = json.loads(r.read().decode('utf-8', errors='ignore'))
+            _MG_SEARCH_FAILS = 0
             for item in data.get('songResultData', {}).get('result', []):
                 sname = item.get('name', '').strip()
                 sart = "/".join([a.get('name', '') for a in item.get('singers', []) if a.get('name')]).strip()
@@ -450,7 +464,8 @@ def _search_migu(query_k: str, target_title: str, target_artist: str, limit: int
                         "score": round(score, 1)
                     })
     except Exception:
-        pass
+        _MG_SEARCH_FAILS += 1
+        _MG_SEARCH_LAST_FAIL = time.time()
     return res
 
 def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, target_title: str = "", target_duration = None) -> list:
@@ -489,32 +504,36 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if target_artist and target_artist not in query_k:
         query_k = f"{query_k} {target_artist}".strip()
 
-    # 3. 五大天王全息并发检索 (QQ + 酷我 + 网易云 + 酷狗 + 咪咕)
+    # 3. 五大天王全息并发检索 (QQ + 网易云 + 酷狗 + 酷我 + 咪咕)
     results = []
     search_funcs = [
         (_search_qq, 5),
-        (_search_kuwo, limit),
         (_search_netease, limit),
         (_search_kugou, 5),
+        (_search_kuwo, limit),
         (_search_migu, 5)
     ]
 
+    from concurrent.futures import as_completed
+    executor = ThreadPoolExecutor(max_workers=5)
     try:
-        from concurrent.futures import as_completed
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_fn = {
-                executor.submit(fn, query_k, target_title, target_artist, lim, target_duration): fn
-                for fn, lim in search_funcs
-            }
-            for f in as_completed(future_to_fn, timeout=2.2):
-                try:
-                    cands = f.result()
-                    if cands:
-                        results.extend(cands)
-                except Exception:
-                    pass
+        future_to_fn = {
+            executor.submit(fn, query_k, target_title, target_artist, lim, target_duration): fn
+            for fn, lim in search_funcs
+        }
+        for f in as_completed(future_to_fn, timeout=1.5):
+            try:
+                cands = f.result()
+                if cands:
+                    results.extend(cands)
+            except Exception:
+                pass
     except Exception:
         pass
+    finally:
+        # 彻底解除 Python ThreadPoolExecutor wait=True 退出阻塞：
+        # 即使个别慢平台超时，也绝不阻塞整体搜索结果返回！
+        executor.shutdown(wait=False, cancel_futures=True)
 
     # 排序权重：打分优先，同分情况下根据免 Node 原生穿透通道优先调度 (kw > tx > wy > kg > mg)
     plat_priority = {"kw": 5, "tx": 4, "wy": 3, "kg": 2, "mg": 1}
@@ -572,11 +591,11 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
         return parsed
 
     # 1. 尝试网易云直连
-    if platform == "wy" and song_id:
+    if platform == "wy" and song_id and str(song_id).isdigit():
         try:
             url = f"http://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=2.5) as r:
+            with urllib.request.urlopen(req, timeout=1.5) as r:
                 data = json.loads(r.read().decode('utf-8'))
                 lrc_text = data.get('lrc', {}).get('lyric', '')
                 if lrc_text:
@@ -586,12 +605,12 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
         except Exception:
             pass
 
-    # 2. 尝试酷我直连
-    if platform == "kw" and song_id:
+    # 2. 尝试酷我直连 (仅当是纯数字有效酷我 RID 时尝试，超时 1.0s 快速放行)
+    if platform == "kw" and song_id and str(song_id).isdigit() and len(str(song_id)) <= 10:
         try:
             url = f"http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={song_id}&httpsStatus=1"
             req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'})
-            with urllib.request.urlopen(req, timeout=2.5) as r:
+            with urllib.request.urlopen(req, timeout=1.0) as r:
                 raw = r.read().decode('utf-8', errors='ignore').strip()
                 data = json.loads(raw)
                 items = (data.get('data') or {}).get('lrclist') or []
@@ -615,7 +634,7 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
             q_enc = urllib.parse.quote(q_str)
             u_search = f"http://music.163.com/api/search/get?s={q_enc}&type=1&offset=0&limit=1"
             req = urllib.request.Request(u_search, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=2.5) as r:
+            with urllib.request.urlopen(req, timeout=1.5) as r:
                 d = json.loads(r.read().decode('utf-8'))
                 songs = (d.get('result') or {}).get('songs') or []
                 if songs and songs[0].get('id'):

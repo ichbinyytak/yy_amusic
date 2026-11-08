@@ -330,7 +330,7 @@
       this._emit('lyricUpdate', { index: -1, currentLine: "正在匹配歌词...", nextLine: "", allLines: [] });
 
       try {
-        const plat = encodeURIComponent(song.platform || 'kw');
+        const plat = encodeURIComponent(song.platform || '');
         const sid = encodeURIComponent(song.id || '');
         const title = encodeURIComponent(song.title || song.name || '');
         const artist = encodeURIComponent(song.artist || '');

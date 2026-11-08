@@ -154,7 +154,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "consecutive_fails": s.consecutive_fails,
                 "success_count": s.success_count
             })
-        data.sort(key=lambda x: x["latency_ms"])
         return data
 
     # ========================================================
@@ -410,10 +409,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             last_err = "未找到候选歌曲"
 
             # ----------------------------------------------------
-            # 策略 A 第一阶梯（主力冲刺）：酷我 (代表TME) + 网易云 并发
+            # 策略 A 第一阶梯（主力冲刺）：五大天王全息并发检索与四核短路寻链
             # ----------------------------------------------------
             cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
-            for c in cands:
+            resolve_deadline = time.time() + 5.5
+            for c in cands[:2]:
+                if time.time() > resolve_deadline:
+                    break
                 c["duration"] = c.get("duration") or duration
                 res = source_hub.resolve_best_stream(c)
                 if res and res.get("success"):

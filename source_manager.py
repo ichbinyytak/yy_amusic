@@ -286,6 +286,7 @@ class AudioSource:
         self.platform_latencies = {}  # 例如 {"kw": 430.0, "wy": 769.3}
         self.platform_status = {}     # 例如 {"kw": "ok", "wy": "ok"}
         self.platform_fails = {}      # 分平台连续失败计数
+        self.platform_successes = {}  # 分平台实战成功计数
 
     def test_health(self) -> dict:
         """执行本地真实探活打测，对所支持的各平台分别测速记录，杜绝跨平台误判"""
@@ -341,6 +342,7 @@ class AudioSource:
         self.consecutive_fails = 0
         if platform:
             self.platform_fails[platform] = 0
+            self.platform_successes[platform] = self.platform_successes.get(platform, 0) + 1
         if cost_ms and cost_ms > 0:
             # EMA 平滑移动平均：实操越快的源，实测延迟越低，排序自然自动前移
             self.latency_ms = round(self.latency_ms * 0.7 + cost_ms * 0.3, 1)
@@ -363,10 +365,10 @@ class AudioSource:
             if platform not in self.platforms:
                 return 999999.0  # 根本不支持此平台
 
-            p_fails = self.platform_fails.get(platform, self.consecutive_fails)
+            p_fails = self.platform_fails.get(platform, 0)
             # 铁律：连败 2 次及以上直接熔断进冷宫，排到最后，杜绝耽误后续歌曲
-            if p_fails >= 2:
-                return 90000.0 + p_fails * 1000.0
+            if p_fails >= 2 or self.consecutive_fails >= 2:
+                return 90000.0 + max(p_fails, self.consecutive_fails) * 1000.0
 
             # 若该平台尚未有独立实测成绩：非本命平台降权至 5000ms+，确保实测有效的本命源绝对优先
             if platform not in self.platform_latencies:
@@ -382,8 +384,12 @@ class AudioSource:
 
             if p_status != "ok" or p_lat >= 9000.0:
                 return 90000.0 + p_fails * 1000.0
-            penalty = p_fails * 300.0
-            bonus = min(250.0, self.success_count * 25.0)
+
+            # 实战失败单次加罚 2000ms，确保一旦失败立刻避让给其它候选源
+            penalty = p_fails * 2000.0
+            # 该平台实战成功过给予极高奖励 (-2000ms/次)，优先锁定已知能打的源
+            p_succ = self.platform_successes.get(platform, 0)
+            bonus = min(3500.0, p_succ * 1000.0) + min(300.0, self.success_count * 30.0)
             return max(1.0, p_lat + penalty - bonus)
 
         # 全局回退排序
@@ -678,28 +684,32 @@ class SourceManager:
 
     def resolve_best_stream(self, cand_song: dict) -> dict:
         """
-        双核并发全量冲刺调度（Dual-Core Racing Across Entire Source Pool）：
-        前期阶段：必须将整个源库中所有源全部轮询覆盖！
-        按当前延迟与排名，每次派出 2 个源同时冲刺！
-        任一源返回有效全曲（> 1.5MB）即刻胜出出声并奖励晋升；
-        若未命中，紧接着派出下 2 个源，不只搜索两轮，直到把所有源全部遍历冲刺完毕！
+        四核并发全量冲刺调度（Quad-Core Racing Pool）：
+        1. 针对目标平台精准派出能打的同平台源，绝不把 QQ 音乐 ID 派给纯酷我/纯网易源导致超时空转；
+        2. 每次派出 4 个最优源并发冲刺，任一源返回有效全曲（> 1.5MB）即刻胜出秒开出声；
+        3. 彻底解除 wait=True 死锁，非阻塞退出。
         """
         target_plat = cand_song.get("platform", "kw")
         song_id = cand_song.get("id", "")
         if not song_id:
             return {"error": "缺少歌曲内部有效 ID"}
 
-        # 优先使用同平台音源（第一梯队优先冲刺）
-        # 再顺延跨平台音源作为第二梯队兜底，确保 100% 覆盖的同时避免超时风暴
+        # 核心优化：只派出支持该目标平台的音源，杜绝跨平台不可用源浪费轮次
         same_plat_sources = self.get_ordered_sources(platform=target_plat)
-        other_sources = [s for s in self.get_ordered_sources() if s not in same_plat_sources]
-        all_ordered = same_plat_sources + other_sources
+        if len(same_plat_sources) >= 1:
+            all_ordered = same_plat_sources
+        else:
+            # 仅当没有专用源时，才允许具备多平台能力的聚合源兜底
+            all_ordered = [s for s in self.get_ordered_sources() if len(s.platforms) > 1]
 
         rounds_log = []
-        batch_size = 2
-        total_rounds = (len(all_ordered) + batch_size - 1) // batch_size
+        batch_size = 4  # 升级为四核并发冲刺
+        total_rounds = min(3, (len(all_ordered) + batch_size - 1) // batch_size)  # 最多冲刺 3 轮 (12个源)，杜绝超时
+        start_t = time.perf_counter()
 
         for round_idx in range(total_rounds):
+            if (time.perf_counter() - start_t) > 4.5:
+                break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
             batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
             names = [s.name for s in batch]
@@ -712,12 +722,12 @@ class SourceManager:
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
-                # 动态超时分配：本命源给予充裕 2.5s；跨平台尝试收紧至 1.2s，防止延迟雪崩
+                # 动态超时分配：本命源 2.2s；跨平台 1.2s
                 future_map = {
-                    exec_pool.submit(s.probe_func, cand_song, target_plat, 2.5 if target_plat in s.platforms else 1.2): s
+                    exec_pool.submit(s.probe_func, cand_song, target_plat, 2.2 if target_plat in s.platforms else 1.2): s
                     for s in batch
                 }
-                for f in as_completed(future_map):
+                for f in as_completed(future_map, timeout=2.5):
                     src = future_map[f]
                     is_native_plat = target_plat in src.platforms
                     try:
@@ -728,8 +738,6 @@ class SourceManager:
                             r_log["winner"] = src.name
                             r_log["status"] = "hit"
                             rounds_log.append(r_log)
-                            # 彻底解除 Python ThreadPoolExecutor 默认的 wait=True 退出死锁：
-                            # 胜出者一旦产生，即刻非阻塞退出，绝不等待同组慢音源！
                             exec_pool.shutdown(wait=False, cancel_futures=True)
                             return {
                                 "success": True,
@@ -744,13 +752,13 @@ class SourceManager:
                                 "rounds_log": rounds_log
                             }
                         else:
-                            # 核心免责保护：只有在音源自身的本命支持平台失败时，才记录 miss；
-                            # 跨平台尝试失败绝对免责，杜绝误伤优质音源健康度！
                             if is_native_plat:
                                 src.record_miss(platform=target_plat)
                     except Exception:
                         if is_native_plat:
                             src.record_miss(platform=target_plat)
+            except Exception:
+                pass
             finally:
                 exec_pool.shutdown(wait=False, cancel_futures=True)
 
@@ -758,7 +766,7 @@ class SourceManager:
 
         return {
             "success": False,
-            "error": f"全库 {len(all_ordered)} 个音源（共 {total_rounds} 轮双核冲刺）均未能返回有效全曲",
+            "error": "本命源冲刺完毕，未能获得有效音频直链",
             "rounds_log": rounds_log
         }
 
