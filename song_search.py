@@ -32,6 +32,7 @@ import ctypes
 import threading
 import difflib
 import socket
+import hashlib
 import urllib.request
 import urllib.parse
 import ssl
@@ -299,11 +300,12 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
     """酷我轻量检索通道"""
     res = []
+    # 1. 优先官方轻量接口
     try:
         url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
         ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=2.5, context=ctx) as r:
+        with urllib.request.urlopen(req, timeout=1.0, context=ctx) as r:
             data = json.loads(r.read().decode('utf-8', errors='ignore'))
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
@@ -324,6 +326,32 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
                     })
     except Exception:
         pass
+
+    # 2. 若官方接口受跨国机房阻断 (Errno 110 Connection timed out)，平滑调用海外高可用通道
+    if not res:
+        try:
+            url_yh = f"https://api.yaohud.cn/api/music/kuwo?key=nvgKtvzw7CFSNFrDhA6&action=search&msg={urllib.parse.quote(query_k)}&n=1"
+            req = urllib.request.Request(url_yh, headers={'User-Agent': 'Mozilla/5.0'})
+            ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+            with urllib.request.urlopen(req, timeout=1.2, context=ctx) as r:
+                data = json.loads(r.read().decode('utf-8', errors='ignore'))
+                d = data.get("data", {})
+                if d and d.get("name"):
+                    sname = d.get("name", "")
+                    sart = d.get("songname", "")
+                    salb = d.get("album", "")
+                    score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, target_duration=target_duration)
+                    if ok:
+                        res.append({
+                            "platform": "kw",
+                            "id": f"kw_{hashlib.md5(f'{sname}_{sart}'.encode()).hexdigest()[:8]}",
+                            "title": sname,
+                            "artist": sart,
+                            "album": salb,
+                            "score": round(score, 1)
+                        })
+        except Exception:
+            pass
     return res
 
 def _search_netease(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:

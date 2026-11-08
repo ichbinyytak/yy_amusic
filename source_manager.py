@@ -284,6 +284,31 @@ def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
                 return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
     return None
 
+def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
+    title = song_info.get("title", "") if isinstance(song_info, dict) else ""
+    artist = song_info.get("artist", "") if isinstance(song_info, dict) else ""
+    q = f"{title} {artist}".strip()
+    if not q:
+        sid = _extract_id(song_info)
+        q = sid
+    if not q:
+        return None
+    url = f"https://api.yaohud.cn/api/music/kuwo?key=nvgKtvzw7CFSNFrDhA6&action=search&msg={urllib.parse.quote(q)}&n=1"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+            vm = data.get("data", {}).get("vipmusic", {})
+            audio_url = vm.get("url", "")
+            if audio_url and audio_url.startswith("http"):
+                ok, sz, purl = verify_audio_url(audio_url, timeout=1.5)
+                if ok:
+                    return {"url": purl, "bytes": sz, "source": "妖狐酷我直通通道"}
+    except Exception:
+        pass
+    return None
+
 # ========================================================
 # 区块 4: AudioSource 单源模型实体与自适应排班模型
 # ========================================================
@@ -431,7 +456,15 @@ class SourceManager:
         self._init_builtin_sources()
 
     def _init_builtin_sources(self):
-        # 1. 默认注册 4 大异构原生通道（涵盖酷我车机、海棠、念心、网易云），并初始化分平台基准数据
+        # 1. 默认注册 5 大异构原生通道（涵盖酷我妖狐直通、海棠、念心、车机、网易云），并初始化分平台基准数据
+        s_yaohu = AudioSource("kw_yaohu", "妖狐直通源 (酷我)", ["kw", "tx"], _probe_kw_yaohu, "5886682")
+        s_yaohu.status = "ok"
+        s_yaohu.latency_ms = 80.0
+        s_yaohu.platform_latencies = {"kw": 80.0, "tx": 80.0}
+        s_yaohu.platform_status = {"kw": "ok", "tx": "ok"}
+        s_yaohu.success_count = 50
+        self.register(s_yaohu)
+
         s_haitang = AudioSource("kw_haitang", "海棠穿透源 (酷我)", "kw", _probe_kw_haitang, "5886682")
         s_haitang.status = "ok"
         s_haitang.latency_ms = 430.0
