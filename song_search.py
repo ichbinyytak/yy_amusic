@@ -504,14 +504,14 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if target_artist and target_artist not in query_k:
         query_k = f"{query_k} {target_artist}".strip()
 
-    # 3. 五大天王全息并发检索 (QQ + 网易云 + 酷狗 + 酷我 + 咪咕)
+    # 3. 极速全息并发检索 (酷我 + 网易云 + QQ独家兜底 + 酷狗/咪咕并发)
     results = []
     search_funcs = [
-        (_search_qq, 5),
-        (_search_netease, limit),
-        (_search_kugou, 5),
         (_search_kuwo, limit),
-        (_search_migu, 5)
+        (_search_netease, limit),
+        (_search_qq, 5),
+        (_search_kugou, 3),
+        (_search_migu, 3)
     ]
 
     from concurrent.futures import as_completed
@@ -521,22 +521,30 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
             executor.submit(fn, query_k, target_title, target_artist, lim, target_duration): fn
             for fn, lim in search_funcs
         }
-        for f in as_completed(future_to_fn, timeout=1.5):
+        for f in as_completed(future_to_fn, timeout=1.8):
             try:
                 cands = f.result()
                 if cands:
                     results.extend(cands)
+                    # 【核心第一性原理：高分正版即刻短路 (Early Short-Circuit)】
+                    # 酷我 (kw) 与网易云 (wy) 拥有纯 Python 免 Node 原生秒开通道 (海棠/车机/Meting)。
+                    # 一旦任一原生平台交出 score >= 80 的正版原唱，无需在后台傻等慢速源，立刻截断交卷！
+                    has_fast_native = any(c.get("platform") in ("kw", "wy") and c.get("score", 0) >= 80.0 for c in results)
+                    if has_fast_native:
+                        break
+                    # 若其他平台已经命中 >= 90 满分原唱且候选数充足，亦可提前截断
+                    if any(c.get("score", 0) >= 90.0 for c in results) and len(results) >= 3:
+                        break
             except Exception:
                 pass
     except Exception:
         pass
     finally:
-        # 彻底解除 Python ThreadPoolExecutor wait=True 退出阻塞：
-        # 即使个别慢平台超时，也绝不阻塞整体搜索结果返回！
+        # 彻底解除 Python ThreadPoolExecutor 阻塞：立即取消剩余未决 Future
         executor.shutdown(wait=False, cancel_futures=True)
 
-    # 排序权重：打分优先，同分情况下根据免 Node 原生穿透通道优先调度 (kw > tx > wy > kg > mg)
-    plat_priority = {"kw": 5, "tx": 4, "wy": 3, "kg": 2, "mg": 1}
+    # 排序权重：打分绝对优先；同分情况下，免 Node 原生极速通道优先调度 (kw > wy > tx > kg > mg)
+    plat_priority = {"kw": 10, "wy": 8, "tx": 5, "kg": 2, "mg": 1}
     results.sort(key=lambda x: (x["score"], plat_priority.get(x["platform"], 0)), reverse=True)
     return results
 
