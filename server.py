@@ -29,6 +29,7 @@ import urllib.parse
 import hashlib
 import ipaddress
 import socket
+import ssl
 
 # 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
 from source_manager import source_hub
