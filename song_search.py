@@ -40,7 +40,6 @@ from concurrent.futures import ThreadPoolExecutor
 # ----------------------------------------------------
 # 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
 # ----------------------------------------------------
-_search_kuwo_last_err = ""
 try:
     _orig_getaddrinfo = socket.getaddrinfo
 
@@ -323,8 +322,7 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
                         "duration": sdur,
                         "score": round(score, 1)
                     })
-    except Exception as e:
-        _search_kuwo_last_err = f"{type(e).__name__}: {e}"
+    except Exception:
         pass
     return res
 
@@ -354,8 +352,7 @@ def _search_netease(query_k: str, target_title: str, target_artist: str, limit: 
                         "duration": sdur,
                         "score": round(score, 1)
                     })
-    except Exception as e:
-        _search_kuwo_last_err = f"{type(e).__name__}: {e}"
+    except Exception:
         pass
     return res
 
@@ -452,8 +449,7 @@ def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int =
                         "duration": sdur,
                         "score": round(score, 1)
                     })
-    except Exception as e:
-        _search_kuwo_last_err = f"{type(e).__name__}: {e}"
+    except Exception:
         pass
     return res
 

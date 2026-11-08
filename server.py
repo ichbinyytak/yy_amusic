@@ -285,20 +285,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 q = qs.get("q", [""])[0]
                 artist = qs.get("artist", [""])[0]
                 dur = qs.get("duration", [None])[0]
-                if qs.get("debug"):
-                    debug_info = {}
-                    try:
-                        url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q)}&pn=0&rn=5&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
-                        req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-                        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-                        with urllib.request.urlopen(req, timeout=4.0, context=ctx) as r:
-                            raw = r.read().decode('utf-8', errors='ignore')
-                            debug_info["kw_status"] = r.status
-                            debug_info["kw_raw_preview"] = raw[:200]
-                    except Exception as e:
-                        debug_info["kw_err"] = f"{type(e).__name__}: {e}"
-                    self.send_json(debug_info)
-                    return
                 if dur:
                     try:
                         dur = float(dur)
