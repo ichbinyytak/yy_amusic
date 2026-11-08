@@ -383,6 +383,68 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     return results
 
 
+def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int = 5) -> list:
+    """QQ 音乐轻量公开检索通道 (用于策略 A 第二阶梯兜底，挽救独家与最新版本)"""
+    res = []
+    try:
+        url_qq = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n={limit}&w={urllib.parse.quote(query_k)}&format=json"
+        req = urllib.request.Request(url_qq, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=2.0) as r:
+            data = json.loads(r.read().decode('utf-8'))
+            for s in data.get('data', {}).get('song', {}).get('list', []):
+                sname = s.get('songname', '')
+                sart = "/".join([a.get('name', '') for a in s.get('singer', []) if a.get('name')])
+                salb = s.get('albumname', '')
+                sdur = s.get('interval')
+                smid = s.get('songmid', '')
+                if not smid:
+                    continue
+                score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, sdur)
+                if ok:
+                    res.append({
+                        "platform": "tx",
+                        "id": smid,
+                        "songmid": smid,
+                        "title": sname,
+                        "artist": sart,
+                        "album": salb,
+                        "duration": sdur,
+                        "score": round(score, 1)
+                    })
+    except Exception:
+        pass
+    return res
+
+
+def search_candidates_fallback(keyword: str, target_artist: str = "", limit: int = 5, target_title: str = "") -> list:
+    """
+    策略 A 第二阶梯兜底检索：
+    当第一阶梯（酷我+网易云）搜空或无可用音频流时，向 QQ 音乐发起精准补漏，100% 挽救腾讯独家版权
+    """
+    simplified_k = to_simple(clean_brackets(keyword))
+    if not simplified_k:
+        return []
+    if target_title:
+        target_title = to_simple(clean_brackets(target_title))
+        target_artist = to_simple(target_artist) if target_artist else ""
+    elif not target_artist:
+        parts = simplified_k.split()
+        if len(parts) >= 2:
+            target_title = " ".join(parts[:-1])
+            target_artist = parts[-1]
+        else:
+            target_title = simplified_k
+            target_artist = ""
+    else:
+        target_title = simplified_k
+        target_artist = to_simple(target_artist)
+
+    query_k = re.sub(r'[&/、+]+', ' ', simplified_k).strip() or simplified_k
+    cands = _search_qq(query_k, target_title, target_artist, limit)
+    cands.sort(key=lambda x: x["score"], reverse=True)
+    return cands
+
+
 # ========================================================
 # 区块 4: 时间轴歌词直通提取与秒级解析 (get_song_lyric)
 # ========================================================

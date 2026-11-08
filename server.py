@@ -32,7 +32,13 @@ import socket
 
 # 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
 from source_manager import source_hub
-from song_search import search_candidates, get_song_lyric
+from song_search import search_candidates, search_candidates_fallback, get_song_lyric
+
+# 核心音频寻链热点缓存 (Title+Artist -> ResolveResult)，存活 2 小时，容量 256 首
+_RESOLVE_CACHE = {}
+_RESOLVE_CACHE_LOCK = threading.Lock()
+_CACHE_MAX_ENTRIES = 256
+_CACHE_TTL_SEC = 7200  # 2 小时缓存期
 
 # 引入 Apple Music 官方专区与页面解构模块
 from apple_catalog import (
@@ -356,7 +362,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
-        # 核心音频流双核并发解析：支持精准平台ID或 Apple Music 歌曲智能模糊匹配解析
+        # 核心音频流双核并发解析：贯彻策略 A（短路式阶梯寻链，追求极速出声）
         if path == "/api/resolve":
             cand = json.loads(body) if body else {}
             title = (cand.get("title") or cand.get("name") or "").strip()
@@ -366,6 +372,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not duration and cand.get("durationMillis"):
                 duration = round(cand.get("durationMillis", 0) / 1000)
 
+            # 0. 快速检查内存热点缓存：同歌单重复切歌或复听 0ms 秒开
+            cache_key = f"{title.lower()}_{artist.lower()}".strip() if (title and not cand.get("id")) else ""
+            if cache_key:
+                with _RESOLVE_CACHE_LOCK:
+                    entry = _RESOLVE_CACHE.get(cache_key)
+                    if entry and (time.time() - entry["ts"]) < _CACHE_TTL_SEC:
+                        cached_res = dict(entry["res"])
+                        cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
+                        self.send_json(cached_res)
+                        return
+
             # 1. 如果已有确切的平台与歌曲 ID，优先直接调度
             if cand.get("platform") and cand.get("id"):
                 res = source_hub.resolve_best_stream(cand)
@@ -373,21 +390,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.send_json(res)
                     return
 
-            # 2. 否则（如从 Apple Music 歌单点播的纯歌曲对象），自动启动候选搜索与全源双核冲刺
+            # 2. 纯 Apple Music 元数据：贯彻【策略 A 短路式阶梯寻链】
             search_key = f"{title} {artist}".strip() if title else ""
             if not search_key:
                 self.send_error_json("缺少有效歌名或候选信息", 400)
                 return
 
-            cands = search_candidates(search_key, target_artist=artist, target_title=title)
-            if not cands and artist:
-                # 备用方案 1：仅用标题再次尝试比对歌手
-                cands = search_candidates(title, target_artist=artist, target_title=title)
-            if not cands and artist:
-                # 备用方案 2：外文/跨区歌手译名差异容错，仅用标题检索，放宽歌手限制
-                cands = search_candidates(title, target_artist="", target_title=title)
-
             last_err = "未找到候选歌曲"
+
+            # ----------------------------------------------------
+            # 策略 A 第一阶梯（主力冲刺）：酷我 (代表TME) + 网易云 并发
+            # ----------------------------------------------------
+            cands = search_candidates(search_key, target_artist=artist, target_title=title)
             for c in cands:
                 c["duration"] = c.get("duration") or duration
                 res = source_hub.resolve_best_stream(c)
@@ -395,8 +409,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     res["matched_candidate"] = c
                     res["target_title"] = title
                     res["target_artist"] = artist
+                    if cache_key:
+                        with _RESOLVE_CACHE_LOCK:
+                            if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                                _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                            _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
                     self.send_json(res)
-                    return
+                    return  # 一击即中，立即短路！彻底截断一切后续网络开销！
+                elif res and res.get("error"):
+                    last_err = res["error"]
+
+            # ----------------------------------------------------
+            # 策略 A 第二阶梯（独家兜底）：当第一梯队搜空或全失败时激活 QQ 音乐补漏
+            # 彻底废除原有在酷我/网易原地打转的无效重试，直奔 QQ 音乐救活独家版权
+            # ----------------------------------------------------
+            fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title)
+            for fc in fallback_cands:
+                fc["duration"] = fc.get("duration") or duration
+                res = source_hub.resolve_best_stream(fc)
+                if res and res.get("success"):
+                    res["matched_candidate"] = fc
+                    res["target_title"] = title
+                    res["target_artist"] = artist
+                    if cache_key:
+                        with _RESOLVE_CACHE_LOCK:
+                            if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                                _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                            _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                    self.send_json(res)
+                    return  # 兜底成功，即刻出声
                 elif res and res.get("error"):
                     last_err = res["error"]
 

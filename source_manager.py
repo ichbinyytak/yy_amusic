@@ -242,7 +242,7 @@ def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
 # 区块 4: AudioSource 单源模型实体与自适应排班模型
 # ========================================================
 class AudioSource:
-    """音源模型实体，追踪本地网络实测延迟与动态战绩"""
+    """音源模型实体，追踪本地网络实测延迟与分平台动态战绩"""
     def __init__(self, source_id, name, platforms, probe_func, test_track_id):
         self.id = source_id
         self.name = name
@@ -251,54 +251,109 @@ class AudioSource:
         self.probe_func = probe_func
         self.test_track_id = test_track_id
 
-        # 状态与动态统计
+        # 状态与动态统计 (全局 + 分平台)
         self.latency_ms = 9999.0
         self.status = "untested"
         self.success_count = 0
         self.fail_count = 0
         self.consecutive_fails = 0
+        self.platform_latencies = {}  # 例如 {"kw": 430.0, "wy": 769.3}
+        self.platform_status = {}     # 例如 {"kw": "ok", "wy": "ok"}
+        self.platform_fails = {}      # 分平台连续失败计数
 
     def test_health(self) -> dict:
-        """执行本地真实探活打测，严密对齐目标平台基准测试曲目（支持多平台智能降级与跨平台容灾）"""
-        t0 = time.perf_counter()
-        candidates = list(dict.fromkeys([self.platform] + self.platforms))
-        for plat in candidates:
-            track_info = TEST_TRACKS.get(plat, TEST_TRACKS["kw"])
+        """执行本地真实探活打测，对所支持的各平台分别测速记录，杜绝跨平台误判"""
+        best_plat = None
+        best_ms = 9999.0
+        overall_ok = False
+
+        for plat in self.platforms:
+            track_info = TEST_TRACKS.get(plat, TEST_TRACKS.get("kw"))
+            t0 = time.perf_counter()
             try:
-                res = self.probe_func(track_info, plat, timeout=3.5)
+                res = self.probe_func(track_info, plat, timeout=3.0)
                 ms = round((time.perf_counter() - t0) * 1000, 1)
                 if res and res.get('url'):
-                    self.platform = plat
-                    self.latency_ms = ms
-                    self.status = "ok"
-                    self.consecutive_fails = 0
-                    return {"id": self.id, "name": self.name, "status": "ok", "latency_ms": ms}
+                    self.platform_latencies[plat] = ms
+                    self.platform_status[plat] = "ok"
+                    self.platform_fails[plat] = 0
+                    overall_ok = True
+                    if ms < best_ms:
+                        best_ms = ms
+                        best_plat = plat
+                else:
+                    self.platform_latencies[plat] = 9999.0
+                    self.platform_status[plat] = "failed"
+                    self.platform_fails[plat] = self.platform_fails.get(plat, 0) + 1
             except Exception:
-                pass
+                self.platform_latencies[plat] = 9999.0
+                self.platform_status[plat] = "failed"
+                self.platform_fails[plat] = self.platform_fails.get(plat, 0) + 1
 
-        ms = round((time.perf_counter() - t0) * 1000, 1)
-        self.status = "failed"
-        self.latency_ms = 9999.0
-        self.consecutive_fails += 1
-        return {"id": self.id, "name": self.name, "status": "failed", "latency_ms": ms}
+        if overall_ok:
+            self.status = "ok"
+            self.platform = best_plat
+            self.latency_ms = best_ms
+            self.consecutive_fails = 0
+        else:
+            self.status = "failed"
+            self.latency_ms = 9999.0
+            self.consecutive_fails += 1
 
-    def record_hit(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "status": self.status,
+            "latency_ms": self.latency_ms,
+            "platform_latencies": self.platform_latencies,
+            "platform_status": self.platform_status
+        }
+
+    def record_hit(self, platform: str = None):
         """成功取歌出声：实战奖励"""
         self.success_count += 1
         self.consecutive_fails = 0
+        if platform:
+            self.platform_fails[platform] = 0
 
-    def record_miss(self):
+    def record_miss(self, platform: str = None):
         """找不到歌 / 报错：实战惩罚"""
         self.fail_count += 1
         self.consecutive_fails += 1
+        if platform:
+            self.platform_fails[platform] = self.platform_fails.get(platform, 0) + 1
 
-    def get_sort_weight(self) -> float:
+    def get_sort_weight(self, platform: str = None) -> float:
         """
         计算排序综合权重（越小排越前）：
-        基础延迟 + 连续失败重罚 (每次+300ms) - 成功率奖励
+        支持按目标平台细分排序，杜绝网易快源霸占酷我榜首的倒挂问题
         """
+        if platform:
+            if platform not in self.platforms:
+                return 999999.0  # 根本不支持此平台
+
+            # 若该平台尚未有独立实测成绩：非本命平台降权至 5000ms+，确保实测有效的本命源绝对优先
+            if platform not in self.platform_latencies:
+                if self.platform != platform:
+                    p_lat = 5000.0
+                    p_status = "untested"
+                else:
+                    p_lat = self.latency_ms
+                    p_status = self.status
+            else:
+                p_lat = self.platform_latencies[platform]
+                p_status = self.platform_status.get(platform, "ok")
+
+            p_fails = self.platform_fails.get(platform, self.consecutive_fails)
+            if p_status != "ok" or p_lat >= 9000.0:
+                return 90000.0 + p_fails * 1000.0
+            penalty = p_fails * 300.0
+            bonus = min(250.0, self.success_count * 25.0)
+            return max(1.0, p_lat + penalty - bonus)
+
+        # 全局回退排序
         if self.status != "ok":
-            return 90000.0 + self.consecutive_fails * 1000
+            return 90000.0 + self.consecutive_fails * 1000.0
         penalty = self.consecutive_fails * 300.0
         bonus = min(250.0, self.success_count * 25.0)
         return max(1.0, self.latency_ms + penalty - bonus)
@@ -316,21 +371,36 @@ class SourceManager:
         self._init_builtin_sources()
 
     def _init_builtin_sources(self):
-        # 1. 默认注册 4 大异构原生通道（涵盖酷我车机、海棠、念心、网易云）
+        # 1. 默认注册 4 大异构原生通道（涵盖酷我车机、海棠、念心、网易云），并初始化分平台基准数据
         s_haitang = AudioSource("kw_haitang", "海棠穿透源 (酷我)", "kw", _probe_kw_haitang, "5886682")
         s_haitang.status = "ok"
         s_haitang.latency_ms = 430.0
+        s_haitang.platform_latencies = {"kw": 430.0}
+        s_haitang.platform_status = {"kw": "ok"}
         s_haitang.success_count = 15
         self.register(s_haitang)
 
         s_nxinxz = AudioSource("kw_nxinxz", "念心穿透源 (酷我)", "kw", _probe_kw_nxinxz, "5886682")
         s_nxinxz.status = "ok"
         s_nxinxz.latency_ms = 680.0
+        s_nxinxz.platform_latencies = {"kw": 680.0}
+        s_nxinxz.platform_status = {"kw": "ok"}
         s_nxinxz.success_count = 5
         self.register(s_nxinxz)
 
-        self.register(AudioSource("kw_anti", "车机原生源 (酷我)", "kw", _probe_kw_anti, "5886682"))
-        self.register(AudioSource("wy_meting", "网易直通源 (网易)", "wy", _probe_wy_meting, "347230"))
+        s_anti = AudioSource("kw_anti", "车机原生源 (酷我)", "kw", _probe_kw_anti, "5886682")
+        s_anti.status = "ok"
+        s_anti.latency_ms = 800.0
+        s_anti.platform_latencies = {"kw": 800.0}
+        s_anti.platform_status = {"kw": "ok"}
+        self.register(s_anti)
+
+        s_wy = AudioSource("wy_meting", "网易直通源 (网易)", "wy", _probe_wy_meting, "347230")
+        s_wy.status = "ok"
+        s_wy.latency_ms = 450.0
+        s_wy.platform_latencies = {"wy": 450.0}
+        s_wy.platform_status = {"wy": "ok"}
+        self.register(s_wy)
 
         # 2. 零外网阻塞：直接从本地 sources_cache 与 sources_ranking.json 极速预热注册音源
         self.load_local_cached_sources()
@@ -392,6 +462,12 @@ class SourceManager:
                 src.status = s_info.get("status", "ok")
                 src.consecutive_fails = int(s_info.get("consecutive_fails", 0))
                 src.success_count = int(s_info.get("success_count", 0))
+                src.platform_latencies = dict(s_info.get("platform_latencies") or {})
+                src.platform_status = dict(s_info.get("platform_status") or {})
+                # 若排班表仅有总成绩，且仅指定了单一主平台，则只映射到该主平台，绝不跨平台污染
+                if not src.platform_latencies and src.platform:
+                    src.platform_latencies[src.platform] = src.latency_ms
+                    src.platform_status[src.platform] = src.status
                 self.register(src)
                 registered_sids.add(sid)
 
@@ -511,11 +587,13 @@ class SourceManager:
         self.sources[source.id] = source
 
     def get_ordered_sources(self, platform: str = None) -> list:
-        """获取当前按综合健康度从优到劣排序的音源队列"""
+        """获取当前按综合健康度从优到劣排序的音源队列（针对目标平台专属排名）"""
         cands = list(self.sources.values())
         if platform:
             cands = [s for s in cands if platform in s.platforms]
-        cands.sort(key=lambda s: s.get_sort_weight())
+            cands.sort(key=lambda s: s.get_sort_weight(platform=platform))
+        else:
+            cands.sort(key=lambda s: s.get_sort_weight())
         return cands
 
     def test_all(self) -> list:
@@ -596,7 +674,8 @@ class SourceManager:
                 "status": "miss"
             }
 
-            with ThreadPoolExecutor(max_workers=len(batch)) as exec_pool:
+            exec_pool = ThreadPoolExecutor(max_workers=len(batch))
+            try:
                 # 动态超时分配：本命源给予充裕 2.5s；跨平台尝试收紧至 1.2s，防止延迟雪崩
                 future_map = {
                     exec_pool.submit(s.probe_func, cand_song, target_plat, 2.5 if target_plat in s.platforms else 1.2): s
@@ -608,10 +687,13 @@ class SourceManager:
                     try:
                         res = f.result()
                         if res and res.get("url"):
-                            src.record_hit()
+                            src.record_hit(platform=target_plat)
                             r_log["winner"] = src.name
                             r_log["status"] = "hit"
                             rounds_log.append(r_log)
+                            # 彻底解除 Python ThreadPoolExecutor 默认的 wait=True 退出死锁：
+                            # 胜出者一旦产生，即刻非阻塞退出，绝不等待同组慢音源！
+                            exec_pool.shutdown(wait=False, cancel_futures=True)
                             return {
                                 "success": True,
                                 "url": res["url"],
@@ -628,10 +710,12 @@ class SourceManager:
                             # 核心免责保护：只有在音源自身的本命支持平台失败时，才记录 miss；
                             # 跨平台尝试失败绝对免责，杜绝误伤优质音源健康度！
                             if is_native_plat:
-                                src.record_miss()
+                                src.record_miss(platform=target_plat)
                     except Exception:
                         if is_native_plat:
-                            src.record_miss()
+                            src.record_miss(platform=target_plat)
+            finally:
+                exec_pool.shutdown(wait=False, cancel_futures=True)
 
             rounds_log.append(r_log)
 
