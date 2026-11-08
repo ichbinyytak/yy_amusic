@@ -1,9 +1,6 @@
 name: Daily Sync Sound Sources
 
 on:
-  push:
-    branches:
-      - master
   schedule:
     # 每天 UTC 20:45 (北京时间每天凌晨 04:45，在 lx-hub 跑完后自动同步)
     - cron: '45 20 * * *'

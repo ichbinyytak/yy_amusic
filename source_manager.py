@@ -174,6 +174,9 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
         ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             final_url = resp.geturl()
+            # 严格校验 HTTP 状态码必须是 200 或 206
+            if resp.status not in (200, 206):
+                return False, 0, ""
             # 从 Content-Range 或 Content-Length 获取文件总字节数
             cr = resp.headers.get('Content-Range', '')
             total_size = 0
@@ -194,13 +197,11 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
             if 0 < total_size < MIN_VALID_BYTES:
                 return False, total_size, final_url
             return True, total_size, final_url
+    except urllib.error.HTTPError:
+        # 铁律：HTTP 403 Forbidden / 404 Not Found 等明确的服务端拒绝，绝对是死链，严禁放行！
+        return False, 0, ""
     except Exception:
-        # 云端/跨网容错护航：若探针因跨境握手抖动超时，但直链明确为各大厂官方可信 CDN，绝对信任放行，严防误判引发全库雪崩！
-        is_trusted_official_cdn = any(d in url for d in [
-            'kuwo.cn', '126.net', 'music.126.net', 'qqmusic.qq.com', 'stream.qqmusic', 'kugou.com', 'migu.cn'
-        ])
-        if is_trusted_official_cdn:
-            return True, 5000000, url
+        # 网络连接错误或超时，不视为有效出声直链
         return False, 0, ""
 
 
@@ -334,12 +335,17 @@ class AudioSource:
             "platform_status": self.platform_status
         }
 
-    def record_hit(self, platform: str = None):
-        """成功取歌出声：实战奖励"""
+    def record_hit(self, platform: str = None, cost_ms: float = None):
+        """成功取歌出声：实战奖励与动态平滑提速"""
         self.success_count += 1
         self.consecutive_fails = 0
         if platform:
             self.platform_fails[platform] = 0
+        if cost_ms and cost_ms > 0:
+            # EMA 平滑移动平均：实操越快的源，实测延迟越低，排序自然自动前移
+            self.latency_ms = round(self.latency_ms * 0.7 + cost_ms * 0.3, 1)
+            if platform and platform in self.platform_latencies:
+                self.platform_latencies[platform] = round(self.platform_latencies[platform] * 0.7 + cost_ms * 0.3, 1)
 
     def record_miss(self, platform: str = None):
         """找不到歌 / 报错：实战惩罚"""
@@ -351,11 +357,16 @@ class AudioSource:
     def get_sort_weight(self, platform: str = None) -> float:
         """
         计算排序综合权重（越小排越前）：
-        支持按目标平台细分排序，杜绝网易快源霸占酷我榜首的倒挂问题
+        支持按目标平台细分排序，实战连败熔断入冷宫，实战高频出流自动晋升
         """
         if platform:
             if platform not in self.platforms:
                 return 999999.0  # 根本不支持此平台
+
+            p_fails = self.platform_fails.get(platform, self.consecutive_fails)
+            # 铁律：连败 2 次及以上直接熔断进冷宫，排到最后，杜绝耽误后续歌曲
+            if p_fails >= 2:
+                return 90000.0 + p_fails * 1000.0
 
             # 若该平台尚未有独立实测成绩：非本命平台降权至 5000ms+，确保实测有效的本命源绝对优先
             if platform not in self.platform_latencies:
@@ -369,7 +380,6 @@ class AudioSource:
                 p_lat = self.platform_latencies[platform]
                 p_status = self.platform_status.get(platform, "ok")
 
-            p_fails = self.platform_fails.get(platform, self.consecutive_fails)
             if p_status != "ok" or p_lat >= 9000.0:
                 return 90000.0 + p_fails * 1000.0
             penalty = p_fails * 300.0
@@ -377,7 +387,7 @@ class AudioSource:
             return max(1.0, p_lat + penalty - bonus)
 
         # 全局回退排序
-        if self.status != "ok":
+        if self.consecutive_fails >= 2 or self.status != "ok":
             return 90000.0 + self.consecutive_fails * 1000.0
         penalty = self.consecutive_fails * 300.0
         bonus = min(250.0, self.success_count * 25.0)
@@ -690,6 +700,7 @@ class SourceManager:
         total_rounds = (len(all_ordered) + batch_size - 1) // batch_size
 
         for round_idx in range(total_rounds):
+            round_t0 = time.perf_counter()
             batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
             names = [s.name for s in batch]
             r_log = {
@@ -712,7 +723,8 @@ class SourceManager:
                     try:
                         res = f.result()
                         if res and res.get("url"):
-                            src.record_hit(platform=target_plat)
+                            cost_ms = (time.perf_counter() - round_t0) * 1000.0
+                            src.record_hit(platform=target_plat, cost_ms=cost_ms)
                             r_log["winner"] = src.name
                             r_log["status"] = "hit"
                             rounds_log.append(r_log)
