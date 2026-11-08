@@ -284,17 +284,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             artist = qs.get("artist", [""])[0]
             dur = qs.get("duration", [None])[0]
             if qs.get("debug"):
-                import song_search
+                import song_search, urllib.request, ssl
                 debug_info = {}
                 try:
-                    debug_info["kw"] = song_search._search_kuwo(q, q, artist, 5)
-                    debug_info["kw_last_err"] = getattr(song_search, "_search_kuwo_last_err", "")
+                    url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q)}&pn=0&rn=5&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
+                    req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
+                    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+                    with urllib.request.urlopen(req, timeout=4.0, context=ctx) as r:
+                        raw = r.read().decode('utf-8')
+                        debug_info["kw_raw_len"] = len(raw)
+                        d = json.loads(raw)
+                        debug_info["kw_hit"] = d.get("HIT")
+                        debug_info["kw_abslist_len"] = len(d.get("abslist", []))
+                        if d.get("abslist"):
+                            first = d["abslist"][0]
+                            debug_info["kw_first"] = {
+                                "name": first.get("SONGNAME"),
+                                "artist": first.get("ARTIST"),
+                                "rid": first.get("MUSICRID")
+                            }
                 except Exception as e:
-                    debug_info["kw_err"] = f"{type(e)}: {e}"
-                try:
-                    debug_info["ne"] = song_search._search_netease(q, q, artist, 5)
-                except Exception as e:
-                    debug_info["ne_err"] = f"{type(e)}: {e}"
+                    debug_info["kw_err"] = f"{type(e).__name__}: {e}"
                 self.send_json(debug_info)
                 return
             if dur:
