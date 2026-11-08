@@ -479,15 +479,16 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if not simplified_k:
         return []
 
-    # 2. 智能提取目标标题与目标歌手（支持语序颠倒与空格分词）
+    # 2. 智能提取目标标题与目标歌手（支持短横线 -、空格、下划线、斜杠等分隔符）
     if target_title:
         target_title = to_simple(clean_brackets(target_title))
         target_artist = to_simple(target_artist) if target_artist else ""
     elif not target_artist:
-        parts = simplified_k.split()
-        if len(parts) >= 2:
-            target_title = " ".join(parts[:-1])
-            target_artist = parts[-1]
+        split_parts = re.split(r'\s*[\-_/|]\s*|\s+', simplified_k)
+        split_parts = [p.strip() for p in split_parts if p.strip()]
+        if len(split_parts) >= 2:
+            target_title = " ".join(split_parts[:-1])
+            target_artist = split_parts[-1]
         else:
             target_title = simplified_k
             target_artist = ""
@@ -495,8 +496,8 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
         target_title = simplified_k
         target_artist = to_simple(target_artist)
 
-    # 清理查询词中的连接符号，避免音源平台按特殊语法处理导致搜空
-    query_k = re.sub(r'[&/、+]+', ' ', simplified_k).strip()
+    # 清理查询词中的连接符号与减号，避免音源平台将 "-" 误判为逻辑 NOT 排除词导致搜空
+    query_k = re.sub(r'[\-_&/、+|]+', ' ', simplified_k).strip()
     if not query_k:
         query_k = simplified_k
 
@@ -524,11 +525,14 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
                 cands = f.result()
                 if cands:
                     results.extend(cands)
-                    # 【核心第一性原理：高分原生即刻短路 (Early Short-Circuit)】
-                    # 酷我 (kw) 与网易云 (wy) 拥有纯 Python 免 Node 原生秒开通道 (海棠/车机/Meting)。
-                    # 一旦任一原生平台交出 score >= 80 的正版原唱，绝不在后台死等 QQ 音乐，立即截断交卷！
-                    has_fast_native = any(c.get("platform") in ("kw", "wy") and c.get("score", 0) >= 80.0 for c in results)
-                    if has_fast_native:
+                    # 【核心第一性原理：酷我免 VIP 王牌优先稳赢短路】
+                    # 酷我 (kw) 拥有海棠/车机免 VIP 穿透直连通道，成功率与出声速度最高。
+                    # 一旦酷我交出 score >= 80 的正版原唱，稳赢短路交卷！
+                    has_kw = any(c.get("platform") == "kw" and c.get("score", 0) >= 80.0 for c in results)
+                    if has_kw:
+                        break
+                    # 若酷我尚未返回，但其他平台已有高分且候选数达到 >= 3，亦可提前截断防慢
+                    if any(c.get("score", 0) >= 85.0 for c in results) and len(results) >= 3:
                         break
             except Exception:
                 pass
