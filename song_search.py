@@ -302,7 +302,7 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
     try:
         url_kw = f"http://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        with urllib.request.urlopen(req, timeout=1.5) as r:
+        with urllib.request.urlopen(req, timeout=2.2) as r:
             data = json.loads(r.read().decode('utf-8', errors='ignore'))
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
@@ -511,9 +511,9 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
             for fn, lim in search_funcs
         }
         # 找房子闪电并发：酷我 + 网易云 原生秒开通道 + QQ 音乐兜底
-        # 绝大多数情况下 200~350ms 命中即短路秒退；给 1.2s 安全缓冲，避免跨网抖动时误杀王牌酷我源
+        # 绝大多数情况下 200~350ms 命中即短路秒退；给 2.2s 安全缓冲，避免跨网微抖动时误杀王牌酷我源
         found_platforms = set()
-        for f in as_completed(future_to_fn, timeout=1.2):
+        for f in as_completed(future_to_fn, timeout=2.2):
             try:
                 cands = f.result()
                 if cands:
@@ -521,9 +521,9 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
                     for c in cands:
                         if c.get("score", 0) >= 80.0:
                             found_platforms.add(c.get("platform"))
-                    # 方案 1: 必须具备跨平台多样性容灾保障 (至少 2 个独立平台交出 >=80 高分) 方可提前短路
-                    # 彻底废除原有“酷我只要交卷立即掐断网易/QQ”的狭隘假短路，防止假音频拖累死锁
-                    if len(found_platforms) >= 2:
+                    # 酷我高分优先秒开短路，兼顾跨平台多样性容灾
+                    has_kw = any(c.get("platform") == "kw" and c.get("score", 0) >= 80.0 for c in results)
+                    if has_kw or len(found_platforms) >= 2:
                         break
             except Exception:
                 pass
@@ -598,7 +598,7 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
         try:
             url = f"http://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=1.5) as r:
+            with urllib.request.urlopen(req, timeout=2.2) as r:
                 data = json.loads(r.read().decode('utf-8'))
                 lrc_text = data.get('lrc', {}).get('lyric', '')
                 if lrc_text:
@@ -637,7 +637,7 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
             q_enc = urllib.parse.quote(q_str)
             u_search = f"http://music.163.com/api/search/get?s={q_enc}&type=1&offset=0&limit=1"
             req = urllib.request.Request(u_search, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=1.5) as r:
+            with urllib.request.urlopen(req, timeout=2.2) as r:
                 d = json.loads(r.read().decode('utf-8'))
                 songs = (d.get('result') or {}).get('songs') or []
                 if songs and songs[0].get('id'):

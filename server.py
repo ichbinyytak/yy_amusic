@@ -31,6 +31,21 @@ import ipaddress
 import socket
 import ssl
 
+# ----------------------------------------------------
+# 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
+# ----------------------------------------------------
+try:
+    _orig_getaddrinfo = socket.getaddrinfo
+
+    def _ipv4_first_getaddrinfo(*args, **kwargs):
+        res = _orig_getaddrinfo(*args, **kwargs)
+        ipv4 = [r for r in res if r[0] == socket.AF_INET]
+        return ipv4 if ipv4 else res
+
+    socket.getaddrinfo = _ipv4_first_getaddrinfo
+except Exception:
+    pass
+
 # 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
 from source_manager import source_hub
 from song_search import search_candidates, search_candidates_fallback, get_song_lyric
@@ -486,10 +501,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 elif res and res.get("error"):
                     last_err = res["error"]
 
-            # 仅当首轮检索完全无结果时，才启用最后兜底
-            if not selected_cands:
-                fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
-                for fc in fallback_cands:
+            # 策略 A 第二阶梯（独家兜底）：当第一梯队全部候选尝试失败时激活 QQ 音乐精准补漏
+            fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
+            for fc in fallback_cands:
                     fc["duration"] = fc.get("duration") or duration
                     res = source_hub.resolve_best_stream(fc)
                     if res and res.get("success"):

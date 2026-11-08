@@ -136,6 +136,7 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
         }
         cmd = [
             NODE_BIN or "node",
+            "--dns-result-order=ipv4first",
             RUNNER_SCRIPT,
             script_path,
             plat,
@@ -726,7 +727,7 @@ class SourceManager:
         start_t = time.perf_counter()
 
         for round_idx in range(total_rounds):
-            if (time.perf_counter() - start_t) > 2.5:
+            if (time.perf_counter() - start_t) > 4.2:
                 break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
             batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
@@ -739,14 +740,14 @@ class SourceManager:
             }
 
             # 【方案 A 阶梯残酷筛选制】：
-            # 前 2 轮 (前 8 个源)：单源 1.2 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
-            # 第 3 轮 (安全气囊兜底)：放宽至 1.8 秒，确保极端冷门或需跑外部脚本的孤品曲目稳妥出声
+            # 前 2 轮 (前 8 个源)：单源 1.8 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
+            # 第 3 轮 (安全气囊兜底)：放宽至 2.4 秒，确保极端冷门或需跑外部脚本的孤品曲目稳妥出声
             if round_idx < 2:
-                single_probe_timeout = 1.2
-                round_timeout = 1.3
-            else:
                 single_probe_timeout = 1.8
-                round_timeout = 1.9
+                round_timeout = 1.95
+            else:
+                single_probe_timeout = 2.4
+                round_timeout = 2.55
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
