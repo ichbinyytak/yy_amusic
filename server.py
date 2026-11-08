@@ -49,6 +49,7 @@ except Exception:
 # 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
 from source_manager import source_hub
 from song_search import search_candidates, search_candidates_fallback, get_song_lyric
+from kv_cache import get_cached_candidate, set_cached_candidate, delete_cached_candidate
 
 # 核心音频寻链热点缓存 (Title+Artist -> ResolveResult)，存活 2 小时，容量 256 首
 _RESOLVE_CACHE = {}
@@ -451,6 +452,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.send_json(res)
                     return
 
+            # 1.5 跨会话与跨容器云端 ID 沉淀快速检查 (Vercel Upstash KV)
+            if title and not cand.get("platform"):
+                cloud_cand = get_cached_candidate(title, artist)
+                if cloud_cand and cloud_cand.get("platform") and cloud_cand.get("id"):
+                    cloud_cand["duration"] = cloud_cand.get("duration") or duration
+                    res = source_hub.resolve_best_stream(cloud_cand)
+                    if res and res.get("success"):
+                        res["matched_candidate"] = cloud_cand
+                        res["target_title"] = title
+                        res["target_artist"] = artist
+                        res["source_name"] = str(res.get("source_name", "")) + " ☁️云快取"
+                        if cache_key:
+                            with _RESOLVE_CACHE_LOCK:
+                                if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                                    _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                                _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                        self.send_json(res)
+                        return
+                    else:
+                        # 【防线 3: 自愈机制】若云端已存 ID 在第三方下架失效，立刻删除作废，平滑进入多通道全搜
+                        delete_cached_candidate(title, artist)
+
             # 2. 纯 Apple Music 元数据：贯彻【策略 A 短路式阶梯寻链】
             search_key = f"{title} {artist}".strip() if title else ""
             if not search_key:
@@ -497,6 +520,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
                                 _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
                             _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                    # 【防线 1 与 2】真实出声且原唱高分 (>=80) 候选存入云端 KV
+                    if c.get("score", 0) >= 80.0:
+                        try:
+                            set_cached_candidate(title, artist, c)
+                        except Exception:
+                            pass
                     self.send_json(res)
                     return  # 一击即中，立即短路！彻底截断一切后续网络开销！
                 elif res and res.get("error"):
@@ -522,6 +551,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
                                     _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
                                 _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                        # 【防线 1 与 2】真实出声且原唱高分 (>=80) 候选沉淀入云端 KV
+                        if fc.get("score", 0) >= 80.0:
+                            try:
+                                set_cached_candidate(title, artist, fc)
+                            except Exception:
+                                pass
                         self.send_json(res)
                         return  # 兜底成功，即刻出声
                     elif res and res.get("error"):
