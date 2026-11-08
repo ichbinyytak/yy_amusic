@@ -459,12 +459,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             last_err = "未找到候选歌曲"
 
+            overall_deadline = time.time() + 6.5
+
             # ----------------------------------------------------
             # 方案 1: 全息多通道并发检索与跨平台容灾冲刺
             # ----------------------------------------------------
             cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
 
-            # 跨平台优选：优先提取不同平台的最高分候选 (如 kw 最优、wy 最优、tx 最优)，杜绝同平台假音频连续试错耗尽时间
+            # 跨平台优选：优先提取不同平台的最高分候选 (如 kw 最优、wy 最优)，杜绝同平台连续试错
             selected_cands = []
             seen_platforms = set()
             for c in cands:
@@ -472,18 +474,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if plat not in seen_platforms:
                     selected_cands.append(c)
                     seen_platforms.add(plat)
-                if len(selected_cands) >= 3:
+                if len(selected_cands) >= 2:
                     break
-            if len(selected_cands) < 3:
+            if len(selected_cands) < 2:
                 for c in cands:
                     if c not in selected_cands:
                         selected_cands.append(c)
-                    if len(selected_cands) >= 3:
+                    if len(selected_cands) >= 2:
                         break
 
-            resolve_deadline = time.time() + 5.8
             for c in selected_cands:
-                if time.time() > resolve_deadline:
+                if time.time() > overall_deadline:
                     break
                 c["duration"] = c.get("duration") or duration
                 res = source_hub.resolve_best_stream(c)
@@ -501,9 +502,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 elif res and res.get("error"):
                     last_err = res["error"]
 
+            # ----------------------------------------------------
             # 策略 A 第二阶梯（独家兜底）：当第一梯队全部候选尝试失败时激活 QQ 音乐精准补漏
-            fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
-            for fc in fallback_cands:
+            # 严格受 overall_deadline 预算约束，杜绝死等与链式超时
+            # ----------------------------------------------------
+            if time.time() < (overall_deadline - 1.5):
+                fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
+                for fc in fallback_cands[:2]:
+                    if time.time() > overall_deadline:
+                        break
                     fc["duration"] = fc.get("duration") or duration
                     res = source_hub.resolve_best_stream(fc)
                     if res and res.get("success"):

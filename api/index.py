@@ -6,8 +6,22 @@ api/index.py - Vercel Serverless Function 统一入口
 
 import os
 import sys
+import socket
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler
+
+# 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
+try:
+    _orig_getaddrinfo = socket.getaddrinfo
+
+    def _ipv4_first_getaddrinfo(*args, **kwargs):
+        res = _orig_getaddrinfo(*args, **kwargs)
+        ipv4 = [r for r in res if r[0] == socket.AF_INET]
+        return ipv4 if ipv4 else res
+
+    socket.getaddrinfo = _ipv4_first_getaddrinfo
+except Exception:
+    pass
 
 # 将项目根目录加入模块搜索路径，确保核心逻辑模块正常加载
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

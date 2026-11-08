@@ -300,9 +300,10 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
     """酷我轻量检索通道"""
     res = []
     try:
-        url_kw = f"http://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
+        url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
         req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        with urllib.request.urlopen(req, timeout=2.2) as r:
+        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        with urllib.request.urlopen(req, timeout=2.5, context=ctx) as r:
             data = json.loads(r.read().decode('utf-8', errors='ignore'))
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
@@ -495,43 +496,29 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if target_artist and target_artist not in query_k:
         query_k = f"{query_k} {target_artist}".strip()
 
-    # 3. 极速全息并发检索 (酷我 + 网易云 原生秒开通道 + QQ 音乐独家版权兜底)
+    # 3. 极速全息并发检索 (酷我 + 网易云 原生秒开通道)
     results = []
-    search_funcs = [
-        (_search_kuwo, limit),
-        (_search_netease, limit),
-        (_search_qq, 5)
-    ]
-
-    from concurrent.futures import as_completed
-    executor = ThreadPoolExecutor(max_workers=3)
     try:
-        future_to_fn = {
-            executor.submit(fn, query_k, target_title, target_artist, lim, target_duration): fn
-            for fn, lim in search_funcs
-        }
-        # 找房子闪电并发：酷我 + 网易云 原生秒开通道 + QQ 音乐兜底
-        # 绝大多数情况下 200~350ms 命中即短路秒退；给 2.2s 安全缓冲，避免跨网微抖动时误杀王牌酷我源
-        found_platforms = set()
-        for f in as_completed(future_to_fn, timeout=2.2):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit, target_duration)
+            f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit, target_duration)
             try:
-                cands = f.result()
-                if cands:
-                    results.extend(cands)
-                    for c in cands:
-                        if c.get("score", 0) >= 80.0:
-                            found_platforms.add(c.get("platform"))
-                    # 酷我高分优先秒开短路，兼顾跨平台多样性容灾
-                    has_kw = any(c.get("platform") == "kw" and c.get("score", 0) >= 80.0 for c in results)
-                    if has_kw or len(found_platforms) >= 2:
-                        break
+                results.extend(f_kw.result(timeout=2.5))
+            except Exception:
+                pass
+            try:
+                results.extend(f_ne.result(timeout=2.5))
             except Exception:
                 pass
     except Exception:
         pass
-    finally:
-        # 彻底解除 Python ThreadPoolExecutor 阻塞：立即取消未决任务
-        executor.shutdown(wait=False, cancel_futures=True)
+
+    # 若酷我与网易云首轮均搜空（如独家版权或冷门专区），平滑查询 QQ 音乐补漏
+    if not results:
+        try:
+            results.extend(_search_qq(query_k, target_title, target_artist, 5, target_duration=target_duration))
+        except Exception:
+            pass
 
     # 排序权重：打分绝对优先；同分情况下，免 Node 原生极速通道优先调度 (kw > wy > tx > kg > mg)
     plat_priority = {"kw": 10, "wy": 8, "tx": 5, "kg": 2, "mg": 1}

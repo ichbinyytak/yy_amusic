@@ -209,10 +209,10 @@ def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
                 except Exception:
                     pass
 
-            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与 < 1.2MB 试听截断残卷
+            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与无效超短残卷
             if total_size in FAKE_AUDIO_LENGTHS:
                 return False, total_size, final_url
-            if 0 < total_size < 1200000:
+            if 0 < total_size < 350000:
                 return False, total_size, final_url
             return True, total_size, final_url
     except urllib.error.HTTPError:
@@ -723,11 +723,11 @@ class SourceManager:
 
         rounds_log = []
         batch_size = 4  # 升级为四核并发冲刺
-        total_rounds = min(3, (len(all_ordered) + batch_size - 1) // batch_size)  # 最多冲刺 3 轮 (12个源)，杜绝超时
+        total_rounds = min(2, (len(all_ordered) + batch_size - 1) // batch_size)  # 最多冲刺 2 轮 (8个高位优质源)，严控整体耗时
         start_t = time.perf_counter()
 
         for round_idx in range(total_rounds):
-            if (time.perf_counter() - start_t) > 4.2:
+            if (time.perf_counter() - start_t) > 3.0:
                 break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
             batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
@@ -739,15 +739,9 @@ class SourceManager:
                 "status": "miss"
             }
 
-            # 【方案 A 阶梯残酷筛选制】：
-            # 前 2 轮 (前 8 个源)：单源 1.8 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
-            # 第 3 轮 (安全气囊兜底)：放宽至 2.4 秒，确保极端冷门或需跑外部脚本的孤品曲目稳妥出声
-            if round_idx < 2:
-                single_probe_timeout = 1.8
-                round_timeout = 1.95
-            else:
-                single_probe_timeout = 2.4
-                round_timeout = 2.55
+            # 单源 1.8 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
+            single_probe_timeout = 1.8
+            round_timeout = 1.95
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
