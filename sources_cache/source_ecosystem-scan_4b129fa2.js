@@ -82,11 +82,11 @@ async function main() {
   // 判否结论来自 DEV_GUIDE「已判否的候选」（2026-10-29~30 三层实证），此处固化防误报。
   const DECIDED_CANDIDATES = {
     fish: '❌ 判否（2026-10-29：协议脱节/-462风控/音质校验失败）',
-    hyw: '❌ 判否（2026-10-30：后端 502，触发式待办——后端恢复可重评）',
+    hyw: '❌ 判否（2026-11-08 重评：后端已恢复但需卡密，非免费公益源）',
     jiexiang: '⚠️ 零增量留档（2026-10-30：成功通道走星海已接入，无新增量）',
     lx: '❌ 判否（2026-10-30：防搬运 403 不可复用）',
     qdy: '❌ 判否（2026-10-30：410 死链）',
-    huanyin: '❌ 判否（2026-11-05：music-dl.sayqz.com DNS 已失效 + 咪咕接口 502 被限，端到端不可用；上游恢复可重评——触发式待办）',
+    huanyin: '❌ 判否（2026-11-08 重评：主域名 DNS 失效，业务接口 api.xcvts.cn 已接入 suyinMigu）',
   };
 
   for (const [pdoneName, status] of Object.entries(pdoneSources)) {
