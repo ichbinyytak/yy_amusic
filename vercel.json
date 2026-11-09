@@ -22,6 +22,22 @@
       }
     },
     {
+      "src": "/(js|css)/(.*)",
+      "dest": "/$1/$2",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
+      }
+    },
+    {
+      "src": "/(player\\.js|style\\.css)",
+      "dest": "/$1",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
+      }
+    },
+    {
       "src": "/(.*)",
       "dest": "/$1",
       "headers": {

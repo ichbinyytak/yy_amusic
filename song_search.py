@@ -37,6 +37,7 @@ import urllib.request
 import urllib.parse
 import ssl
 from concurrent.futures import ThreadPoolExecutor
+from net_pool import http_get
 
 # ----------------------------------------------------
 # 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
@@ -300,13 +301,12 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
 def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int, target_duration = None) -> list:
     """酷我轻量检索通道"""
     res = []
-    # 1. 优先官方轻量接口
+    # 1. 优先官方轻量接口 (放宽至 1.8s 消除跨洋假超时，Keep-Alive 复用)
     try:
         url_kw = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(query_k)}&pn=0&rn={limit}&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
-        req = urllib.request.Request(url_kw, headers={'User-Agent': 'okhttp/3.10.0'})
-        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=1.0, context=ctx) as r:
-            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        st, raw_bytes, _, _ = http_get(url_kw, headers={'User-Agent': 'okhttp/3.10.0'}, timeout=1.8)
+        if st == 200 and raw_bytes:
+            data = json.loads(raw_bytes.decode('utf-8', errors='ignore'))
             for it in data.get('abslist', []):
                 sname = it.get('SONGNAME', '')
                 sart = it.get('ARTIST', '')
@@ -327,14 +327,13 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
     except Exception:
         pass
 
-    # 2. 若官方接口受跨国机房阻断 (Errno 110 Connection timed out)，平滑调用海外高可用通道
+    # 2. 若官方接口受跨国机房阻断，平滑调用海外高可用通道
     if not res:
         try:
             url_yh = f"https://api.yaohud.cn/api/music/kuwo?key=nvgKtvzw7CFSNFrDhA6&action=search&msg={urllib.parse.quote(query_k)}&n=1"
-            req = urllib.request.Request(url_yh, headers={'User-Agent': 'Mozilla/5.0'})
-            ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-            with urllib.request.urlopen(req, timeout=1.2, context=ctx) as r:
-                data = json.loads(r.read().decode('utf-8', errors='ignore'))
+            st, raw_bytes, _, _ = http_get(url_yh, headers={'User-Agent': 'Mozilla/5.0'}, timeout=1.5)
+            if st == 200 and raw_bytes:
+                data = json.loads(raw_bytes.decode('utf-8', errors='ignore'))
                 d = data.get("data", {})
                 if d and d.get("name"):
                     sname = d.get("name", "")
@@ -359,10 +358,9 @@ def _search_netease(query_k: str, target_title: str, target_artist: str, limit: 
     res = []
     try:
         url_ne = f"https://music.163.com/api/search/get?s={urllib.parse.quote(query_k)}&type=1&offset=0&limit={limit}"
-        req = urllib.request.Request(url_ne, headers={'User-Agent': 'Mozilla/5.0'})
-        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=2.0, context=ctx) as r:
-            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        st, raw_bytes, _, _ = http_get(url_ne, headers={'User-Agent': 'Mozilla/5.0'}, timeout=2.0)
+        if st == 200 and raw_bytes:
+            data = json.loads(raw_bytes.decode('utf-8', errors='ignore'))
             for s in data.get('result', {}).get('songs', []):
                 sname = s.get('name', '')
                 sart = "/".join([a.get('name', '') for a in s.get('artists', []) if a.get('name')])
@@ -389,10 +387,9 @@ def _search_qq(query_k: str, target_title: str, target_artist: str, limit: int =
     res = []
     try:
         url_qq = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n={limit}&w={urllib.parse.quote(query_k)}&format=json"
-        req = urllib.request.Request(url_qq, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=2.0, context=ctx) as r:
-            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        st, raw_bytes, _, _ = http_get(url_qq, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}, timeout=2.0)
+        if st == 200 and raw_bytes:
+            data = json.loads(raw_bytes.decode('utf-8', errors='ignore'))
             for s in data.get('data', {}).get('song', {}).get('list', []):
                 sname = s.get('songname', '')
                 sart = "/".join([a.get('name', '') for a in s.get('singer', []) if a.get('name')])
@@ -693,9 +690,9 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
     if plat_str in ("tx", "qq") and sid_str:
         try:
             url = f"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={sid_str}&format=json&nobase64=1"
-            req = urllib.request.Request(url, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=2.2) as r:
-                d = json.loads(r.read().decode('utf-8'))
+            st, data_bytes, _, _ = http_get(url, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'}, timeout=2.0)
+            if st == 200 and data_bytes:
+                d = json.loads(data_bytes.decode('utf-8', errors='ignore'))
                 lrc = d.get('lyric', '')
                 if lrc:
                     if not lrc.strip().startswith('['):
@@ -718,9 +715,9 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
     if plat_str in ("wy", "netease") and sid_str and sid_str.isdigit():
         try:
             url = f"http://music.163.com/api/song/lyric?os=pc&id={sid_str}&lv=-1"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=2.0) as r:
-                data = json.loads(r.read().decode('utf-8'))
+            st, data_bytes, _, _ = http_get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=2.0)
+            if st == 200 and data_bytes:
+                data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
                 lrc_text = data.get('lrc', {}).get('lyric', '')
                 if lrc_text:
                     lines = _parse_lrc_text(lrc_text)
@@ -739,9 +736,9 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
         if kw_rid.isdigit():
             try:
                 url = f"http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={kw_rid}&httpsStatus=1"
-                req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'})
-                with urllib.request.urlopen(req, timeout=1.5) as r:
-                    raw = r.read().decode('utf-8', errors='ignore').strip()
+                st, data_bytes, _, _ = http_get(url, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'}, timeout=1.5)
+                if st == 200 and data_bytes:
+                    raw = data_bytes.decode('utf-8', errors='ignore').strip()
                     data = json.loads(raw)
                     items = (data.get('data') or {}).get('lrclist') or []
                     for item in items:
@@ -765,9 +762,9 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
         # 4.1 优先 QQ 音乐检索正版单曲 LRC
         try:
             url_qq_search = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n=5&w={urllib.parse.quote(q_str)}&format=json"
-            req = urllib.request.Request(url_qq_search, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=2.0) as r:
-                data = json.loads(r.read().decode('utf-8'))
+            st, data_bytes, _, _ = http_get(url_qq_search, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'}, timeout=2.0)
+            if st == 200 and data_bytes:
+                data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
                 songs = (data.get('data') or {}).get('song', {}).get('list', [])
                 for s in songs:
                     mid = s.get('songmid')
@@ -777,9 +774,9 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
                     score, ok = calculate_song_match_score(s_name, s_art, "", clean_t, clean_a)
                     if ok and mid:
                         url_lrc = f"https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid={mid}&format=json&nobase64=1"
-                        req_l = urllib.request.Request(url_lrc, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'})
-                        with urllib.request.urlopen(req_l, timeout=2.0) as rl:
-                            ld = json.loads(rl.read().decode('utf-8'))
+                        stl, lrc_bytes, _, _ = http_get(url_lrc, headers={'Referer': 'https://y.qq.com/', 'User-Agent': 'Mozilla/5.0'}, timeout=2.0)
+                        if stl == 200 and lrc_bytes:
+                            ld = json.loads(lrc_bytes.decode('utf-8', errors='ignore'))
                             lrc = ld.get('lyric', '')
                             if lrc:
                                 if not lrc.strip().startswith('['):
@@ -799,16 +796,16 @@ def get_song_lyric(platform: str = "kw", song_id: str = "", title: str = "", art
         # 4.2 次选酷我音乐检索
         try:
             url_kw_search = f"https://search.kuwo.cn/r.s?client=kt&all={urllib.parse.quote(q_str)}&pn=0&rn=3&uid=794762528&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newsearch=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1"
-            req = urllib.request.Request(url_kw_search, headers={'User-Agent': 'okhttp/3.10.0'})
-            with urllib.request.urlopen(req, timeout=1.5) as r:
-                data = json.loads(r.read().decode('utf-8', errors='ignore'))
+            st, data_bytes, _, _ = http_get(url_kw_search, headers={'User-Agent': 'okhttp/3.10.0'}, timeout=1.8)
+            if st == 200 and data_bytes:
+                data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
                 for it in (data.get('abslist') or []):
                     rid = it.get('MUSICRID', '').replace('MUSIC_', '')
                     if rid.isdigit():
                         u_lrc = f"http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={rid}&httpsStatus=1"
-                        req_kl = urllib.request.Request(u_lrc, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'})
-                        with urllib.request.urlopen(req_kl, timeout=1.5) as rl:
-                            kl_raw = rl.read().decode('utf-8', errors='ignore').strip()
+                        stl, kl_bytes, _, _ = http_get(u_lrc, headers={'User-Agent': 'okhttp/3.10.0', 'Referer': 'https://kuwo.cn/'}, timeout=1.5)
+                        if stl == 200 and kl_bytes:
+                            kl_raw = kl_bytes.decode('utf-8', errors='ignore').strip()
                             kl_data = json.loads(kl_raw)
                             items = (kl_data.get('data') or {}).get('lrclist') or []
                             for item in items:

@@ -37,6 +37,7 @@ import urllib.request
 import urllib.error
 import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from net_pool import http_get, verify_audio_stream, MIN_VALID_BYTES, FAKE_AUDIO_LENGTHS
 
 # ----------------------------------------------------
 # 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
@@ -200,68 +201,14 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
 def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
     """
     轻量秒级校验音频有效性：仅获取 HEAD 或 Range 请求头，不下载几兆音频 Body
-    【方案 2: 语义特征 + 时长残卷双重防线，彻底铲除 11 秒假音频提示音刺客】
+    连接池 Keep-Alive 极速复用，彻底拦截 11 秒假音频提示音与截断残卷
     返回: (is_valid: bool, content_length: int, final_url: str)
     """
-    if not url or not url.startswith("http"):
-        return False, 0, ""
-
-    # 1. 第一防线：酷我假音频官方下架提示音特征识别 (588957081)
-    if "588957081" in url:
-        return False, 0, url
-
-    try:
-        req = urllib.request.Request(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Range': 'bytes=0-1024'  # 只嗅探前 1KB
-        })
-        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            final_url = resp.geturl()
-
-            # 严格重定向目标语义检查
-            if "588957081" in final_url:
-                return False, 0, final_url
-
-            # 严格校验 HTTP 状态码必须是 200 或 206
-            if resp.status not in (200, 206):
-                return False, 0, ""
-
-            # 过滤非音频 MIME 类型 (如返回 HTML 报错页或 JSON 授权失败)
-            content_type = (resp.headers.get('Content-Type') or '').lower()
-            if content_type and ('text/' in content_type or 'application/json' in content_type):
-                return False, 0, final_url
-
-            # 从 Content-Range 或 Content-Length 获取文件总字节数
-            cr = resp.headers.get('Content-Range', '')
-            total_size = 0
-            if cr and '/' in cr:
-                try:
-                    total_size = int(cr.split('/')[-1])
-                except Exception:
-                    pass
-            if total_size == 0:
-                try:
-                    total_size = int(resp.headers.get('Content-Length', 0))
-                except Exception:
-                    pass
-
-            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与无效截断试听残卷 (< 1.2MB)
-            if total_size in FAKE_AUDIO_LENGTHS:
-                return False, total_size, final_url
-            if 0 < total_size < MIN_VALID_BYTES:
-                return False, total_size, final_url
-            return True, total_size, final_url
-    except urllib.error.HTTPError:
-        # 铁律：HTTP 403 Forbidden / 404 Not Found 等明确的服务端拒绝，绝对是死链，严禁放行！
-        return False, 0, ""
-    except Exception:
-        # 网络连接错误或超时，不视为有效出声直链
-        return False, 0, ""
+    return verify_audio_stream(url, timeout=timeout)
 
 
 # ========================================================
-# 内置直连音源探测器定义（高可用、极速毫秒响应）
+# 内置直连音源探测器定义（高可用、极速毫秒响应，零进程开销）
 # ========================================================
 
 def _extract_id(song_info):
@@ -274,15 +221,10 @@ def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
     if not song_id or not song_id.isdigit():
         return None
     url = f"https://musicapi.haitangw.net/music/kw.php?type=mp3&id={song_id}&level=standard"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        final_url = resp.geturl()
-        if final_url and 'haitangw.net' not in final_url:
-            # 严格防线：必须通过 verify_audio_url 嗅探，绝不放行 181521/81629 假音频与截断残卷
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "海棠SVIP穿透通道"}
+    # 单次跟随重定向并校验头大小，彻底消除二次握手双跳
+    ok, sz, purl = verify_audio_url(url, timeout=timeout)
+    if ok and 'haitangw.net' not in purl:
+        return {"url": purl, "bytes": sz, "source": "海棠SVIP穿透通道"}
     return None
 
 def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
@@ -290,12 +232,11 @@ def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
     if not song_id or not song_id.isdigit():
         return None
     url = f"http://antiserver.kuwo.cn/anti.s?type=convert_url3&rid={song_id}&format=mp3&response=url"
-    req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode('utf-8').strip()
+    st, raw_bytes, _, _ = http_get(url, headers={'User-Agent': 'okhttp/3.10.0'}, timeout=timeout)
+    if st == 200 and raw_bytes:
+        raw = raw_bytes.decode('utf-8', errors='ignore').strip()
         purl = json.loads(raw).get('url', '') if raw.startswith('{') else raw
         if purl and purl.startswith('http'):
-            # 铁律：酷我官方对下架歌曲返回 181521 字节的 11 秒假音频提示音，必须 100% 经过严格校验拦截！
             ok, sz, final_url = verify_audio_url(purl, timeout=1.5)
             if ok:
                 return {"url": final_url, "bytes": sz, "source": "酷我官方原生通道"}
@@ -306,13 +247,10 @@ def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
     if not song_id or not song_id.isdigit():
         return None
     url = f"http://music.nxinxz.com/kw.php?id={song_id}&level=standard&type=mp3"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        final_url = resp.geturl()
-        if final_url and 'music.nxinxz.com' not in final_url:
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "念心车机穿透通道"}
+    # 单次跟随重定向并校验头大小，消除二次跨洋握手
+    ok, sz, purl = verify_audio_url(url, timeout=timeout)
+    if ok and 'music.nxinxz.com' not in purl:
+        return {"url": purl, "bytes": sz, "source": "念心车机穿透通道"}
     return None
 
 def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
@@ -320,16 +258,28 @@ def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
     if not song_id or not song_id.isdigit():
         return None
     url = f"https://api.injahow.cn/meting/?server=netease&type=url&id={song_id}"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            final_url = resp.geturl()
-            if resp.status == 200 and 'music.126.net' in final_url:
-                ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
+    ok, sz, purl = verify_audio_url(url, timeout=timeout)
+    if ok and 'music.126.net' in purl:
+        return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
+    return None
+
+def _probe_tx_native(song_info, target_platform="tx", timeout: float = 2.0):
+    """QQ 音乐纯 Python 原生直通通道（无需解压 Node.js 沙箱，毫秒级直出正版音源）"""
+    sid = _extract_id(song_info)
+    if not sid:
+        return None
+    url = f"https://103.79.184.97/api/music/url?songId={sid}&songmid={sid}&platform=tx&source=tx&quality=128k&key=6C1F-53W0-GRKI-EVFG"
+    st, data_bytes, _, _ = http_get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=timeout)
+    if st == 200 and data_bytes:
+        try:
+            data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
+            if data.get("code") == 200 and data.get("url"):
+                target_url = data["url"]
+                ok, sz, purl = verify_audio_url(target_url, timeout=1.5)
                 if ok:
-                    return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
-    except Exception:
-        pass
+                    return {"url": purl, "bytes": sz, "source": "QQ音乐直通通道"}
+        except Exception:
+            pass
     return None
 
 def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
@@ -342,19 +292,18 @@ def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
     if not q:
         return None
     url = f"https://api.yaohud.cn/api/music/kuwo?key=nvgKtvzw7CFSNFrDhA6&action=search&msg={urllib.parse.quote(q)}&n=1"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+    st, data_bytes, _, _ = http_get(url, timeout=timeout)
+    if st == 200 and data_bytes:
+        try:
+            data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
             vm = data.get("data", {}).get("vipmusic", {})
             audio_url = vm.get("url", "")
             if audio_url and audio_url.startswith("http"):
                 ok, sz, purl = verify_audio_url(audio_url, timeout=1.5)
                 if ok:
                     return {"url": purl, "bytes": sz, "source": "妖狐酷我直通通道"}
-    except Exception:
-        pass
+        except Exception:
+            pass
     return None
 
 # ========================================================
@@ -542,6 +491,14 @@ class SourceManager:
         s_wy.platform_latencies = {"wy": 450.0}
         s_wy.platform_status = {"wy": "ok"}
         self.register(s_wy)
+
+        s_tx = AudioSource("tx_native", "QQ音乐直通源 (企鹅)", ["tx"], _probe_tx_native, "002WkUkN2L0dqm")
+        s_tx.status = "ok"
+        s_tx.latency_ms = 400.0
+        s_tx.platform_latencies = {"tx": 400.0}
+        s_tx.platform_status = {"tx": "ok"}
+        s_tx.success_count = 25
+        self.register(s_tx)
 
         # 2. 零外网阻塞：直接从本地 sources_cache 与 sources_ranking.json 极速预热注册音源
         self.load_local_cached_sources()

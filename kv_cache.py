@@ -18,6 +18,7 @@ import json
 import time
 import urllib.request
 import urllib.error
+from net_pool import http_post_json
 
 # 动态获取环境变量，防止 Serverless 容器冷启动初始化时序差
 def _get_kv_config():
@@ -51,27 +52,22 @@ def _normalize_key(title: str, artist: str) -> str:
 
 def _execute_kv_command(command_list: list, timeout: float = 1.0):
     """
-    通过纯 Python 标准库执行 Upstash Redis REST 命令
-    0 pip 依赖，毫秒级快速握手
+    通过连接池复用 Keep-Alive 执行 Upstash Redis REST 命令
+    消除重复 TLS 握手，毫秒级快速响应
     """
     url, token = _get_kv_config()
     if not url or not token:
         return None
     try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(command_list).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        headers = {"Authorization": f"Bearer {token}"}
+        st, data_bytes, _ = http_post_json(url, command_list, headers=headers, timeout=timeout)
+        if st == 200 and data_bytes:
+            data = json.loads(data_bytes.decode("utf-8"))
             return data.get("result")
     except Exception:
         # 云端网络抖动或超时不打扰业务，静默回退
         return None
+    return None
 
 def get_cached_candidate(title: str, artist: str) -> dict:
     """

@@ -493,7 +493,8 @@
               bytes: data.bytes,
               sourceName: data.source_name,
               costMs: 0,
-              ts: Date.now()
+              ts: Date.now(),
+              lyrics: data.lyrics || []
             });
           }
         }).catch(() => {});
@@ -507,6 +508,11 @@
         this.autoSkipCount = 0;
       }
       this._retriedProxy = false;
+      if (this.currentAbortController) {
+        try { this.currentAbortController.abort(); } catch (e) {}
+      }
+      this.currentAbortController = new AbortController();
+      const abortSignal = this.currentAbortController.signal;
       this.resolveToken = (this.resolveToken || 0) + 1;
       const currentToken = this.resolveToken;
 
@@ -617,7 +623,8 @@
           const res = await fetch('/api/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: abortSignal
           });
           data = await res.json();
           cost = (performance.now() - t0).toFixed(0);
@@ -625,7 +632,7 @@
             break; // 服务端已完成多源并发冲刺，直接使用结果
           }
         } catch (err) {
-          // 捕获网络或瞬态异常
+          if (err.name === 'AbortError') return; // 用户快速切歌已主动终止该请求
         }
 
         // 仅在网络异常抛错时对歌单首曲启用最多 3 秒重试窗口
