@@ -41,6 +41,19 @@
 
 ## 版本迭代历史记录
 
+### v6.3.3 (2026-11-09) Vercel 生产节点回归美国 (`iad1`) 与时间预算动态收敛
+
+- **部署节点规范恢复 (`vercel.json`)**：
+  - 将 Vercel Serverless Function 部署节点从香港 (`hkg1`) 恢复至美国东部华盛顿首要节点 (`iad1`)；
+  - 彻底清理此前因香港跨网补偿而临时追加的冗余超时与硬编码；
+- **全链路单点预算锚定与动态透传 (`server.py` & `source_manager.py`)**：
+  - 在 `/api/resolve` 请求入口处统一锚定 `overall_deadline = req_start + 7.5s`，杜绝中途重新计算导致请求总耗时突破 Vercel 10s 物理上限引发 504 网关超时；
+  - 动态向下游分发剩余时间预算 (`timeout_budget`)，各探测梯次与线程池平滑按需退出；
+- **音源直通通道与防盗链 TTL 对齐 (`server.py` & `source_manager.py`)**：
+  - 修复 `kw_yaohu` 异构原生通道的所属平台声明，由 `["kw", "tx"]` 修正为纯酷我 `["kw"]`，避免污染或误派 QQ 音乐候选；
+  - 服务端热点缓存 `_CACHE_TTL_SEC` 从 7200s (2小时) 调整为 900s (15分钟)，与前端 `RESOLVE_CACHE_TTL_MS` 完全对齐，根治第三方 CDN 临时 Token 过期导致的 403 播放假死；
+  - 修复探针超时倒挂问题 (`single_probe_timeout = 1.8`, `round_timeout = 2.4` 且动态预算下严格防倒挂)，并将 `NODE_BIN` 改为按需惰性加载与线程安全加锁，彻底消除冷启动解压冻结与并发解压竞态。
+
 ### v6.3.2 (2026-11-09) 日本百大榜与多语言母语原名映射穿透机制
 
 - **根治非本土 Storefront 日韩曲目罗马音化导致搜空的物理痛点 (`server.py` & `js/right.js`)**：

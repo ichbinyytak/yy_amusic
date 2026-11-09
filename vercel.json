@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "regions": ["hkg1"],
+  "regions": ["iad1"],
   "builds": [
     {
       "src": "api/index.py",

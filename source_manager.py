@@ -72,40 +72,74 @@ CACHE_DIR = os.path.join(BASE_DIR, "sources_cache")
 RUNNER_SCRIPT = os.path.join(BASE_DIR, "lx_runner.js")
 
 # ========================================================
-# 区块 1: 便携式 Node.js 沙箱自适应定位与极速解压
+# 区块 1: 便携式 Node.js 沙箱自适应定位与按需惰性加载
 # ========================================================
+_NODE_BIN = None
+_NODE_BIN_CHECKED = False
+_NODE_LOCK = threading.Lock()
+
 def get_node_binary():
-    """获取可用的 node 可执行程序路径：
+    """获取可用的 node 可执行程序路径 (按需惰性加载，杜绝冷启动解压冻结)：
     1. 优先使用系统 PATH 中的 node（如本地 Linux 环境、自建服务器）
     2. 若不存在（如 Vercel 纯 Python Serverless），检查 /tmp/node 是否已存在且可执行
-    3. 若未解压，从仓库自带的 bin/node.gz 极速解压到 /tmp/node 并赋予可执行权限
+    3. 若未解压且确有沙箱探测需求，从仓库自带的 bin/node.gz 极速解压到 /tmp/node 并赋予可执行权限
     """
-    sys_node = shutil.which("node")
-    if sys_node:
-        return sys_node
+    global _NODE_BIN, _NODE_BIN_CHECKED
+    if _NODE_BIN_CHECKED:
+        return _NODE_BIN
 
-    tmp_node = "/tmp/node"
-    if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
-        return tmp_node
+    with _NODE_LOCK:
+        if _NODE_BIN_CHECKED:
+            return _NODE_BIN
 
-    # 尝试从 bin/node.gz 解压 (带原子重命名防并发冷启动竞态)
-    gz_path = os.path.join(BASE_DIR, "bin", "node.gz")
-    if os.path.exists(gz_path):
-        try:
-            tmp_writing = f"{tmp_node}.tmp.{os.getpid()}"
-            with gzip.open(gz_path, "rb") as f_in:
-                with open(tmp_writing, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-            os.chmod(tmp_writing, 0o755)
-            os.replace(tmp_writing, tmp_node)
-            if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
-                return tmp_node
-        except Exception as e:
-            print(f"[SourceManager] 解压便携 Node 二进制异常: {e}")
-    return None
+        sys_node = shutil.which("node")
+        if sys_node:
+            _NODE_BIN = sys_node
+            _NODE_BIN_CHECKED = True
+            return _NODE_BIN
 
-NODE_BIN = get_node_binary()
-HAS_NODE = bool(NODE_BIN)
+        tmp_node = "/tmp/node"
+        if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
+            _NODE_BIN = tmp_node
+            _NODE_BIN_CHECKED = True
+            return _NODE_BIN
+
+        # 尝试从 bin/node.gz 解压 (带原子重命名防并发冷启动竞态)
+        gz_path = os.path.join(BASE_DIR, "bin", "node.gz")
+        if os.path.exists(gz_path):
+            try:
+                tmp_writing = f"{tmp_node}.tmp.{os.getpid()}.{threading.get_ident()}"
+                with gzip.open(gz_path, "rb") as f_in:
+                    with open(tmp_writing, "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                os.chmod(tmp_writing, 0o755)
+                os.replace(tmp_writing, tmp_node)
+                if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
+                    _NODE_BIN = tmp_node
+                    _NODE_BIN_CHECKED = True
+                    return _NODE_BIN
+            except Exception as e:
+                print(f"[SourceManager] 解压便携 Node 二进制异常: {e}")
+        _NODE_BIN = None
+        _NODE_BIN_CHECKED = True
+        return None
+
+def has_node():
+    """轻量检查是否具备 node 运行环境 (优先 PATH/既有 /tmp，不触发耗时的 node.gz 首次解压)"""
+    if _NODE_BIN_CHECKED:
+        return bool(_NODE_BIN)
+    if shutil.which("node"):
+        return True
+    if os.path.exists("/tmp/node") and os.access("/tmp/node", os.X_OK):
+        return True
+    return os.path.exists(os.path.join(BASE_DIR, "bin", "node.gz"))
+
+def __getattr__(name):
+    if name == "NODE_BIN":
+        return get_node_binary()
+    if name == "HAS_NODE":
+        return has_node()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 # ========================================================
 # 区块 2: LX 脚本沙箱探针与内置原生通道探针
@@ -113,7 +147,8 @@ HAS_NODE = bool(NODE_BIN)
 def _make_runner_probe(script_path: str, supported_platforms: list):
     """为每一个 LX 脚本源生成专属探测函数，支持传递完整歌名、歌手与目标平台"""
     def _probe(song_info, target_platform: str = "kw", timeout: float = 3.5):
-        if not HAS_NODE or not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
+        node_bin = get_node_binary()
+        if not node_bin or not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
             return None
         
         # 兼容 dict 或 str 传参
@@ -137,7 +172,7 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
             "timeout": int(timeout * 1000)
         }
         cmd = [
-            NODE_BIN or "node",
+            node_bin,
             "--dns-result-order=ipv4first",
             RUNNER_SCRIPT,
             script_path,
@@ -470,11 +505,11 @@ class SourceManager:
 
     def _init_builtin_sources(self):
         # 1. 默认注册 5 大异构原生通道（涵盖酷我妖狐直通、海棠、念心、车机、网易云），并初始化分平台基准数据
-        s_yaohu = AudioSource("kw_yaohu", "妖狐直通源 (酷我)", ["kw", "tx"], _probe_kw_yaohu, "5886682")
+        s_yaohu = AudioSource("kw_yaohu", "妖狐直通源 (酷我)", ["kw"], _probe_kw_yaohu, "5886682")
         s_yaohu.status = "ok"
         s_yaohu.latency_ms = 80.0
-        s_yaohu.platform_latencies = {"kw": 80.0, "tx": 80.0}
-        s_yaohu.platform_status = {"kw": "ok", "tx": "ok"}
+        s_yaohu.platform_latencies = {"kw": 80.0}
+        s_yaohu.platform_status = {"kw": "ok"}
         s_yaohu.success_count = 50
         self.register(s_yaohu)
 
@@ -533,7 +568,7 @@ class SourceManager:
 
         # 1. 对比排班表注册本地 LX 音源
         # 6.1 在 Vercel 或无 Node 环境下，直接跳过所有 LX 脚本源，仅更新原生直连源，专注原生通道
-        if not HAS_NODE:
+        if not has_node():
             for r_id, s_info in ranking_sources.items():
                 if not r_id.startswith("lx_") and r_id in self.sources:
                     src = self.sources[r_id]
@@ -635,7 +670,7 @@ class SourceManager:
 
     def sync_from_lx_hub(self):
         """从用户维护的 lx-hub 动态同步并注册全部 32 个音源"""
-        if not HAS_NODE or os.environ.get("VERCEL"):
+        if not has_node() or os.environ.get("VERCEL"):
             return False
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
@@ -747,12 +782,12 @@ class SourceManager:
             "success_count": s.success_count
         } for s in ordered]
 
-    def resolve_best_stream(self, cand_song: dict) -> dict:
+    def resolve_best_stream(self, cand_song: dict, timeout_budget: float = None) -> dict:
         """
         四核并发全量冲刺调度（Quad-Core Racing Pool）：
         1. 针对目标平台精准派出能打的同平台源，绝不把 QQ 音乐 ID 派给纯酷我/纯网易源导致超时空转；
-        2. 每次派出 4 个最优源并发冲刺，任一源返回有效全曲（> 1.5MB）即刻胜出秒开出声；
-        3. 彻底解除 wait=True 死锁，非阻塞退出。
+        2. 每次派出 4 个最优源并发冲刺，任一源返回有效全曲（> 1.2MB）即刻胜出秒开出声；
+        3. 彻底解除 wait=True 死锁，非阻塞退出，动态遵循剩余时间预算。
         """
         target_plat = cand_song.get("platform", "kw")
         song_id = cand_song.get("id", "")
@@ -791,9 +826,11 @@ class SourceManager:
 
         rounds_log = []
         start_t = time.perf_counter()
+        overall_limit = min(3.5, timeout_budget) if timeout_budget is not None else 3.5
 
         for round_idx, batch in enumerate(batches[:2]):
-            if (time.perf_counter() - start_t) > 3.0:
+            elapsed = time.perf_counter() - start_t
+            if elapsed >= overall_limit:
                 break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
             names = [s.name for s in batch]
@@ -804,9 +841,15 @@ class SourceManager:
                 "status": "miss"
             }
 
-            # 单源 1.8 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
+            # 单源 1.8 秒充裕缓冲；轮次收集 2.4 秒充裕窗口，杜绝超时倒挂与线程池提早截断
             single_probe_timeout = 1.8
-            round_timeout = 1.95
+            round_timeout = 2.4
+            if timeout_budget is not None:
+                rem = timeout_budget - elapsed
+                if rem < 0.6:
+                    break
+                round_timeout = min(round_timeout, rem)
+                single_probe_timeout = min(1.8, max(0.3, round_timeout - 0.3))
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:

@@ -51,11 +51,11 @@ from source_manager import source_hub
 from song_search import search_candidates, search_candidates_fallback, get_song_lyric
 from kv_cache import get_cached_candidate, set_cached_candidate, delete_cached_candidate
 
-# 核心音频寻链热点缓存 (Title+Artist -> ResolveResult)，存活 2 小时，容量 256 首
+# 核心音频寻链热点缓存 (Title+Artist -> ResolveResult)，存活 15 分钟 (对齐前端 TTL，杜绝 CDN Token 过期 403)，容量 256 首
 _RESOLVE_CACHE = {}
 _RESOLVE_CACHE_LOCK = threading.Lock()
 _CACHE_MAX_ENTRIES = 256
-_CACHE_TTL_SEC = 7200  # 2 小时缓存期
+_CACHE_TTL_SEC = 900  # 15 分钟缓存期
 
 # 方案 4: Apple Catalog API 官方数据代理服务端缓存 (URL -> (bytes, etag, ts))，存活 20 分钟
 _APPLE_CATALOG_CACHE = {}
@@ -120,7 +120,7 @@ def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
         return False
 
 
-def _fetch_apple_native_metadata(song_id: str):
+def _fetch_apple_native_metadata(song_id: str, timeout: float = 1.5):
     """
     针对海外/香港/台湾 Apple Storefront 将日韩等非英语曲目罗马音化/英译化的痛点，
     通过 Apple 官方原生目录直接提取地道日文/母语标题与歌手，打通国内音源库检索
@@ -151,7 +151,7 @@ def _fetch_apple_native_metadata(song_id: str):
             "User-Agent": USER_AGENT
         }
         req = urllib.request.Request(apple_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw_bytes = resp.read()
             with _APPLE_CATALOG_CACHE_LOCK:
                 if len(_APPLE_CATALOG_CACHE) > 300:
@@ -478,6 +478,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         # 核心音频流双核并发解析：贯彻策略 A（短路式阶梯寻链，追求极速出声）
         if path == "/api/resolve":
+            req_start = time.time()
+            # 严格时间预算锚定：从请求接收刻起算全局预算 7.5s (在 Vercel 10s 物理上限内保留 2.5s 充裕余量，杜绝 504 Gateway Timeout)
+            overall_deadline = req_start + 7.5
+
             cand = json.loads(body) if body else {}
             title = (cand.get("title") or cand.get("name") or "").strip()
             artist = (cand.get("artist") or "").strip()
@@ -500,40 +504,50 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             # 1. 如果已有确切的平台与歌曲 ID，优先直接调度
             if cand.get("platform") and cand.get("id"):
-                res = source_hub.resolve_best_stream(cand)
-                if res and res.get("success"):
-                    try:
-                        res["lyrics"] = get_song_lyric(cand.get("platform", ""), cand.get("id", ""), title, artist)
-                    except Exception:
-                        res["lyrics"] = []
-                    self.send_json(res)
-                    return
+                remaining = overall_deadline - time.time()
+                if remaining > 0.6:
+                    res = source_hub.resolve_best_stream(cand, timeout_budget=remaining)
+                    if res and res.get("success"):
+                        if (overall_deadline - time.time()) > 0.8:
+                            try:
+                                res["lyrics"] = get_song_lyric(cand.get("platform", ""), cand.get("id", ""), title, artist)
+                            except Exception:
+                                res["lyrics"] = []
+                        else:
+                            res["lyrics"] = []
+                        self.send_json(res)
+                        return
 
             # 1.5 跨会话与跨容器云端 ID 沉淀快速检查 (Vercel Upstash KV)
             if title and not cand.get("platform"):
                 cloud_cand = get_cached_candidate(title, artist)
                 if cloud_cand and cloud_cand.get("platform") and cloud_cand.get("id"):
                     cloud_cand["duration"] = cloud_cand.get("duration") or duration
-                    res = source_hub.resolve_best_stream(cloud_cand)
-                    if res and res.get("success"):
-                        res["matched_candidate"] = cloud_cand
-                        res["target_title"] = title
-                        res["target_artist"] = artist
-                        res["source_name"] = str(res.get("source_name", "")) + " ☁️云快取"
-                        try:
-                            res["lyrics"] = get_song_lyric(cloud_cand.get("platform", ""), cloud_cand.get("id", ""), title, artist)
-                        except Exception:
-                            res["lyrics"] = []
-                        if cache_key:
-                            with _RESOLVE_CACHE_LOCK:
-                                if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                                    _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                                _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
-                        self.send_json(res)
-                        return
-                    else:
-                        # 【防线 3: 自愈机制】若云端已存 ID 在第三方下架失效，立刻删除作废，平滑进入多通道全搜
-                        delete_cached_candidate(title, artist)
+                    remaining = overall_deadline - time.time()
+                    if remaining > 0.6:
+                        res = source_hub.resolve_best_stream(cloud_cand, timeout_budget=remaining)
+                        if res and res.get("success"):
+                            res["matched_candidate"] = cloud_cand
+                            res["target_title"] = title
+                            res["target_artist"] = artist
+                            res["source_name"] = str(res.get("source_name", "")) + " ☁️云快取"
+                            if (overall_deadline - time.time()) > 0.8:
+                                try:
+                                    res["lyrics"] = get_song_lyric(cloud_cand.get("platform", ""), cloud_cand.get("id", ""), title, artist)
+                                except Exception:
+                                    res["lyrics"] = []
+                            else:
+                                res["lyrics"] = []
+                            if cache_key:
+                                with _RESOLVE_CACHE_LOCK:
+                                    if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                                        _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                                    _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
+                            self.send_json(res)
+                            return
+                        else:
+                            # 【防线 3: 自愈机制】若云端已存 ID 在第三方下架失效，立刻删除作废，平滑进入多通道全搜
+                            delete_cached_candidate(title, artist)
 
             # 2. 纯 Apple Music 元数据：贯彻【策略 A 短路式阶梯寻链】
             search_key = f"{title} {artist}".strip() if title else ""
@@ -543,8 +557,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             last_err = "未找到候选歌曲"
 
-            # 优化：放宽至 7.8 秒 (在 Vercel 10s 物理上限内留足 2.2s 安全余量，同时给香港跨网多争取 1.3s 缓冲)
-            overall_deadline = time.time() + 7.8
+            # 动态检查剩余预算
+            if time.time() >= (overall_deadline - 1.0):
+                self.send_json({
+                    "success": False,
+                    "error": "请求时间预算耗尽",
+                    "title": title,
+                    "artist": artist
+                })
+                return
 
             # ----------------------------------------------------
             # 方案 1: 全息多通道并发检索与跨平台容灾冲刺
@@ -569,17 +590,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         break
 
             for c in selected_cands:
-                if time.time() > overall_deadline:
+                rem = overall_deadline - time.time()
+                if rem <= 1.2:
                     break
                 c["duration"] = c.get("duration") or duration
-                res = source_hub.resolve_best_stream(c)
+                res = source_hub.resolve_best_stream(c, timeout_budget=min(2.5, max(0.6, rem - 0.8)))
                 if res and res.get("success"):
                     res["matched_candidate"] = c
                     res["target_title"] = title
                     res["target_artist"] = artist
-                    try:
-                        res["lyrics"] = get_song_lyric(c.get("platform", ""), c.get("id", ""), title, artist)
-                    except Exception:
+                    if (overall_deadline - time.time()) > 0.8:
+                        try:
+                            res["lyrics"] = get_song_lyric(c.get("platform", ""), c.get("id", ""), title, artist)
+                        except Exception:
+                            res["lyrics"] = []
+                    else:
                         res["lyrics"] = []
                     if cache_key:
                         with _RESOLVE_CACHE_LOCK:
@@ -603,18 +628,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 通过 Apple 官方原生目录反查母语原名（如 結び, しわあわせ, ライラック），打通多平台正版检索
             # ----------------------------------------------------
             apple_song_id = str(cand.get("id") or "").strip()
-            if apple_song_id.isdigit() and time.time() < (overall_deadline - 1.8):
-                native_meta = _fetch_apple_native_metadata(apple_song_id)
+            rem = overall_deadline - time.time()
+            if apple_song_id.isdigit() and rem > 2.0:
+                apple_timeout = min(1.5, max(0.5, rem - 1.2))
+                native_meta = _fetch_apple_native_metadata(apple_song_id, timeout=apple_timeout)
                 if native_meta and (native_meta.get("title") != title or native_meta.get("artist") != artist):
                     native_t = native_meta.get("title")
                     native_a = native_meta.get("artist") or artist
                     native_dur = native_meta.get("duration") or duration
                     native_cands = search_candidates(f"{native_t} {native_a}", target_artist=native_a, target_title=native_t, target_duration=native_dur)
                     for nc in native_cands[:2]:
-                        if time.time() > overall_deadline:
+                        rem_cand = overall_deadline - time.time()
+                        if rem_cand <= 1.0:
                             break
                         nc["duration"] = nc.get("duration") or native_dur
-                        res = source_hub.resolve_best_stream(nc)
+                        res = source_hub.resolve_best_stream(nc, timeout_budget=min(2.2, max(0.6, rem_cand - 0.6)))
                         if res and res.get("success"):
                             res["matched_candidate"] = nc
                             res["target_title"] = title
@@ -622,9 +650,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             res["native_title"] = native_t
                             res["native_artist"] = native_a
                             res["source_name"] = str(res.get("source_name", "")) + " 🌸母语精配"
-                            try:
-                                res["lyrics"] = get_song_lyric(nc.get("platform", ""), nc.get("id", ""), native_t, native_a)
-                            except Exception:
+                            if (overall_deadline - time.time()) > 0.8:
+                                try:
+                                    res["lyrics"] = get_song_lyric(nc.get("platform", ""), nc.get("id", ""), native_t, native_a)
+                                except Exception:
+                                    res["lyrics"] = []
+                            else:
                                 res["lyrics"] = []
                             if cache_key:
                                 with _RESOLVE_CACHE_LOCK:
@@ -641,22 +672,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             # ----------------------------------------------------
             # 策略 A 第二阶梯（独家兜底）：当第一梯队全部候选尝试失败时激活 QQ 音乐精准补漏
-            # 弹性受 overall_deadline 预算约束 (保留 0.8 秒底线)，杜绝在香港机房跨网抖动时被误杀
+            # 弹性受 overall_deadline 预算约束 (保留 1.4 秒底线)，动态分配剩余预算
             # ----------------------------------------------------
-            if time.time() < (overall_deadline - 0.8):
+            rem = overall_deadline - time.time()
+            if rem > 1.4:
                 fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
                 for fc in fallback_cands[:2]:
-                    if time.time() > overall_deadline:
+                    rem_fb = overall_deadline - time.time()
+                    if rem_fb <= 0.6:
                         break
                     fc["duration"] = fc.get("duration") or duration
-                    res = source_hub.resolve_best_stream(fc)
+                    res = source_hub.resolve_best_stream(fc, timeout_budget=rem_fb)
                     if res and res.get("success"):
                         res["matched_candidate"] = fc
                         res["target_title"] = title
                         res["target_artist"] = artist
-                        try:
-                            res["lyrics"] = get_song_lyric(fc.get("platform", ""), fc.get("id", ""), title, artist)
-                        except Exception:
+                        if (overall_deadline - time.time()) > 0.8:
+                            try:
+                                res["lyrics"] = get_song_lyric(fc.get("platform", ""), fc.get("id", ""), title, artist)
+                            except Exception:
+                                res["lyrics"] = []
+                        else:
                             res["lyrics"] = []
                         if cache_key:
                             with _RESOLVE_CACHE_LOCK:
