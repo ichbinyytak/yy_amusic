@@ -95,23 +95,6 @@ def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
     return None
 
 
-def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
-    """酷我官方原生通道 (antiserver)"""
-    song_id = _extract_id(song_info)
-    if not song_id or not song_id.isdigit():
-        return None
-    url = f"http://antiserver.kuwo.cn/anti.s?type=convert_url3&rid={song_id}&format=mp3&response=url"
-    st, raw_bytes, _, _ = http_get(url, headers={'User-Agent': 'okhttp/3.10.0'}, timeout=timeout)
-    if st == 200 and raw_bytes:
-        raw = raw_bytes.decode('utf-8', errors='ignore').strip()
-        purl = json.loads(raw).get('url', '') if raw.startswith('{') else raw
-        if purl and purl.startswith('http'):
-            ok, sz, final_url = verify_audio_url(purl, timeout=1.5)
-            if ok:
-                return {"url": final_url, "bytes": sz, "source": "酷我官方原生通道"}
-    return None
-
-
 def _probe_wy_oiapi(song_info, target_platform="wy", timeout: float = 2.0):
     """网易云极速原生直通通道 (输出 320k 官方无损直出)"""
     song_id = _extract_id(song_info)
@@ -131,18 +114,6 @@ def _probe_wy_oiapi(song_info, target_platform="wy", timeout: float = 2.0):
                         return {"url": purl, "bytes": sz, "source": "网易云官方极速通道"}
         except Exception:
             pass
-    return None
-
-
-def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
-    """网易云开放直通通道 (自动拦截低于 1.2MB 试听)"""
-    song_id = _extract_id(song_info)
-    if not song_id or not song_id.isdigit():
-        return None
-    url = f"https://api.injahow.cn/meting/?server=netease&type=url&id={song_id}"
-    ok, sz, purl = verify_audio_url(url, timeout=timeout)
-    if ok and 'music.126.net' in purl:
-        return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
     return None
 
 
@@ -356,13 +327,6 @@ class SourceManager:
         s_nxinxz.success_count = 15
         self.register(s_nxinxz)
 
-        s_anti = AudioSource("kw_anti", "车机原生源 (酷我)", ["kw"], _probe_kw_anti, "5886682")
-        s_anti.status = "ok"
-        s_anti.latency_ms = 800.0
-        s_anti.platform_latencies = {"kw": 800.0}
-        s_anti.platform_status = {"kw": "ok"}
-        self.register(s_anti)
-
         s_wy_oi = AudioSource("wy_oiapi", "网易云极速源 (网易)", ["wy"], _probe_wy_oiapi, "347230")
         s_wy_oi.status = "ok"
         s_wy_oi.latency_ms = 350.0
@@ -370,13 +334,6 @@ class SourceManager:
         s_wy_oi.platform_status = {"wy": "ok"}
         s_wy_oi.success_count = 25
         self.register(s_wy_oi)
-
-        s_wy_met = AudioSource("wy_meting", "网易直通源 (网易)", ["wy"], _probe_wy_meting, "347230")
-        s_wy_met.status = "ok"
-        s_wy_met.latency_ms = 500.0
-        s_wy_met.platform_latencies = {"wy": 500.0}
-        s_wy_met.platform_status = {"wy": "ok"}
-        self.register(s_wy_met)
 
         s_yaohu = AudioSource("kw_yaohu", "妖狐直通源 (酷我)", ["kw"], _probe_kw_yaohu, "5886682")
         s_yaohu.status = "ok"

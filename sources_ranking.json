@@ -1,32 +1,8 @@
 {
-  "generatedAt": "2026-11-09T14:18:25Z",
-  "testedAt": "2026-11-09T14:18:25Z",
-  "total": 7,
+  "generatedAt": "2026-11-09T14:37:04Z",
+  "testedAt": "2026-11-09T14:37:04Z",
+  "total": 5,
   "sources": [
-    {
-      "id": "kg_official",
-      "name": "酷狗官方直通源 (酷狗)",
-      "platform": "kg",
-      "platforms": [
-        "kg"
-      ],
-      "status": "ok",
-      "latency_ms": 617.8,
-      "consecutive_fails": 0,
-      "success_count": 20
-    },
-    {
-      "id": "wy_oiapi",
-      "name": "网易云极速源 (网易)",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 662.7,
-      "consecutive_fails": 0,
-      "success_count": 25
-    },
     {
       "id": "kw_yaohu",
       "name": "妖狐直通源 (酷我)",
@@ -35,7 +11,7 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 905.3,
+      "latency_ms": 631.2,
       "consecutive_fails": 0,
       "success_count": 50
     },
@@ -47,9 +23,33 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 1440.7,
+      "latency_ms": 651.0,
       "consecutive_fails": 0,
       "success_count": 15
+    },
+    {
+      "id": "wy_oiapi",
+      "name": "网易云极速源 (网易)",
+      "platform": "wy",
+      "platforms": [
+        "wy"
+      ],
+      "status": "ok",
+      "latency_ms": 740.9,
+      "consecutive_fails": 0,
+      "success_count": 25
+    },
+    {
+      "id": "kg_official",
+      "name": "酷狗官方直通源 (酷狗)",
+      "platform": "kg",
+      "platforms": [
+        "kg"
+      ],
+      "status": "ok",
+      "latency_ms": 2114.6,
+      "consecutive_fails": 0,
+      "success_count": 20
     },
     {
       "id": "kw_nxinxz",
@@ -59,33 +59,9 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 2527.6,
+      "latency_ms": 3185.4,
       "consecutive_fails": 0,
       "success_count": 5
-    },
-    {
-      "id": "wy_meting",
-      "name": "网易直通源 (网易)",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 3,
-      "success_count": 0
-    },
-    {
-      "id": "kw_anti",
-      "name": "车机原生源 (酷我)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 4,
-      "success_count": 0
     }
   ]
 }
