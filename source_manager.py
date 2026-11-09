@@ -49,6 +49,7 @@ TEST_TRACKS = {
     "kw": {"id": "5886682", "songmid": "5886682", "title": "海阔天空", "artist": "Beyond"},
     "wy": {"id": "347230", "songmid": "347230", "title": "海阔天空", "artist": "Beyond"},
     "tx": {"id": "002WkUkN2L0dqm", "songmid": "002WkUkN2L0dqm", "title": "海阔天空", "artist": "Beyond"},
+    "kg": {"id": "596E403326AFD24A38E95A5225E1A139", "songmid": "596E403326AFD24A38E95A5225E1A139", "title": "海阔天空", "artist": "Beyond"},
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -178,6 +179,26 @@ def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
                 ok, sz, purl = verify_audio_url(audio_url, timeout=1.5)
                 if ok:
                     return {"url": purl, "bytes": sz, "source": "妖狐酷我直通通道"}
+        except Exception:
+            pass
+    return None
+
+
+def _probe_kg_official(song_info, target_platform="kg", timeout: float = 2.0):
+    """酷狗官方直通通道 (sharefs 官方 128k/320k 完整音频，TME 独立备用)"""
+    fhash = _extract_id(song_info)
+    if not fhash or len(fhash) < 16:
+        return None
+    url = f"https://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash={fhash}"
+    st, data_bytes, _, _ = http_get(url, headers={'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)'}, timeout=timeout)
+    if st == 200 and data_bytes:
+        try:
+            data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
+            audio_url = data.get("url")
+            if audio_url and audio_url.startswith("http"):
+                ok, sz, purl = verify_audio_url(audio_url, timeout=1.8)
+                if ok:
+                    return {"url": purl, "bytes": sz, "source": "酷狗官方直通通道"}
         except Exception:
             pass
     return None
@@ -364,6 +385,14 @@ class SourceManager:
         s_yaohu.platform_status = {"kw": "ok"}
         s_yaohu.success_count = 5
         self.register(s_yaohu)
+
+        s_kg = AudioSource("kg_official", "酷狗官方直通源 (酷狗)", ["kg"], _probe_kg_official, "596E403326AFD24A38E95A5225E1A139")
+        s_kg.status = "ok"
+        s_kg.latency_ms = 450.0
+        s_kg.platform_latencies = {"kg": 450.0}
+        s_kg.platform_status = {"kg": "ok"}
+        s_kg.success_count = 20
+        self.register(s_kg)
 
         # 载入持久化测速指标
         self.load_local_cached_sources()

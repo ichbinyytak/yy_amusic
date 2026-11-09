@@ -1,19 +1,19 @@
 {
-  "generatedAt": "2026-11-09T13:22:11Z",
-  "testedAt": "2026-11-09T13:22:11Z",
-  "total": 6,
+  "generatedAt": "2026-11-09T14:18:25Z",
+  "testedAt": "2026-11-09T14:18:25Z",
+  "total": 7,
   "sources": [
     {
-      "id": "kw_yaohu",
-      "name": "妖狐直通源 (酷我)",
-      "platform": "kw",
+      "id": "kg_official",
+      "name": "酷狗官方直通源 (酷狗)",
+      "platform": "kg",
       "platforms": [
-        "kw"
+        "kg"
       ],
       "status": "ok",
-      "latency_ms": 416.0,
+      "latency_ms": 617.8,
       "consecutive_fails": 0,
-      "success_count": 50
+      "success_count": 20
     },
     {
       "id": "wy_oiapi",
@@ -23,9 +23,21 @@
         "wy"
       ],
       "status": "ok",
-      "latency_ms": 691.2,
+      "latency_ms": 662.7,
       "consecutive_fails": 0,
       "success_count": 25
+    },
+    {
+      "id": "kw_yaohu",
+      "name": "妖狐直通源 (酷我)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 905.3,
+      "consecutive_fails": 0,
+      "success_count": 50
     },
     {
       "id": "kw_haitang",
@@ -35,7 +47,7 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 765.2,
+      "latency_ms": 1440.7,
       "consecutive_fails": 0,
       "success_count": 15
     },
@@ -47,7 +59,7 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 633.4,
+      "latency_ms": 2527.6,
       "consecutive_fails": 0,
       "success_count": 5
     },
@@ -60,7 +72,7 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 2,
+      "consecutive_fails": 3,
       "success_count": 0
     },
     {
@@ -72,7 +84,7 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 3,
+      "consecutive_fails": 4,
       "success_count": 0
     }
   ]

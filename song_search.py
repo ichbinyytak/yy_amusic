@@ -54,6 +54,10 @@ try:
 except Exception:
     pass
 
+# 咪咕容灾状态
+_MG_SEARCH_FAILS = 0
+_MG_SEARCH_LAST_FAIL = 0.0
+
 # ========================================================
 # 区块 1: 系统原生 OpenCC 繁简转换引擎 (调用 libopencc.so, 0.05ms)
 # ========================================================
@@ -523,18 +527,23 @@ def search_candidates(keyword: str, target_artist: str = "", limit: int = 8, tar
     if target_artist and target_artist not in query_k:
         query_k = f"{query_k} {target_artist}".strip()
 
-    # 3. 极速全息并发检索 (酷我 + 网易云 原生秒开通道，严控 2.0s 单源预算，保障后续冲刺与兜底)
+    # 3. 极速全息三路并发检索 (酷我 + 网易云 + 酷狗 原生秒开通道，严控 2.0s 预算，互为同门与跨版权备份)
     results = []
     try:
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             f_kw = executor.submit(_search_kuwo, query_k, target_title, target_artist, limit, target_duration)
             f_ne = executor.submit(_search_netease, query_k, target_title, target_artist, limit, target_duration)
+            f_kg = executor.submit(_search_kugou, query_k, target_title, target_artist, limit, target_duration)
             try:
                 results.extend(f_kw.result(timeout=2.0))
             except Exception:
                 pass
             try:
                 results.extend(f_ne.result(timeout=2.0))
+            except Exception:
+                pass
+            try:
+                results.extend(f_kg.result(timeout=2.0))
             except Exception:
                 pass
     except Exception:

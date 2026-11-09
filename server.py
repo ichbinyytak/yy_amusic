@@ -466,9 +466,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
-        # 同步 lx-hub 音源并测速
+        # 同步音源并就地测速重排 (纯 Python 原生通道)
         if path in ("/api/sources/sync", "/api/sources_sync"):
-            source_hub.sync_from_lx_hub()
             source_hub.test_all()
             ordered = source_hub.get_ordered_sources()
             data = self._format_sources_data(ordered)
@@ -580,7 +579,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # ----------------------------------------------------
             cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
 
-            # 跨平台优选：优先提取不同平台的最高分候选 (如 kw 最优、wy 最优)，杜绝同平台连续试错
+            # 跨平台优选：优先提取不同平台的最高分候选 (kw 最优、wy 最优、kg 最优)，实现三足鼎立容灾互备
             selected_cands = []
             seen_platforms = set()
             for c in cands:
@@ -588,13 +587,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if plat not in seen_platforms:
                     selected_cands.append(c)
                     seen_platforms.add(plat)
-                if len(selected_cands) >= 2:
+                if len(selected_cands) >= 3:
                     break
-            if len(selected_cands) < 2:
+            if len(selected_cands) < 3:
                 for c in cands:
                     if c not in selected_cands:
                         selected_cands.append(c)
-                    if len(selected_cands) >= 2:
+                    if len(selected_cands) >= 3:
                         break
 
             for c in selected_cands:
