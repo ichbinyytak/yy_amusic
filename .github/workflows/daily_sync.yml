@@ -2,7 +2,7 @@ name: Daily Sync Sound Sources
 
 on:
   schedule:
-    # 每天 UTC 20:45 (北京时间每天凌晨 04:45，在 lx-hub 跑完后自动同步)
+    # 每天 UTC 20:45 (北京时间每天凌晨 04:45 自动运行)
     - cron: '45 20 * * *'
   # 支持在 GitHub Actions 网页上一键手动立即执行
   workflow_dispatch:
@@ -22,17 +22,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 配置 Node.js 环境 (供音源沙箱验测)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: 运行音源同步与全量沙箱测速
+      - name: 运行纯 Python 原生音源测速排班
         run: python3 sync_sources.py
 
-      - name: 提交并推送最新音源与测速排班表
+      - name: 提交并推送最新测速排班表
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sources_cache/ sources_ranking.json
-          git diff --staged --quiet || (git commit -m "chore(auto): 自动同步与测速 lx-hub 最新验活音源 [skip ci]" && git push)
+          git add sources_ranking.json
+          git diff --staged --quiet || (git commit -m "chore(auto): 自动测速原生音源并更新排班表 [skip ci]" && git push)

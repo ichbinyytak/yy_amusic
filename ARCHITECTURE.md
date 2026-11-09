@@ -27,12 +27,12 @@ flowchart TD
         API["API Client (统一 Fetch 封装与缓存)"]
     end
 
-    subgraph Backend["后端服务网关与音源调度 (Python / Serverless)"]
+    subgraph Backend["后端服务网关与音源调度 (纯 Python 原生 / Serverless)"]
         Server["server.py (HTTP 网关 / SSRF 防御 / 静态服务)"]
-        SourceHub["source_manager.py (36音源池 / 双核竞速冲刺 / 假音频拦截)"]
-        SongSearch["song_search.py (多源聚合搜索 / 繁简字库打分)"]
+        SourceHub["source_manager.py (纯 Python 原生音源池 / 毫秒并发竞速 / 防伪拦截)"]
+        SongSearch["song_search.py (多源聚合搜索 / 繁简字库 / 时长门禁打分)"]
         Catalog["apple_catalog.py (Apple Music 目录协议抓取)"]
-        NodeSandbox["lx_runner.js + bin/node.gz (便携 Node.js 沙箱)"]
+        NetPool["net_pool.py (Keep-Alive 连接池 / DNS 缓存 / 音频魔数嗅探)"]
     end
 
     subgraph Data["外部数据与音频 CDN"]
@@ -87,11 +87,11 @@ flowchart TD
 
 | 文件名 | 核心类/函数 | 职责与技术细节 |
 | :--- | :--- | :--- |
-| **`source_manager.py`** | `SourceManager`<br>`AudioSource` | **音源池生命周期与双核竞速调度器**：<br>① 管理 36 个跨平台音源（原生穿透通道 + LX脚本音源）；<br>② **便携 Node 沙箱自解压**：在 Vercel 纯 Python 环境下自动解压 `bin/node.gz` 到 `/tmp/node`，激活全量音源；<br>③ **双核并发竞速**：前两强源同时冲刺，毫秒级出声；<br>④ **防伪铁律**：`MIN_VALID_BYTES = 1.5MB` 强力过滤 181KB 假语音与 30秒试听残卷；<br>⑤ 动态自适应健康度测速与淘汰。 |
-| **`song_search.py`** | `search_candidates` | **全网跨源聚合搜索与繁简转换打分**：<br>① 酷我 + 网易云双通道并发检索；<br>② 内置 362 个高频汉字繁简映射词库，抹平简繁版本差异；<br>③ 结合标题相似度、歌手精确度、时长偏差进行多维打分排序。 |
+| **`source_manager.py`** | `SourceManager`<br>`AudioSource` | **纯 Python 原生音源池与并发竞速调度器**：<br>① 统一管理各大异构原生通道（海棠SVIP、念心车机、酷我官方、网易极速等）；<br>② **0 进程开销**：彻底废除 Node.js 子进程与 32MB 二进制包，0ms 冷启动；<br>③ **并发竞速**：前两强原生源并行冲刺，毫秒级即时出声；<br>④ **防伪铁律**：`MIN_VALID_BYTES = 1.2MB` 严格拦截试听残卷，首包音频魔数（Magic Number）嗅探确保真流；<br>⑤ 单一事实来源与自适应奖惩模型。 |
+| **`song_search.py`** | `search_candidates` | **全网跨源聚合搜索与繁简转换打分**：<br>① 酷我 + 网易云多通道并发检索；<br>② 内置 362 个高频汉字繁简映射词库，抹平简繁版本差异；<br>③ 结合标题相似度、歌手精确度与**时长硬门禁（偏差 > 15s 一票否决）**进行多维打分排序，杜绝翻唱串曲。 |
 | **`server.py`** | `Handler`<br>`ThreadingTCPServer` | **HTTP 服务网关与安全防御**：<br>① 静态资源分发与 ETag 缓存；<br>② SSRF 白名单防御（严防 `file://` 与内网 IP 穿透）；<br>③ 音频流直通反向代理 (`/api/stream_proxy`)。 |
 | **`apple_catalog.py`** | `fetch_apple_playlist`<br>`fetch_apple_album` | **Apple Music 目录协议解析器**：<br>直接解析官方公开网页与微元数据，无缝提取多 Storefront 官方歌单与专辑曲目列表。 |
-| **`lx_runner.js`** | *(Node CLI)* | **通用 LX Music 脚本沙盒执行器**：<br>构建安全的 Node.js `vm` 沙箱上下文，为第三方 `.js` 音源脚本提供 `lx.request` 运行时环境。 |
+| **`net_pool.py`** | `verify_audio_stream`<br>`http_get` | **全局网络连接池与音频流真实性校验**：<br>基于 `urllib3` Keep-Alive 连接池复用，支持 IPv4 优选、DNS 缓存与音频文件格式魔数嗅探。 |
 
 ---
 

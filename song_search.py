@@ -275,20 +275,22 @@ def calculate_song_match_score(cand_title: str, cand_artist: str, cand_album: st
     if cand_album and len(alb_simp) > 1:
         score += 10.0
 
-    # 5. 音轨时长物理容差 (最高 10 分)
+    # 5. 音轨时长物理容差 (借鉴 UnblockNeteaseMusic 时长门禁)
     if cand_duration and target_duration:
         try:
-            diff = abs(float(cand_duration) - float(target_duration))
-            if diff <= 5:
-                score += 10.0
-            elif diff <= 12:
-                score += 5.0
-            elif diff > 30:
-                score -= 40.0  # 大幅扣分，直接淘汰截断与盗版短版本
-            elif diff > 18:
-                score -= 15.0
+            c_d = float(cand_duration)
+            t_d = float(target_duration)
+            if c_d > 0 and t_d > 0:
+                diff = abs(c_d - t_d)
+                if diff <= 4:
+                    score += 10.0
+                elif diff <= 8:
+                    score += 5.0
+                elif diff > 15:
+                    score -= 80.0  # 绝对拦截翻唱、加长版、DJ版、Live现场与截断残卷
+                elif diff > 10:
+                    score -= 25.0
         except Exception as e:
-            # print("kw lyric error:", e)
             pass
 
     return score, (score >= 60.0)

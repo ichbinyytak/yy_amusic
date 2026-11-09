@@ -110,12 +110,15 @@ def http_get(url: str, headers: dict = None, timeout: float = 3.0, redirect: boo
             pass
 
     # 平滑回退 urllib.request
-    req = urllib.request.Request(url, headers=hdrs)
-    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        final_url = resp.geturl()
-        data = resp.read()
-        return resp.status, data, final_url, dict(resp.headers)
+    try:
+        req = urllib.request.Request(url, headers=hdrs)
+        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+            final_url = resp.geturl()
+            data = resp.read()
+            return resp.status, data, final_url, dict(resp.headers)
+    except Exception:
+        return 0, b"", url, {}
 
 
 def http_post_json(url: str, payload: dict, headers: dict = None, timeout: float = 3.0):
@@ -150,16 +153,39 @@ def http_post_json(url: str, payload: dict, headers: dict = None, timeout: float
         return resp.status, resp.read(), dict(resp.headers)
 
 
+def is_audio_magic(data: bytes) -> bool:
+    """嗅探首包二进制魔数，确保为真正的多媒体音频文件格式"""
+    if not data or len(data) < 4:
+        return False
+    # MP3 ID3v2 标签
+    if data[:3] == b'ID3':
+        return True
+    # MP3 原始帧同步字 (11 个连续 1: 0xFF 与后字节高 3 位为 1)
+    if data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
+        return True
+    # FLAC 无损
+    if data[:4] == b'fLaC':
+        return True
+    # M4A / MP4 / AAC (ftyp 魔数)
+    if len(data) >= 8 and (data[4:8] == b'ftyp' or data[:4] == b'ftyp'):
+        return True
+    # OGG
+    if data[:4] == b'OggS':
+        return True
+    return False
+
+
 def verify_audio_stream(url: str, timeout: float = 2.0) -> tuple:
     """
-    轻量秒级校验音频有效性：仅获取 HEAD/Range 请求头，不下载几兆音频 Body
-    连接池 Keep-Alive 极速复用，彻底拦截 11 秒假音频提示音与截断残卷
+    轻量秒级校验音频有效性：
+    1. 严格过滤黑名单与试听截断残卷 (< 1.2MB 拦截 30 秒试听)
+    2. 对无 Content-Length / Chunked 响应抓取前 512 字节进行音频魔数检验，杜绝空响应与假直链
     返回: (is_valid: bool, content_length: int, final_url: str)
     """
     if not url or not url.startswith("http"):
         return False, 0, ""
 
-    if "588957081" in url:
+    if "588957081" in url or "music.163.com/404" in url:
         return False, 0, url
 
     hdrs = {
@@ -184,13 +210,14 @@ def verify_audio_stream(url: str, timeout: float = 2.0) -> tuple:
                 final_url = url
             status = r.status
             resp_headers = dict(r.headers)
-            r.release_conn()
 
-            if "588957081" in final_url or status not in (200, 206):
+            if "588957081" in final_url or "music.163.com/404" in final_url or status not in (200, 206):
+                r.release_conn()
                 return False, 0, final_url
 
             content_type = (resp_headers.get('Content-Type') or resp_headers.get('content-type') or '').lower()
-            if content_type and ('text/' in content_type or 'application/json' in content_type):
+            if content_type and ('text/' in content_type or 'application/json' in content_type or 'html' in content_type):
+                r.release_conn()
                 return False, 0, final_url
 
             cr = resp_headers.get('Content-Range') or resp_headers.get('content-range') or ''
@@ -206,8 +233,20 @@ def verify_audio_stream(url: str, timeout: float = 2.0) -> tuple:
                 except Exception:
                     pass
 
+            # 命中已知假语音字节数或过小试听截断
             if total_size in FAKE_AUDIO_LENGTHS or (0 < total_size < MIN_VALID_BYTES):
+                r.release_conn()
                 return False, total_size, final_url
+
+            # 若无法获取总大小 (如 Chunked 流式传输或无 Content-Length)，抓取首段数据严格嗅探音频格式
+            if total_size == 0:
+                first_chunk = r.read(512)
+                r.release_conn()
+                if not is_audio_magic(first_chunk):
+                    return False, 0, final_url
+                return True, 0, final_url
+
+            r.release_conn()
             return True, total_size, final_url
         except Exception:
             return False, 0, ""
@@ -218,10 +257,10 @@ def verify_audio_stream(url: str, timeout: float = 2.0) -> tuple:
         ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             final_url = resp.geturl()
-            if "588957081" in final_url or resp.status not in (200, 206):
+            if "588957081" in final_url or "music.163.com/404" in final_url or resp.status not in (200, 206):
                 return False, 0, final_url
             content_type = (resp.headers.get('Content-Type') or '').lower()
-            if content_type and ('text/' in content_type or 'application/json' in content_type):
+            if content_type and ('text/' in content_type or 'application/json' in content_type or 'html' in content_type):
                 return False, 0, final_url
             cr = resp.headers.get('Content-Range', '')
             total_size = 0
@@ -237,6 +276,11 @@ def verify_audio_stream(url: str, timeout: float = 2.0) -> tuple:
                     pass
             if total_size in FAKE_AUDIO_LENGTHS or (0 < total_size < MIN_VALID_BYTES):
                 return False, total_size, final_url
+            if total_size == 0:
+                first_chunk = resp.read(512)
+                if not is_audio_magic(first_chunk):
+                    return False, 0, final_url
+                return True, 0, final_url
             return True, total_size, final_url
     except Exception:
         return False, 0, ""

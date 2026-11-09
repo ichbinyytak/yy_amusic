@@ -1,309 +1,55 @@
 {
-  "generatedAt": "2026-11-08T23:54:46.670Z",
-  "testedAt": "2026-11-09T00:05:09Z",
-  "total": 38,
+  "generatedAt": "2026-11-09T13:22:11Z",
+  "testedAt": "2026-11-09T13:22:11Z",
+  "total": 6,
   "sources": [
-    {
-      "id": "lx_d5f3b500",
-      "name": "[LX] 全豆要[聚合音源]",
-      "platform": "kw",
-      "platforms": [
-        "wy",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 862.5,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_12c8c04f",
-      "name": "[LX] 全豆要[聚合音源]",
-      "platform": "kw",
-      "platforms": [
-        "wy",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 870.6,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
     {
       "id": "kw_yaohu",
       "name": "妖狐直通源 (酷我)",
-      "platform": "tx",
+      "platform": "kw",
       "platforms": [
-        "kw",
-        "tx"
+        "kw"
       ],
       "status": "ok",
-      "latency_ms": 1282.5,
+      "latency_ms": 416.0,
       "consecutive_fails": 0,
       "success_count": 50
     },
     {
-      "id": "lx_935bdd20",
-      "name": "[LX] 全豆要[聚合音源]",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1027.7,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_b1ef15b0",
-      "name": "[LX] 👖裤佬SVIP音源",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1130.7,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_800fea88",
-      "name": "[LX] Hei Music聚合源",
+      "id": "wy_oiapi",
+      "name": "网易云极速源 (网易)",
       "platform": "wy",
       "platforms": [
         "wy"
       ],
       "status": "ok",
-      "latency_ms": 1215.7,
+      "latency_ms": 691.2,
       "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_3ae1597b",
-      "name": "[LX] 非常刀",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1253.5,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_e29d0718",
-      "name": "[LX] HYWmusic_公益版",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "tx",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1265.6,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_c4911858",
-      "name": "[LX] 全豆要[聚合音源]",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1304.2,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_2e4b4be6",
-      "name": "[LX] 全豆要[聚合音源]",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1420.0,
-      "consecutive_fails": 0,
-      "success_count": 0
+      "success_count": 25
     },
     {
       "id": "kw_haitang",
-      "name": "海棠穿透源 (酷我)",
+      "name": "海棠SVIP穿透源 (酷我)",
       "platform": "kw",
       "platforms": [
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 1845.8,
+      "latency_ms": 765.2,
       "consecutive_fails": 0,
       "success_count": 15
     },
     {
-      "id": "lx_49c8cab3",
-      "name": "[LX] 溯音音源",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 1564.1,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_5decc94c",
-      "name": "[LX] K×H测试",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 1564.7,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_7ce38e80",
-      "name": "[LX] 聚合音源·净化版",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 1576.6,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_e1ef7303",
-      "name": "[LX] 墨澜聚合音源_e1ef7303",
+      "id": "kw_nxinxz",
+      "name": "念心车机穿透源 (酷我)",
       "platform": "kw",
       "platforms": [
-        "kw",
-        "tx",
-        "wy",
-        "kg",
-        "mg"
-      ],
-      "status": "ok",
-      "latency_ms": 1604.4,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_b30da815",
-      "name": "[LX] 杰翔聚合音源",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "tx"
-      ],
-      "status": "ok",
-      "latency_ms": 1642.0,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_13c95f8e",
-      "name": "[LX] 星海音乐源",
-      "platform": "wy",
-      "platforms": [
-        "wy",
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 1701.3,
+      "latency_ms": 633.4,
       "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_3fe4323e",
-      "name": "[LX] 1010🎵音源",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "tx",
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1942.8,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_59a86b3a",
-      "name": "[LX] 星澜聚合音源_StellarWave_59a86b3a",
-      "platform": "kw",
-      "platforms": [
-        "kw",
-        "tx",
-        "wy",
-        "kg",
-        "mg"
-      ],
-      "status": "ok",
-      "latency_ms": 1947.5,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_453f6a31",
-      "name": "[LX] 回避聚合 (HuiBi Aggregate)",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 1959.6,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_4b516af7",
-      "name": "[LX] 𝖧౿ᥣᥣ𝗈 Ԝ𝗈𝗋ᥣᑯ",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 2024.1,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_743bb909",
-      "name": "[LX] 👖裤佬SVIP音源(二改整合版)",
-      "platform": "wy",
-      "platforms": [
-        "wy",
-        "tx"
-      ],
-      "status": "ok",
-      "latency_ms": 2026.8,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "lx_c179868c",
-      "name": "[LX] 全豆要",
-      "platform": "kw",
-      "platforms": [
-        "wy",
-        "tx",
-        "kw",
-        "kg",
-        "mg"
-      ],
-      "status": "ok",
-      "latency_ms": 2336.1,
-      "consecutive_fails": 0,
-      "success_count": 0
+      "success_count": 5
     },
     {
       "id": "wy_meting",
@@ -312,22 +58,10 @@
       "platforms": [
         "wy"
       ],
-      "status": "ok",
-      "latency_ms": 2360.4,
-      "consecutive_fails": 0,
-      "success_count": 0
-    },
-    {
-      "id": "kw_nxinxz",
-      "name": "念心穿透源 (酷我)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 1,
-      "success_count": 5
+      "consecutive_fails": 2,
+      "success_count": 0
     },
     {
       "id": "kw_anti",
@@ -338,155 +72,7 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 1,
-      "success_count": 0
-    },
-    {
-      "id": "lx_0fa38726",
-      "name": "[LX] 全豆要",
-      "platform": "kw",
-      "platforms": [
-        "wy",
-        "tx",
-        "kw",
-        "kg",
-        "mg"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 1,
-      "success_count": 0
-    },
-    {
-      "id": "lx_d6c500d7",
-      "name": "[LX] 弥音",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 1,
-      "success_count": 0
-    },
-    {
-      "id": "lx_e75e0c8f",
-      "name": "[LX] Ciallo～(∠・ω< )⌒☆",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 13,
-      "success_count": 0
-    },
-    {
-      "id": "lx_2d6c4b9f",
-      "name": "[LX] 西瓜聚合源",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_e992da22",
-      "name": "[LX] 月落音源",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_52c4b490",
-      "name": "[LX] 安妮独家音源",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_4b129fa2",
-      "name": "[LX] ecosystem-scan",
-      "platform": "mg",
-      "platforms": [
-        "mg"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_778694b7",
-      "name": "[LX] xiaogou",
-      "platform": "kg",
-      "platforms": [
-        "kg"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_de0026e9",
-      "name": "[LX] xiaomi",
-      "platform": "mg",
-      "platforms": [
-        "mg"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_41f4c91d",
-      "name": "[LX] xiaoqiu",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_53964f1a",
-      "name": "[LX] xiaowo",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
-      "success_count": 0
-    },
-    {
-      "id": "lx_fcba7101",
-      "name": "[LX] xiaoyun",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 18,
+      "consecutive_fails": 3,
       "success_count": 0
     }
   ]

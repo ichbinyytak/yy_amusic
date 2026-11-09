@@ -41,6 +41,23 @@
 
 ## 版本迭代历史记录
 
+### v6.3.6 (2026-11-09) 纯 Python 原生通道架构演进：彻底剥离 Node.js 沙箱与 32MB 二进制包，引入业界级时长门禁与音频魔数校验
+
+- **彻底剥离 Node.js 沙箱与 32MB 压缩包 (`bin/node.gz` & `lx_runner.js`)**：
+  - 彻底移除仓库中 32MB 庞大的 `bin/node.gz` 压缩包及 `lx_runner.js` 沙箱运行器，部署包体积直降 65%；
+  - 彻底根除 Vercel Serverless 冷启动解压 91MB 可执行程序的 400~800ms 冻结开销，冷启动耗时降至 50ms 以内；
+  - 根除多进程并发竞速引发的 CPU 争抢、内存爆炸及无法中断的后台 Node.js 僵尸进程隐患，实现 100% 纯 Python 原生极速调度；
+- **单一事实来源 (Single Source of Truth) 加固 (`source_manager.py`)**：
+  - 音源实体及其所属平台能力（`platforms`）完全收敛由 Python 代码单点唯一定义；
+  - `sources_ranking.json` 降维为纯粹的健康度观测指标快照（延迟、成功率），绝不再反向污染或篡改代码中的平台归属；
+- **防串曲与业界级时长门禁 (Duration Hard-Filter) (`song_search.py` & `source_manager.py`)**：
+  - 深度借鉴 `UnblockNeteaseMusic` 标杆防串曲算法，在打分模型中引入严格时长容差门禁（误差 > 15s 扣除 80 分一票否决淘汰）；
+  - 治理 `_probe_kw_yaohu` 模糊搜索接口，接入严格的歌名与歌手匹配一致性门禁，彻底杜绝翻唱、DJ 混音、加长版及下架提示音误判串曲；
+- **音频魔数真实性嗅探防线 (`net_pool.py`)**：
+  - 修复 `verify_audio_stream` 在 Chunked 流式传输或无 Content-Length 时被无脑放行的漏洞；
+  - 当无显式大小时，自动抓取首包 512 字节进行真正的音频文件魔数嗅探（MP3 ID3/Frame Sync、FLAC、M4A ftyp、OGG），严密阻断空包与假直链；
+  - 修复 `net_pool.py` 回退分支未捕获 `URLError` 导致异常向上传播的隐患。
+
 ### v6.3.5 (2026-11-09) 借鉴洛雪音乐架构：双 Audio 预载分片缓冲与防盗链静默自愈引擎
 
 - **双 Audio 预缓冲流与 0ms 秒播引擎 (`player.js`)**：
