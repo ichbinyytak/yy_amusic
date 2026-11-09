@@ -489,6 +489,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             artist = (cand.get("artist") or "").strip()
             album = cand.get("album", "")
             duration = cand.get("duration")
+            force_refresh = bool(cand.get("force_refresh", False))
             if not duration and cand.get("durationMillis"):
                 duration = round(cand.get("durationMillis", 0) / 1000)
 
@@ -496,13 +497,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 兼容 Apple Music 歌单切歌（即便带有 Apple ID，只要不是已知具体音源平台 platform 即适用标题缓存）
             cache_key = f"{title.lower()}_{artist.lower()}".strip() if (title and not cand.get("platform")) else ""
             if cache_key:
-                with _RESOLVE_CACHE_LOCK:
-                    entry = _RESOLVE_CACHE.get(cache_key)
-                    if entry and (time.time() - entry["ts"]) < _CACHE_TTL_SEC:
-                        cached_res = dict(entry["res"])
-                        cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
-                        self.send_json(cached_res)
-                        return
+                if force_refresh:
+                    with _RESOLVE_CACHE_LOCK:
+                        _RESOLVE_CACHE.pop(cache_key, None)
+                else:
+                    with _RESOLVE_CACHE_LOCK:
+                        entry = _RESOLVE_CACHE.get(cache_key)
+                        if entry and (time.time() - entry["ts"]) < _CACHE_TTL_SEC:
+                            cached_res = dict(entry["res"])
+                            cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
+                            self.send_json(cached_res)
+                            return
 
             # 1. 如果已有确切的平台与歌曲 ID，优先直接调度 (歌词与音频并行流水线)
             if cand.get("platform") and cand.get("id"):
@@ -521,7 +526,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             return
 
             # 1.5 跨会话与跨容器云端 ID 沉淀快速检查 (Vercel Upstash KV，音画并行流水线)
-            if title and not cand.get("platform"):
+            # 自愈强制刷新时跳过旧沉淀，触发全网重新检索鲜活可用直链
+            if title and not cand.get("platform") and not force_refresh:
                 cloud_cand = get_cached_candidate(title, artist)
                 if cloud_cand and cloud_cand.get("platform") and cloud_cand.get("id"):
                     cloud_cand["duration"] = cloud_cand.get("duration") or duration
