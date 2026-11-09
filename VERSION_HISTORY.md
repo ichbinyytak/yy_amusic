@@ -47,6 +47,7 @@
   - 针对 Vercel 移回美国 (`iad1`) 后跨太平洋往返延迟高的物理现状，引入极轻量 `urllib3` 全局长连接池（平滑回退标准库）；
   - 实现线程安全带 TTL（5分钟）的应用层 DNS 缓存池与 IPv4 优选，消灭高频跨洋 100~200ms 的 DNS 递归解析开销；
   - 复用 TCP+TLS 握手，使单次 API 调用节约 400~500ms，为未缓存请求砍掉 1.0~1.8 秒握手硬延迟；
+  - 配置 `Retry` 策略仅限跟随 302 重定向 (`redirect=3`)，封锁异常连接盲目重试 (`connect=0, read=0`) 避免放大超时与拥堵，并净化 `urllib3` 日志级别彻底消除 Vercel Runtime Logs 警告刷屏；
 - **嗅探去重 (Single-Hop Elimination) 与 QQ 音乐纯 Python 原生直通 (`source_manager.py`)**：
   - 根除 `_probe_kw_haitang` 与 `_probe_kw_nxinxz` 跟随 302 重定向后的二次跨洋握手双跳（Double-Hop），在首个响应中直接流式读取头信息与大小，出声直链获取直接提速 400~600ms；
   - 接入纯 Python 原生 QQ 音乐直通探针 (`tx_native`)，覆盖周杰伦、张艺兴等腾讯独家正版曲目，彻底切断对 32MB `bin/node.gz` 解压与 Node.js 沙箱子进程的强依赖；

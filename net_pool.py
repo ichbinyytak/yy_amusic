@@ -52,11 +52,26 @@ socket.getaddrinfo = _cached_getaddrinfo
 # ========================================================
 try:
     import urllib3
+    import logging
     urllib3.disable_warnings()
+    # 屏蔽 urllib3 内部冗余重定向与探针日志，净化 Vercel 生产 Runtime Logs
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+
+    # 严格重试策略：仅跟随 302 重定向 (redirect=3)，绝对不在故障/超时节点上死循环盲目重试 (connect=0, read=0)
+    _RETRY_CONFIG = urllib3.Retry(
+        total=3,
+        connect=0,
+        read=0,
+        redirect=3,
+        status=0,
+        other=0,
+        raise_on_redirect=False
+    )
+
     _HTTP_POOL = urllib3.PoolManager(
         maxsize=50,
         cert_reqs='CERT_NONE',
-        retries=urllib3.Retry(total=3, redirect=3, raise_on_redirect=False),
+        retries=_RETRY_CONFIG,
         timeout=urllib3.Timeout(connect=2.0, read=4.0)
     )
 except Exception:
