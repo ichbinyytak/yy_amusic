@@ -158,7 +158,14 @@ window.RightPanel = (function () {
         }
 
         const sf = window.RegionPanel?.getStorefront?.() || "cn";
-        const cacheKey = `playlist_${sf}_${id}`;
+        // 智能母语透视：当歌单属于日本排行榜/J-Pop专区时，优先以日本本土 storefront (jp) 拉取母语地道曲目名，彻底根除罗马音化痛点
+        const isJapanEntity = Boolean(
+            (name && (name.includes('日本') || name.includes('Japan') || name.includes('J-Pop') || name.includes('トップ100'))) ||
+            (curator && (curator.includes('日本') || curator.includes('J-Pop'))) ||
+            (id === 'pl.043a2c9876114d95a4659988497567be')
+        );
+        const querySf = (isJapanEntity && sf !== 'jp') ? 'jp' : sf;
+        const cacheKey = `playlist_${querySf}_${id}`;
         const cached = window.ClientCache?.get?.(cacheKey);
 
         if (cached && Array.isArray(cached.data)) {
@@ -176,12 +183,14 @@ window.RightPanel = (function () {
 
             let data;
             try {
-                data = await window.apiRequest(`${targetType}/${id}`);
+                data = await window.apiRequest(`${targetType}/${id}`, '', querySf);
             } catch (firstErr) {
-                if (targetType === "playlists") {
-                    data = await window.apiRequest(`albums/${id}`);
+                if (querySf !== sf) {
+                    data = await window.apiRequest(`${targetType}/${id}`, '', sf);
+                } else if (targetType === "playlists") {
+                    data = await window.apiRequest(`albums/${id}`, '', sf);
                 } else if (targetType === "albums") {
-                    data = await window.apiRequest(`playlists/${id}`);
+                    data = await window.apiRequest(`playlists/${id}`, '', sf);
                 } else {
                     throw firstErr;
                 }
@@ -413,106 +422,119 @@ window.RightPanel = (function () {
      * 3. 多选模式下：仅点击首列复选框区域为增减勾选；点击歌曲行其他任何区域或空白处，立即取消多选恢复正常状态！
      */
     let lastLongPressTime = 0;
+    let touchTimer = null;
+    let startX = 0;
+    let startY = 0;
+    let isLongPress = false;
 
     function bindTrackRowsInteraction() {
-        const rows = detailBody.querySelectorAll("tr[data-idx]");
-        rows.forEach(row => {
+        const table = document.getElementById("trackTableEl");
+        if (!table) return;
+
+        // 统一事件委托：单表仅注册 1 组监听器，杜绝百行 600 监听器开销与 GC 抖动
+        table.addEventListener("click", (e) => {
+            const row = e.target.closest("tr[data-idx]");
+            if (!row) return;
             const idx = parseInt(row.getAttribute("data-idx"), 10);
+            if (isNaN(idx)) return;
 
-            // 单击行事件处理（使用捕获模式优先拦截非复选框区域的点击并清空多选，防止触发内部歌手/专辑跳转）
-            row.addEventListener("click", (e) => {
-                // 防触屏长按释放后的合成点击误杀
-                if (Date.now() - lastLongPressTime < 350) return;
+            // 防触屏长按释放后的合成点击误杀
+            if (Date.now() - lastLongPressTime < 350) return;
 
-                // 若点击的是首列复选框列：
-                if (e.target.closest(".track-index-col")) {
-                    // 若点击的是单元格或序号而非原生 input，同步翻转复选框状态
-                    if (e.target.tagName !== "INPUT") {
-                        const box = row.querySelector(".track-checkbox");
-                        if (box) {
-                            box.checked = !box.checked;
-                            toggleTrackSelection(idx);
-                        }
+            // 若点击的是首列复选框列：
+            if (e.target.closest(".track-index-col")) {
+                if (e.target.tagName !== "INPUT") {
+                    const box = row.querySelector(".track-checkbox");
+                    if (box) {
+                        box.checked = !box.checked;
+                        toggleTrackSelection(idx);
                     }
-                    return;
                 }
+                return;
+            }
 
-                // 核心交互：多选模式下，点击任何非复选框区域（歌名、歌手、时长或空白处），直接清空多选恢复正常！
-                if (selectedTrackIndices.size > 0) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    clearSelection();
-                    return;
-                }
-
-                // 非多选模式：彻底无反应 (方案B，防误触)
-            }, true);
-
-            // 4.2 桌面端双击 (dblclick) 极速直接开播
-            row.addEventListener("dblclick", (e) => {
-                if (e.target.closest(".track-index-col")) return;
-                if (selectedTrackIndices.size === 0) {
-                    playSong(idx);
-                }
-            });
-
-            // 长按与右键处理 (组合1)
-            let touchTimer = null;
-            let startX = 0;
-            let startY = 0;
-            let isLongPress = false;
-
-            row.addEventListener("touchstart", (e) => {
-                if (e.touches.length !== 1) return;
-                const touch = e.touches[0];
-                startX = touch.clientX;
-                startY = touch.clientY;
-                isLongPress = false;
-
-                touchTimer = setTimeout(() => {
-                    isLongPress = true;
-                    lastLongPressTime = Date.now();
-                    if (navigator.vibrate) {
-                        try { navigator.vibrate(30); } catch (err) {}
-                    }
-                    enterMultiSelectWithTrack(idx);
-                }, 500);
-            }, { passive: true });
-
-            row.addEventListener("touchmove", (e) => {
-                if (!touchTimer) return;
-                const touch = e.touches[0];
-                const dist = Math.hypot(touch.clientX - startX, touch.clientY - startY);
-                if (dist > 10) {
-                    clearTimeout(touchTimer);
-                    touchTimer = null;
-                }
-            }, { passive: true });
-
-            row.addEventListener("touchend", (e) => {
-                if (touchTimer) {
-                    clearTimeout(touchTimer);
-                    touchTimer = null;
-                }
-                if (isLongPress) {
-                    lastLongPressTime = Date.now();
-                    try { e.preventDefault(); } catch (err) {}
-                    try { e.stopPropagation(); } catch (err) {}
-                }
-            });
-
-            row.addEventListener("touchcancel", () => {
-                if (touchTimer) {
-                    clearTimeout(touchTimer);
-                    touchTimer = null;
-                }
-            });
-
-            row.addEventListener("contextmenu", (e) => {
-                e.preventDefault();
+            // 核心交互：多选模式下，点击任何非复选框区域，直接清空多选恢复正常！
+            if (selectedTrackIndices.size > 0) {
                 e.stopPropagation();
+                e.preventDefault();
+                clearSelection();
+                return;
+            }
+        }, true);
+
+        // 双击极速开播事件委托
+        table.addEventListener("dblclick", (e) => {
+            const row = e.target.closest("tr[data-idx]");
+            if (!row || e.target.closest(".track-index-col")) return;
+            const idx = parseInt(row.getAttribute("data-idx"), 10);
+            if (isNaN(idx)) return;
+            if (selectedTrackIndices.size === 0) {
+                playSong(idx);
+            }
+        });
+
+        // 右键激活多选事件委托
+        table.addEventListener("contextmenu", (e) => {
+            const row = e.target.closest("tr[data-idx]");
+            if (!row) return;
+            const idx = parseInt(row.getAttribute("data-idx"), 10);
+            if (isNaN(idx)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            enterMultiSelectWithTrack(idx);
+        });
+
+        // 触屏长按事件委托
+        table.addEventListener("touchstart", (e) => {
+            if (e.touches.length !== 1) return;
+            const row = e.target.closest("tr[data-idx]");
+            if (!row) return;
+            const idx = parseInt(row.getAttribute("data-idx"), 10);
+            if (isNaN(idx)) return;
+
+            const touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            isLongPress = false;
+
+            if (touchTimer) clearTimeout(touchTimer);
+            touchTimer = setTimeout(() => {
+                isLongPress = true;
+                lastLongPressTime = Date.now();
+                if (navigator.vibrate) {
+                    try { navigator.vibrate(30); } catch (err) {}
+                }
                 enterMultiSelectWithTrack(idx);
-            });
+            }, 500);
+        }, { passive: true });
+
+        table.addEventListener("touchmove", (e) => {
+            if (!touchTimer) return;
+            const touch = e.touches[0];
+            const dist = Math.hypot(touch.clientX - startX, touch.clientY - startY);
+            if (dist > 10) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
+        }, { passive: true });
+
+        table.addEventListener("touchend", (e) => {
+            if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
+            if (isLongPress) {
+                lastLongPressTime = Date.now();
+                try { e.preventDefault(); } catch (err) {}
+                try { e.stopPropagation(); } catch (err) {}
+            }
+        });
+
+        table.addEventListener("touchcancel", () => {
+            if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+            }
         });
     }
 

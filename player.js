@@ -20,8 +20,8 @@
   // 1. 默认播放队列初始化为空（由首次访问或记忆歌单动态注入）
   const DEFAULT_PLAYLIST = [];
 
-  // 前端短效直链与歌词缓存配置 (45分钟生命周期，最多50首)
-  const RESOLVE_CACHE_TTL_MS = 45 * 60 * 1000;
+  // 前端短效直链与歌词缓存配置 (直链缓存收紧至 15 分钟，彻底避免 CDN 防盗链 Token 过期导致复听 403 挂起)
+  const RESOLVE_CACHE_TTL_MS = 15 * 60 * 1000;
   const RESOLVE_CACHE_MAX_ENTRIES = 50;
   const SESSION_CACHE_STORAGE_KEY = 'amusic_resolve_cache_v1';
 
@@ -77,6 +77,12 @@
       this._loadSessionCache();
       this.prefetchTimer = null;
       this._retriedProxy = false;
+
+      // 双 Audio 预载器体系与自愈容灾 (借鉴洛雪音乐 usePreloadNextMusic.ts，实现 0ms 秒播与静默自愈)
+      this.preloadAudio = null;
+      this.preloadedKey = null;
+      this._currentPreloadingKey = null;
+      this._selfHealRetries = 0;
 
       // 回调钩子 (用于更新 UI)
       this.listeners = {
@@ -211,6 +217,14 @@
         this._emit('stateChange', { isPlaying: true, isResolving: this.isResolving });
       });
 
+      this.audio.addEventListener('playing', () => {
+        this.isPlaying = true;
+        this._selfHealRetries = 0; // 起播成功，重置自愈计数器
+        this.autoSkipCount = 0;
+        this._updateMediaPlaybackState(true);
+        this._updateMediaPositionState();
+      });
+
       this.audio.addEventListener('pause', () => {
         this.isPlaying = false;
         this._updateMediaPlaybackState(false);
@@ -231,6 +245,11 @@
 
         this._syncLyrics(cur);
         this._updateMediaPositionState();
+
+        // 借鉴洛雪音乐机制：歌曲剩余时间小于 15 秒且下一首尚未就绪时，静默触发下一首预载
+        if (dur > 20 && (dur - cur) <= 15 && !this.preloadedKey && !this.isResolving) {
+          this._schedulePrefetch();
+        }
       });
 
       this.audio.addEventListener('ended', () => {
@@ -239,7 +258,7 @@
       });
 
       this.audio.addEventListener('error', (e) => {
-        if (!this.audio.src || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
+        if (!this.audio.src || this.audio.src.startsWith('data:') || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
         const code = this.audio.error ? this.audio.error.code : 0;
         if (code === 1) return; // MEDIA_ERR_ABORTED (正常切歌中断，忽略)
 
@@ -251,44 +270,152 @@
           this._removeCachedResolve(songKey);
         }
 
-        const currentSrc = this.audio.src;
-        // 1. 若当前是直链且尚未走过中继代理，尝试自动走 stream_proxy 中继流 (绕过 403 防盗链 / CORS 限制)
-        if (currentSrc && !currentSrc.includes('/api/stream_proxy') && !this._retriedProxy) {
-          this._retriedProxy = true;
-          console.warn(`[Player] 音频直链播放异常(code=${code})，尝试走安全中继流代理:`, currentSrc);
-          this.audio.src = `/api/stream_proxy?url=${encodeURIComponent(currentSrc)}`;
-          const retryPlay = this.audio.play();
-          if (retryPlay !== undefined) {
-            retryPlay.catch(err => {
-              console.warn("[Player] 中继代理自动起播受限:", err);
-            });
+        // 借鉴洛雪音乐自愈机制：当音频流因 403 / 防盗链 Token 失效时，静默向后端发起带 force_refresh 的换链自愈
+        if (song && (this._selfHealRetries || 0) < 2) {
+          this._selfHealRetries = (this._selfHealRetries || 0) + 1;
+          console.warn(`[Player] 音频直链播放异常(code=${code})，尝试第 ${this._selfHealRetries} 次换链自愈: ${songName}`);
+          if (typeof window !== 'undefined' && window.Shell?.showToast) {
+            window.Shell.showToast(`《${songName}》音频流刷新中，正在自愈恢复...`);
           }
+
+          const payload = {
+            title: song.title || song.name || "",
+            name: song.name || song.title || "",
+            artist: song.artist || "",
+            album: song.album || "",
+            id: song.id || "",
+            platform: song.platform || "",
+            isrc: song.isrc || "",
+            url: song.url || "",
+            durationMillis: song.durationMillis,
+            duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined),
+            force_refresh: true
+          };
+
+          fetch('/api/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).then(r => r.json()).then(data => {
+            if (data && data.success && data.url) {
+              this.audio.src = data.url;
+              const retryPlay = this.audio.play();
+              if (retryPlay !== undefined) {
+                retryPlay.catch(err => {
+                  console.warn("[Player] 自愈换链起播受限:", err);
+                });
+              }
+              if (songKey) {
+                this._setCachedResolve(songKey, {
+                  url: data.url,
+                  bytes: data.bytes,
+                  sourceName: data.source_name,
+                  costMs: 0,
+                  ts: Date.now(),
+                  lyrics: data.lyrics || this.lyrics || []
+                });
+              }
+            } else {
+              this._handleStreamFallback(song, songName, code, e);
+            }
+          }).catch(() => {
+            this._handleStreamFallback(song, songName, code, e);
+          });
           return;
         }
 
-        this._retriedProxy = false;
-        console.warn(`[Player] 音频流加载彻底异常(code=${code}):`, e);
+        this._handleStreamFallback(song, songName, code, e);
+      });
+    }
 
-        // 2. 歌单多曲目自动顺延下一首容灾
-        if (this.playlist.length > 1 && (this.autoSkipCount || 0) < 3) {
-          this.autoSkipCount = (this.autoSkipCount || 0) + 1;
-          if (typeof window !== 'undefined' && window.Shell?.showToast) {
-            window.Shell.showToast(`《${songName}》音频流失效，已自动顺延下一首`);
+    // 音频流降级代理与多曲目顺延兜底
+    _handleStreamFallback(song, songName, code, e) {
+      const currentSrc = this.audio.src;
+      // 1. 若当前是直链且尚未走过中继代理，尝试自动走 stream_proxy 中继流 (绕过 403 防盗链 / CORS 限制)
+      if (currentSrc && !currentSrc.includes('/api/stream_proxy') && !this._retriedProxy) {
+        this._retriedProxy = true;
+        console.warn(`[Player] 音频直链播放异常(code=${code})，尝试走安全中继流代理:`, currentSrc);
+        this.audio.src = `/api/stream_proxy?url=${encodeURIComponent(currentSrc)}`;
+        const retryPlay = this.audio.play();
+        if (retryPlay !== undefined) {
+          retryPlay.catch(err => {
+            console.warn("[Player] 中继代理自动起播受限:", err);
+          });
+        }
+        return;
+      }
+
+      this._retriedProxy = false;
+      console.warn(`[Player] 音频流加载彻底异常(code=${code}):`, e);
+
+      // 2. 歌单多曲目自动顺延下一首容灾
+      if (this.playlist.length > 1 && (this.autoSkipCount || 0) < 3) {
+        this.autoSkipCount = (this.autoSkipCount || 0) + 1;
+        if (typeof window !== 'undefined' && window.Shell?.showToast) {
+          window.Shell.showToast(`《${songName}》音频流失效，已自动顺延下一首`);
+        }
+        this._emit('stateChange', { isPlaying: false, isResolving: false, error: `《${songName}》音频流失效，已顺延` });
+        setTimeout(() => {
+          if (this.playMode === 'shuffle') {
+            const nextIdx = Math.floor(Math.random() * this.playlist.length);
+            this.playIndex(nextIdx, true);
+          } else {
+            const nextIdx = (this.currentIndex + 1) % this.playlist.length;
+            this.playIndex(nextIdx, true);
           }
-          this._emit('stateChange', { isPlaying: false, isResolving: false, error: `《${songName}》音频流失效，已顺延` });
-          setTimeout(() => {
-            if (this.playMode === 'shuffle') {
-              const nextIdx = Math.floor(Math.random() * this.playlist.length);
-              this.playIndex(nextIdx, true);
-            } else {
-              const nextIdx = (this.currentIndex + 1) % this.playlist.length;
-              this.playIndex(nextIdx, true);
-            }
-          }, 800);
-        } else {
-          this._emit('stateChange', { isPlaying: false, isResolving: false, error: "音频流加载异常" });
+        }, 800);
+      } else {
+        this._emit('stateChange', { isPlaying: false, isResolving: false, error: "音频流加载异常" });
+      }
+    }
+
+    // 借鉴洛雪音乐：初始化隐藏预载 Audio 实例 (用于向浏览器底层预取首段音频缓冲流)
+    _initPreloadAudio() {
+      if (this.preloadAudio) return;
+      this.preloadAudio = new Audio();
+      this.preloadAudio.controls = false;
+      this.preloadAudio.preload = "auto";
+      this.preloadAudio.muted = true;
+      this.preloadAudio.volume = 0;
+      this.preloadAudio.autoplay = false;
+
+      this.preloadAudio.addEventListener('canplay', () => {
+        // 浏览器底层已完成元数据与前置音频切片拉取，写入了浏览器 HTTP Cache
+        if (this._currentPreloadingKey) {
+          this.preloadedKey = this._currentPreloadingKey;
         }
       });
+
+      this.preloadAudio.addEventListener('error', () => {
+        // 预载时发现死链（例如 403 或 Token 过期），静默清理失效缓存并准备重新拉取
+        if (this._currentPreloadingKey) {
+          const deadKey = this._currentPreloadingKey;
+          this._removeCachedResolve(deadKey);
+          this.preloadedKey = null;
+          this._currentPreloadingKey = null;
+        }
+      });
+    }
+
+    _preloadAudioBuffer(key, url) {
+      if (!url || url.startsWith('data:') || this.preloadedKey === key) return;
+      this._initPreloadAudio();
+      this._currentPreloadingKey = key;
+      try {
+        this.preloadAudio.src = url;
+        this.preloadAudio.load(); // 触发底层 HTTP Range 分片拉取
+      } catch (e) {}
+    }
+
+    _resetPreloadAudio() {
+      if (this.preloadAudio) {
+        try {
+          this.preloadAudio.pause();
+          this.preloadAudio.removeAttribute('src');
+          this.preloadAudio.load();
+        } catch (e) {}
+      }
+      this._currentPreloadingKey = null;
     }
 
     // 歌轨自然结束时的处理
@@ -396,6 +523,7 @@
 
     // 获取当前歌词
     async fetchLyrics(song) {
+      const currentToken = this.resolveToken;
       this.lyrics = [];
       this.currentLyricIdx = -1;
       this._emit('lyricUpdate', { index: -1, currentLine: "正在匹配歌词...", nextLine: "", allLines: [] });
@@ -407,6 +535,7 @@
         const artist = encodeURIComponent(song.artist || '');
         const res = await fetch(`/api/lyric?platform=${plat}&id=${sid}&title=${title}&artist=${artist}`);
         const lines = await res.json();
+        if (this.resolveToken !== currentToken) return; // 快速切歌防竞态覆盖
         this.lyrics = lines || [];
         if (this.lyrics.length === 0) {
           this._emit('lyricUpdate', { index: -1, currentLine: "纯音乐，请欣赏", nextLine: "", allLines: [] });
@@ -422,6 +551,7 @@
           this._saveSessionCache();
         }
       } catch (e) {
+        if (this.resolveToken !== currentToken) return;
         this.lyrics = [];
         this._emit('lyricUpdate', { index: -1, currentLine: "暂无歌词", nextLine: "", allLines: [] });
       }
@@ -464,7 +594,14 @@
         const nextSong = this.playlist[nextIdx];
         if (!nextSong) return;
         const key = this._getSongKey(nextSong);
-        if (this._getCachedResolve(key)) return;
+        const cached = this._getCachedResolve(key);
+        if (cached && cached.url) {
+          // 若已有解析结果但尚未预载音频流，向浏览器底层发起音频预缓冲
+          if (this.preloadedKey !== key) {
+            this._preloadAudioBuffer(key, cached.url);
+          }
+          return;
+        }
 
         const payload = {
           title: nextSong.title || nextSong.name || "",
@@ -473,6 +610,8 @@
           album: nextSong.album || "",
           id: nextSong.id || "",
           platform: nextSong.platform || "",
+          isrc: nextSong.isrc || "",
+          url: nextSong.url || "",
           durationMillis: nextSong.durationMillis,
           duration: nextSong.duration || (nextSong.durationMillis ? Math.round(nextSong.durationMillis / 1000) : undefined)
         };
@@ -488,8 +627,11 @@
               bytes: data.bytes,
               sourceName: data.source_name,
               costMs: 0,
-              ts: Date.now()
+              ts: Date.now(),
+              lyrics: data.lyrics || []
             });
+            // 借鉴洛雪音乐：将解析出的音频直链静默送入预载 Audio 实例，触发 Range 缓冲
+            this._preloadAudioBuffer(key, data.url);
           }
         }).catch(() => {});
       }, 1200); // 歌曲起播 1.2 秒后平稳静默预取
@@ -502,6 +644,11 @@
         this.autoSkipCount = 0;
       }
       this._retriedProxy = false;
+      if (this.currentAbortController) {
+        try { this.currentAbortController.abort(); } catch (e) {}
+      }
+      this.currentAbortController = new AbortController();
+      const abortSignal = this.currentAbortController.signal;
       this.resolveToken = (this.resolveToken || 0) + 1;
       const currentToken = this.resolveToken;
 
@@ -536,6 +683,9 @@
       // 2. 命中前端短效缓存：0 毫秒秒切出声，零 Vercel 网络开销！
       if (cached && cached.url) {
         this.autoSkipCount = 0;
+        const isPreloadHit = (this.preloadedKey === songKey);
+        this._resetPreloadAudio();
+        this.preloadedKey = null;
         this.audio.src = cached.url;
 
         // 若缓存已有解析好的歌词，直接装配，彻底免除 /api/lyric 请求
@@ -553,6 +703,7 @@
           this.fetchLyrics(song);
         }
 
+        const sourceTag = isPreloadHit ? ' ⚡预载秒播' : ' ⚡快取秒开';
         const playPromise = this.audio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
@@ -560,7 +711,7 @@
               isPlaying: true,
               isResolving: false,
               song,
-              sourceName: (cached.sourceName || '') + ' ⚡快取秒开',
+              sourceName: (cached.sourceName || '') + sourceTag,
               costMs: 0,
               bytes: cached.bytes
             });
@@ -570,7 +721,7 @@
               isPlaying: false,
               isResolving: false,
               song,
-              sourceName: (cached.sourceName || '') + ' ⚡快取秒开',
+              sourceName: (cached.sourceName || '') + sourceTag,
               costMs: 0,
               bytes: cached.bytes
             });
@@ -581,8 +732,10 @@
         return;
       }
 
-      // 未命中缓存时，并行请求歌词与启动寻链
-      this.fetchLyrics(song);
+      // 未命中缓存时，先展示加载占位；/api/resolve 接口已内置音画同源正版歌词提取，避免并发冗余请求
+      this.lyrics = [];
+      this.currentLyricIdx = -1;
+      this._emit('lyricUpdate', { index: -1, currentLine: "正在匹配曲目与歌词...", nextLine: "", allLines: [] });
       this.isResolving = true;
       this._emit('stateChange', { isPlaying: false, isResolving: true, song });
 
@@ -602,13 +755,16 @@
             album: song.album || "",
             id: song.id || "",
             platform: song.platform || "",
+            isrc: song.isrc || "",
+            url: song.url || "",
             durationMillis: song.durationMillis,
             duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined)
           };
           const res = await fetch('/api/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: abortSignal
           });
           data = await res.json();
           cost = (performance.now() - t0).toFixed(0);
@@ -616,7 +772,7 @@
             break; // 服务端已完成多源并发冲刺，直接使用结果
           }
         } catch (err) {
-          // 捕获网络或瞬态异常
+          if (err.name === 'AbortError') return; // 用户快速切歌已主动终止该请求
         }
 
         // 仅在网络异常抛错时对歌单首曲启用最多 3 秒重试窗口
@@ -634,6 +790,8 @@
       try {
         if (data && data.success && data.url) {
           this.autoSkipCount = 0;
+          this._resetPreloadAudio();
+          this.preloadedKey = null;
 
           // 音画同源原子化：优先直接装配随 resolve 一并下发的高精同源正版歌词
           if (data.lyrics && Array.isArray(data.lyrics) && data.lyrics.length > 0) {
@@ -646,6 +804,9 @@
               nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
               allLines: this.lyrics
             });
+          } else {
+            // 后端未能提取到同源歌词时，异步兜底独立抓取
+            this.fetchLyrics(song);
           }
 
           // 写入前端短效缓存供回切与复听使用 (45分钟TTL)
@@ -730,7 +891,7 @@
     // 播控方法
     togglePlay() {
       this.unlockAudio();
-      if (!this.audio.src) {
+      if (!this.audio.src || this.audio.src.startsWith('data:')) {
         if (this.playlist.length > 0) {
           this.playIndex(this.currentIndex >= 0 ? this.currentIndex : 0);
         }
@@ -741,6 +902,8 @@
         this.audio.play().catch(() => {});
       } else {
         this.audio.pause();
+        // 核心加固：用户主动暂停时，递增 token 立即作废任何后台异步挂起的跳歌顺延定时器，杜绝幽灵切歌
+        this.resolveToken = (this.resolveToken || 0) + 1;
       }
     }
 
@@ -824,6 +987,8 @@
     // 播放外部传入的整套曲目列表 (如 Apple Music 当前歌单) 并立即从指定索引播放
     playTracklist(tracks, startIndex = 0) {
       if (!Array.isArray(tracks) || tracks.length === 0) return;
+      this._resetPreloadAudio();
+      this.preloadedKey = null;
       this.historyStack = [];
       this.shuffledNextIndex = null;
       this.playlist = tracks.map((t, idx) => ({
@@ -881,6 +1046,8 @@
     // 替换/设置当前播放列表（如歌单曲目加载后同步至队列，或搜索结果直接成为当前列表）
     setPlaylist(newList, autoPlayIndex = -1) {
       if (!Array.isArray(newList)) return;
+      this._resetPreloadAudio();
+      this.preloadedKey = null;
       this.historyStack = [];
       this.shuffledNextIndex = null;
       this.playlist = newList.map((t, idx) => ({
@@ -918,6 +1085,8 @@
 
     // 清空或重置播放队列
     loadDefaultPlaylist() {
+      this._resetPreloadAudio();
+      this.preloadedKey = null;
       this.playlist = [];
       this.isDefaultList = false;
       this.currentIndex = -1;

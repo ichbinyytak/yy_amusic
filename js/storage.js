@@ -46,6 +46,7 @@ window.StorageManager = (function () {
             window.dispatchEvent(new CustomEvent("amusic-storage-changed", {
                 detail: { key, eventType, data: val }
             }));
+            window.EventBus?.emit?.("storageChanged", { key, eventType, data: val });
             return true;
         } catch (e) {
             console.error(`[StorageManager] 写入 ${key} 失败:`, e);

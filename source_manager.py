@@ -37,6 +37,7 @@ import urllib.request
 import urllib.error
 import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from net_pool import http_get, verify_audio_stream, MIN_VALID_BYTES, FAKE_AUDIO_LENGTHS
 
 # ----------------------------------------------------
 # 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
@@ -55,7 +56,7 @@ except Exception:
 
 # 铁律：假音频与试听截断黑名单字节数
 FAKE_AUDIO_LENGTHS = {81629, 181521}
-MIN_VALID_BYTES = 1500000  # 1.5MB（低于此大小判定为 30 秒试听截断残卷）
+MIN_VALID_BYTES = 1200000  # 1.2MB（低于此大小判定为 30 秒试听截断残卷或语音片段）
 
 # 标准测速基准曲目（按平台严格对齐歌曲ID与元数据，杜绝跨平台ID错配）
 TEST_TRACKS = {
@@ -72,38 +73,74 @@ CACHE_DIR = os.path.join(BASE_DIR, "sources_cache")
 RUNNER_SCRIPT = os.path.join(BASE_DIR, "lx_runner.js")
 
 # ========================================================
-# 区块 1: 便携式 Node.js 沙箱自适应定位与极速解压
+# 区块 1: 便携式 Node.js 沙箱自适应定位与按需惰性加载
 # ========================================================
+_NODE_BIN = None
+_NODE_BIN_CHECKED = False
+_NODE_LOCK = threading.Lock()
+
 def get_node_binary():
-    """获取可用的 node 可执行程序路径：
+    """获取可用的 node 可执行程序路径 (按需惰性加载，杜绝冷启动解压冻结)：
     1. 优先使用系统 PATH 中的 node（如本地 Linux 环境、自建服务器）
     2. 若不存在（如 Vercel 纯 Python Serverless），检查 /tmp/node 是否已存在且可执行
-    3. 若未解压，从仓库自带的 bin/node.gz 极速解压到 /tmp/node 并赋予可执行权限
+    3. 若未解压且确有沙箱探测需求，从仓库自带的 bin/node.gz 极速解压到 /tmp/node 并赋予可执行权限
     """
-    sys_node = shutil.which("node")
-    if sys_node:
-        return sys_node
+    global _NODE_BIN, _NODE_BIN_CHECKED
+    if _NODE_BIN_CHECKED:
+        return _NODE_BIN
 
-    tmp_node = "/tmp/node"
-    if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
-        return tmp_node
+    with _NODE_LOCK:
+        if _NODE_BIN_CHECKED:
+            return _NODE_BIN
 
-    # 尝试从 bin/node.gz 解压
-    gz_path = os.path.join(BASE_DIR, "bin", "node.gz")
-    if os.path.exists(gz_path):
-        try:
-            with gzip.open(gz_path, "rb") as f_in:
-                with open(tmp_node, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
-            os.chmod(tmp_node, 0o755)
-            if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
-                return tmp_node
-        except Exception as e:
-            print(f"[SourceManager] 解压便携 Node 二进制异常: {e}")
-    return None
+        sys_node = shutil.which("node")
+        if sys_node:
+            _NODE_BIN = sys_node
+            _NODE_BIN_CHECKED = True
+            return _NODE_BIN
 
-NODE_BIN = get_node_binary()
-HAS_NODE = bool(NODE_BIN)
+        tmp_node = "/tmp/node"
+        if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
+            _NODE_BIN = tmp_node
+            _NODE_BIN_CHECKED = True
+            return _NODE_BIN
+
+        # 尝试从 bin/node.gz 解压 (带原子重命名防并发冷启动竞态)
+        gz_path = os.path.join(BASE_DIR, "bin", "node.gz")
+        if os.path.exists(gz_path):
+            try:
+                tmp_writing = f"{tmp_node}.tmp.{os.getpid()}.{threading.get_ident()}"
+                with gzip.open(gz_path, "rb") as f_in:
+                    with open(tmp_writing, "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                os.chmod(tmp_writing, 0o755)
+                os.replace(tmp_writing, tmp_node)
+                if os.path.exists(tmp_node) and os.access(tmp_node, os.X_OK):
+                    _NODE_BIN = tmp_node
+                    _NODE_BIN_CHECKED = True
+                    return _NODE_BIN
+            except Exception as e:
+                print(f"[SourceManager] 解压便携 Node 二进制异常: {e}")
+        _NODE_BIN = None
+        _NODE_BIN_CHECKED = True
+        return None
+
+def has_node():
+    """轻量检查是否具备 node 运行环境 (优先 PATH/既有 /tmp，不触发耗时的 node.gz 首次解压)"""
+    if _NODE_BIN_CHECKED:
+        return bool(_NODE_BIN)
+    if shutil.which("node"):
+        return True
+    if os.path.exists("/tmp/node") and os.access("/tmp/node", os.X_OK):
+        return True
+    return os.path.exists(os.path.join(BASE_DIR, "bin", "node.gz"))
+
+def __getattr__(name):
+    if name == "NODE_BIN":
+        return get_node_binary()
+    if name == "HAS_NODE":
+        return has_node()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 # ========================================================
 # 区块 2: LX 脚本沙箱探针与内置原生通道探针
@@ -111,7 +148,8 @@ HAS_NODE = bool(NODE_BIN)
 def _make_runner_probe(script_path: str, supported_platforms: list):
     """为每一个 LX 脚本源生成专属探测函数，支持传递完整歌名、歌手与目标平台"""
     def _probe(song_info, target_platform: str = "kw", timeout: float = 3.5):
-        if not HAS_NODE or not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
+        node_bin = get_node_binary()
+        if not node_bin or not os.path.exists(RUNNER_SCRIPT) or not os.path.exists(script_path):
             return None
         
         # 兼容 dict 或 str 传参
@@ -135,7 +173,7 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
             "timeout": int(timeout * 1000)
         }
         cmd = [
-            NODE_BIN or "node",
+            node_bin,
             "--dns-result-order=ipv4first",
             RUNNER_SCRIPT,
             script_path,
@@ -163,68 +201,14 @@ def _make_runner_probe(script_path: str, supported_platforms: list):
 def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
     """
     轻量秒级校验音频有效性：仅获取 HEAD 或 Range 请求头，不下载几兆音频 Body
-    【方案 2: 语义特征 + 时长残卷双重防线，彻底铲除 11 秒假音频提示音刺客】
+    连接池 Keep-Alive 极速复用，彻底拦截 11 秒假音频提示音与截断残卷
     返回: (is_valid: bool, content_length: int, final_url: str)
     """
-    if not url or not url.startswith("http"):
-        return False, 0, ""
-
-    # 1. 第一防线：酷我假音频官方下架提示音特征识别 (588957081)
-    if "588957081" in url:
-        return False, 0, url
-
-    try:
-        req = urllib.request.Request(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Range': 'bytes=0-1024'  # 只嗅探前 1KB
-        })
-        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            final_url = resp.geturl()
-
-            # 严格重定向目标语义检查
-            if "588957081" in final_url:
-                return False, 0, final_url
-
-            # 严格校验 HTTP 状态码必须是 200 或 206
-            if resp.status not in (200, 206):
-                return False, 0, ""
-
-            # 过滤非音频 MIME 类型 (如返回 HTML 报错页或 JSON 授权失败)
-            content_type = (resp.headers.get('Content-Type') or '').lower()
-            if content_type and ('text/' in content_type or 'application/json' in content_type):
-                return False, 0, final_url
-
-            # 从 Content-Range 或 Content-Length 获取文件总字节数
-            cr = resp.headers.get('Content-Range', '')
-            total_size = 0
-            if cr and '/' in cr:
-                try:
-                    total_size = int(cr.split('/')[-1])
-                except Exception:
-                    pass
-            if total_size == 0:
-                try:
-                    total_size = int(resp.headers.get('Content-Length', 0))
-                except Exception:
-                    pass
-
-            # 2. 第二防线：拦截语音刺客 (11s 约 80KB~185KB) 与无效超短残卷
-            if total_size in FAKE_AUDIO_LENGTHS:
-                return False, total_size, final_url
-            if 0 < total_size < 350000:
-                return False, total_size, final_url
-            return True, total_size, final_url
-    except urllib.error.HTTPError:
-        # 铁律：HTTP 403 Forbidden / 404 Not Found 等明确的服务端拒绝，绝对是死链，严禁放行！
-        return False, 0, ""
-    except Exception:
-        # 网络连接错误或超时，不视为有效出声直链
-        return False, 0, ""
+    return verify_audio_stream(url, timeout=timeout)
 
 
 # ========================================================
-# 内置直连音源探测器定义（高可用、极速毫秒响应）
+# 内置直连音源探测器定义（高可用、极速毫秒响应，零进程开销）
 # ========================================================
 
 def _extract_id(song_info):
@@ -234,27 +218,25 @@ def _extract_id(song_info):
 
 def _probe_kw_haitang(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"https://musicapi.haitangw.net/music/kw.php?type=mp3&id={song_id}&level=standard"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-        final_url = resp.geturl()
-        if final_url and 'haitangw.net' not in final_url:
-            # 严格防线：必须通过 verify_audio_url 嗅探，绝不放行 181521/81629 假音频与截断残卷
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "海棠SVIP穿透通道"}
+    # 单次跟随重定向并校验头大小，彻底消除二次握手双跳
+    ok, sz, purl = verify_audio_url(url, timeout=timeout)
+    if ok and 'haitangw.net' not in purl:
+        return {"url": purl, "bytes": sz, "source": "海棠SVIP穿透通道"}
     return None
 
 def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"http://antiserver.kuwo.cn/anti.s?type=convert_url3&rid={song_id}&format=mp3&response=url"
-    req = urllib.request.Request(url, headers={'User-Agent': 'okhttp/3.10.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode('utf-8').strip()
+    st, raw_bytes, _, _ = http_get(url, headers={'User-Agent': 'okhttp/3.10.0'}, timeout=timeout)
+    if st == 200 and raw_bytes:
+        raw = raw_bytes.decode('utf-8', errors='ignore').strip()
         purl = json.loads(raw).get('url', '') if raw.startswith('{') else raw
         if purl and purl.startswith('http'):
-            # 铁律：酷我官方对下架歌曲返回 181521 字节的 11 秒假音频提示音，必须 100% 经过严格校验拦截！
             ok, sz, final_url = verify_audio_url(purl, timeout=1.5)
             if ok:
                 return {"url": final_url, "bytes": sz, "source": "酷我官方原生通道"}
@@ -262,26 +244,42 @@ def _probe_kw_anti(song_info, target_platform="kw", timeout: float = 2.0):
 
 def _probe_kw_nxinxz(song_info, target_platform="kw", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"http://music.nxinxz.com/kw.php?id={song_id}&level=standard&type=mp3"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        final_url = resp.geturl()
-        if final_url and 'music.nxinxz.com' not in final_url:
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "念心车机穿透通道"}
+    # 单次跟随重定向并校验头大小，消除二次跨洋握手
+    ok, sz, purl = verify_audio_url(url, timeout=timeout)
+    if ok and 'music.nxinxz.com' not in purl:
+        return {"url": purl, "bytes": sz, "source": "念心车机穿透通道"}
     return None
 
 def _probe_wy_meting(song_info, target_platform="wy", timeout: float = 2.0):
     song_id = _extract_id(song_info)
+    if not song_id or not song_id.isdigit():
+        return None
     url = f"https://api.injahow.cn/meting/?server=netease&type=url&id={song_id}"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        final_url = resp.geturl()
-        if resp.status == 200 and 'music.126.net' in final_url:
-            ok, sz, purl = verify_audio_url(final_url, timeout=1.5)
-            if ok:
-                return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
+    ok, sz, purl = verify_audio_url(url, timeout=timeout)
+    if ok and 'music.126.net' in purl:
+        return {"url": purl, "bytes": sz, "source": "网易云开放直通通道"}
+    return None
+
+def _probe_tx_native(song_info, target_platform="tx", timeout: float = 2.0):
+    """QQ 音乐纯 Python 原生直通通道（无需解压 Node.js 沙箱，毫秒级直出正版音源）"""
+    sid = _extract_id(song_info)
+    if not sid:
+        return None
+    url = f"https://103.79.184.97/api/music/url?songId={sid}&songmid={sid}&platform=tx&source=tx&quality=128k&key=6C1F-53W0-GRKI-EVFG"
+    st, data_bytes, _, _ = http_get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=timeout)
+    if st == 200 and data_bytes:
+        try:
+            data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
+            if data.get("code") == 200 and data.get("url"):
+                target_url = data["url"]
+                ok, sz, purl = verify_audio_url(target_url, timeout=1.5)
+                if ok:
+                    return {"url": purl, "bytes": sz, "source": "QQ音乐直通通道"}
+        except Exception:
+            pass
     return None
 
 def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
@@ -294,19 +292,18 @@ def _probe_kw_yaohu(song_info, target_platform="kw", timeout: float = 2.0):
     if not q:
         return None
     url = f"https://api.yaohud.cn/api/music/kuwo?key=nvgKtvzw7CFSNFrDhA6&action=search&msg={urllib.parse.quote(q)}&n=1"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
-    try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+    st, data_bytes, _, _ = http_get(url, timeout=timeout)
+    if st == 200 and data_bytes:
+        try:
+            data = json.loads(data_bytes.decode('utf-8', errors='ignore'))
             vm = data.get("data", {}).get("vipmusic", {})
             audio_url = vm.get("url", "")
             if audio_url and audio_url.startswith("http"):
                 ok, sz, purl = verify_audio_url(audio_url, timeout=1.5)
                 if ok:
                     return {"url": purl, "bytes": sz, "source": "妖狐酷我直通通道"}
-    except Exception:
-        pass
+        except Exception:
+            pass
     return None
 
 # ========================================================
@@ -457,11 +454,11 @@ class SourceManager:
 
     def _init_builtin_sources(self):
         # 1. 默认注册 5 大异构原生通道（涵盖酷我妖狐直通、海棠、念心、车机、网易云），并初始化分平台基准数据
-        s_yaohu = AudioSource("kw_yaohu", "妖狐直通源 (酷我)", ["kw", "tx"], _probe_kw_yaohu, "5886682")
+        s_yaohu = AudioSource("kw_yaohu", "妖狐直通源 (酷我)", ["kw"], _probe_kw_yaohu, "5886682")
         s_yaohu.status = "ok"
         s_yaohu.latency_ms = 80.0
-        s_yaohu.platform_latencies = {"kw": 80.0, "tx": 80.0}
-        s_yaohu.platform_status = {"kw": "ok", "tx": "ok"}
+        s_yaohu.platform_latencies = {"kw": 80.0}
+        s_yaohu.platform_status = {"kw": "ok"}
         s_yaohu.success_count = 50
         self.register(s_yaohu)
 
@@ -495,6 +492,14 @@ class SourceManager:
         s_wy.platform_status = {"wy": "ok"}
         self.register(s_wy)
 
+        s_tx = AudioSource("tx_native", "QQ音乐直通源 (企鹅)", ["tx"], _probe_tx_native, "002WkUkN2L0dqm")
+        s_tx.status = "ok"
+        s_tx.latency_ms = 400.0
+        s_tx.platform_latencies = {"tx": 400.0}
+        s_tx.platform_status = {"tx": "ok"}
+        s_tx.success_count = 25
+        self.register(s_tx)
+
         # 2. 零外网阻塞：直接从本地 sources_cache 与 sources_ranking.json 极速预热注册音源
         self.load_local_cached_sources()
 
@@ -520,7 +525,7 @@ class SourceManager:
 
         # 1. 对比排班表注册本地 LX 音源
         # 6.1 在 Vercel 或无 Node 环境下，直接跳过所有 LX 脚本源，仅更新原生直连源，专注原生通道
-        if not HAS_NODE:
+        if not has_node():
             for r_id, s_info in ranking_sources.items():
                 if not r_id.startswith("lx_") and r_id in self.sources:
                     src = self.sources[r_id]
@@ -622,7 +627,7 @@ class SourceManager:
 
     def sync_from_lx_hub(self):
         """从用户维护的 lx-hub 动态同步并注册全部 32 个音源"""
-        if not HAS_NODE or os.environ.get("VERCEL"):
+        if not has_node() or os.environ.get("VERCEL"):
             return False
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
@@ -734,12 +739,12 @@ class SourceManager:
             "success_count": s.success_count
         } for s in ordered]
 
-    def resolve_best_stream(self, cand_song: dict) -> dict:
+    def resolve_best_stream(self, cand_song: dict, timeout_budget: float = None) -> dict:
         """
         四核并发全量冲刺调度（Quad-Core Racing Pool）：
         1. 针对目标平台精准派出能打的同平台源，绝不把 QQ 音乐 ID 派给纯酷我/纯网易源导致超时空转；
-        2. 每次派出 4 个最优源并发冲刺，任一源返回有效全曲（> 1.5MB）即刻胜出秒开出声；
-        3. 彻底解除 wait=True 死锁，非阻塞退出。
+        2. 每次派出 4 个最优源并发冲刺，任一源返回有效全曲（> 1.2MB）即刻胜出秒开出声；
+        3. 彻底解除 wait=True 死锁，非阻塞退出，动态遵循剩余时间预算。
         """
         target_plat = cand_song.get("platform", "kw")
         song_id = cand_song.get("id", "")
@@ -754,16 +759,37 @@ class SourceManager:
             # 仅当没有专用源时，才允许具备多平台能力的聚合源兜底
             all_ordered = [s for s in self.get_ordered_sources() if len(s.platforms) > 1]
 
-        rounds_log = []
-        batch_size = 4  # 升级为四核并发冲刺
-        total_rounds = min(2, (len(all_ordered) + batch_size - 1) // batch_size)  # 最多冲刺 2 轮 (8个高位优质源)，严控整体耗时
-        start_t = time.perf_counter()
+        # 架构演进：原生轻量通道极速先行，LX 沙箱脚本候补 (降低 Vercel 容器内的 Node.js 进程开销)
+        native_sources = [s for s in all_ordered if not s.id.startswith("lx_")]
+        lx_sources = [s for s in all_ordered if s.id.startswith("lx_")]
 
-        for round_idx in range(total_rounds):
-            if (time.perf_counter() - start_t) > 3.0:
+        batches = []
+        if len(native_sources) >= 2:
+            # 酷我等平台原生源充足：第一轮派出全量纯 Python 原生源 (0 Node 进程，毫秒级响应)
+            batches.append(native_sources[:4])
+            if lx_sources:
+                batches.append(lx_sources[:4])
+        else:
+            # 原生源较少时，原生源与最强 LX 源混编第一轮
+            first_batch = native_sources + lx_sources[:max(0, 4 - len(native_sources))]
+            if first_batch:
+                batches.append(first_batch)
+            rem_lx = lx_sources[len(first_batch) - len(native_sources):]
+            if rem_lx:
+                batches.append(rem_lx[:4])
+
+        if not batches:
+            batches = [all_ordered[:4]]
+
+        rounds_log = []
+        start_t = time.perf_counter()
+        overall_limit = min(3.5, timeout_budget) if timeout_budget is not None else 3.5
+
+        for round_idx, batch in enumerate(batches[:2]):
+            elapsed = time.perf_counter() - start_t
+            if elapsed >= overall_limit:
                 break  # 整体时间超限，提前止损，将机会让给下一候选
             round_t0 = time.perf_counter()
-            batch = all_ordered[round_idx * batch_size : (round_idx + 1) * batch_size]
             names = [s.name for s in batch]
             r_log = {
                 "round": round_idx + 1,
@@ -772,9 +798,15 @@ class SourceManager:
                 "status": "miss"
             }
 
-            # 单源 1.8 秒充裕缓冲！正常 300~600ms 立即胜出秒退，绝不误杀王牌海棠/车机源
+            # 单源 1.8 秒充裕缓冲；轮次收集 2.4 秒充裕窗口，杜绝超时倒挂与线程池提早截断
             single_probe_timeout = 1.8
-            round_timeout = 1.95
+            round_timeout = 2.4
+            if timeout_budget is not None:
+                rem = timeout_budget - elapsed
+                if rem < 0.6:
+                    break
+                round_timeout = min(round_timeout, rem)
+                single_probe_timeout = min(1.8, max(0.3, round_timeout - 0.3))
 
             exec_pool = ThreadPoolExecutor(max_workers=len(batch))
             try:
@@ -807,10 +839,10 @@ class SourceManager:
                                 "rounds_log": rounds_log
                             }
                         else:
-                            if is_native_plat:
+                            if is_native_plat and (target_plat != "kw" or _extract_id(cand_song).isdigit()):
                                 src.record_miss(platform=target_plat)
                     except Exception:
-                        if is_native_plat:
+                        if is_native_plat and (target_plat != "kw" or _extract_id(cand_song).isdigit()):
                             src.record_miss(platform=target_plat)
             except Exception:
                 pass

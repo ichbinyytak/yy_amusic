@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "regions": ["hkg1"],
+  "regions": ["iad1"],
   "builds": [
     {
       "src": "api/index.py",
@@ -19,6 +19,22 @@
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    },
+    {
+      "src": "/(js|css)/(.*)",
+      "dest": "/$1/$2",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
+      }
+    },
+    {
+      "src": "/(player\\.js|style\\.css)",
+      "dest": "/$1",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"
       }
     },
     {

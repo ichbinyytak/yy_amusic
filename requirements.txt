@@ -1,2 +1,4 @@
 # Amusic Serverless API Dependencies
-# Python Standard Library only (urllib.request, json, http.server). Zero external pip dependencies required.
+# urllib3 用于高效 HTTP 连接池与 Keep-Alive 复用，降低跨洋握手延迟
+urllib3>=2.0.0
+

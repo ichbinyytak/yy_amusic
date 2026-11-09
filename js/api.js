@@ -131,12 +131,12 @@ async function swrFetch(url, cacheKey, { onCached, onUpdated, onError, showLoadi
 /* ========================================================
  * 区块 3: Apple Music Catalog 目录网络网关
  * ======================================================== */
-async function apiRequest(endpoint, etag = '') {
+async function apiRequest(endpoint, etag = '', customSf = null) {
     try {
         const headers = {};
         if (etag) headers["If-None-Match"] = etag;
 
-        const sf = window.currentStorefront || currentStorefront || "cn";
+        const sf = customSf || window.currentStorefront || currentStorefront || "cn";
         const response = await fetch(`${APPLE_MUSIC_API}/${sf}/${endpoint}`, { headers });
         if (response.status === 304) {
             return 304;
@@ -186,6 +186,29 @@ function showToast(msg) {
     }, 2200);
 }
 
+// 统一前端轻量事件总线 (支持解耦模块间相互直接调用)
+const EventBus = {
+    _events: {},
+    on(event, callback) {
+        if (!this._events[event]) this._events[event] = [];
+        this._events[event].push(callback);
+    },
+    off(event, callback) {
+        if (!this._events[event]) return;
+        this._events[event] = this._events[event].filter(cb => cb !== callback);
+    },
+    emit(event, data) {
+        if (!this._events[event]) return;
+        this._events[event].forEach(cb => {
+            try { cb(data); } catch (e) { console.error(`[EventBus] ${event} error:`, e); }
+        });
+    }
+};
+
+EventBus.on("toast", (msg) => {
+    showToast(msg);
+});
+
 // 明确暴露至全局 window 命名空间
 window.ClientCache = ClientCache;
 window.swrFetch = swrFetch;
@@ -193,3 +216,4 @@ window.apiRequest = apiRequest;
 window.escapeHtml = escapeHtml;
 window.formatDuration = formatDuration;
 window.showToast = showToast;
+window.EventBus = EventBus;
