@@ -1,0 +1,280 @@
+{
+  "version": "2.0.0",
+  "updatedAt": "2026-11-10T09:43:49.739Z",
+  "totalEndpoints": 13,
+  "endpoints": [
+    {
+      "id": "wy_c_wwwweb_top_1",
+      "name": "juhev0-0-1 · c.wwwweb.top",
+      "platform": "wy",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "POST",
+      "urlTemplate": "https://c.wwwweb.top/music/url",
+      "headers": {
+        "User-Agent": "lx-music-request/2.9.0",
+        "Content-Type": "application/json"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 20,
+      "sampleLatencyMs": 223,
+      "bodyTemplate": "{\"source\":\"wy\",\"musicId\":\"{id}\",\"quality\":\"320k\"}",
+      "responseExtractor": "url"
+    },
+    {
+      "id": "kg_yy_zddyr_top_2",
+      "name": "juhev0-0-1 · yy.zddyr.top",
+      "platform": "kg",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://yy.zddyr.top/lx/api/?source=kg&quality=320k&songmid={hash}&albumId=&mainHash={hash}&hash={hash}",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 yy-lx-hub/2.0"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 13,
+      "sampleLatencyMs": 1291,
+      "responseExtractor": "url"
+    },
+    {
+      "id": "kw_nmobi_kuwo_cn_3",
+      "name": "安妮独家音源 · nmobi.kuwo.cn",
+      "platform": "kw",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "http://nmobi.kuwo.cn/mobi.s?f=web&user=0&source=kwplayerhd_ar_4.3.0.8_tianbao_T1A_qirui.apk&type=convert_url_with_sign&rid={id}&br=320kmp3",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 5,
+      "sampleLatencyMs": 190,
+      "responseExtractor": "data.url"
+    },
+    {
+      "id": "kw_c_wwwweb_top_4",
+      "name": "轻量音源（四平台多源并行） · c.wwwweb.top",
+      "platform": "kw",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "POST",
+      "urlTemplate": "https://c.wwwweb.top/music/url",
+      "headers": {
+        "User-Agent": "lx-music-mobile/2.0.0",
+        "Content-Type": "application/json"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 3,
+      "sampleLatencyMs": 259,
+      "bodyTemplate": "{\"source\":\"kw\",\"musicId\":\"{id}\",\"quality\":\"320k\"}",
+      "responseExtractor": "url"
+    },
+    {
+      "id": "kw_yy_zddyr_top_5",
+      "name": "杰翔聚合音源 · yy.zddyr.top",
+      "platform": "kw",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://yy.zddyr.top/lx/api/?source=kw&name={name}&singer={singer}&songmid={id}&interval={interval}&albumName={album}&quality=320k",
+      "headers": {
+        "User-Agent": "Mozilla/5.0"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 3,
+      "sampleLatencyMs": 2135,
+      "responseExtractor": "url"
+    },
+    {
+      "id": "wy_yy_zddyr_top_6",
+      "name": "星海音乐源 · yy.zddyr.top",
+      "platform": "wy",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://yy.zddyr.top/lx/api/?source=wy&name={name}&singer={singer}&songmid={id}&interval={interval}&albumName={album}&quality=320k",
+      "headers": {
+        "User-Agent": "lx-music"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 2,
+      "sampleLatencyMs": 523,
+      "responseExtractor": "url"
+    },
+    {
+      "id": "wy_103_79_184_97_7",
+      "name": "HYWmusic_公益版 · 103.79.184.97",
+      "platform": "wy",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://103.79.184.97/api/music/url?songId={id}&songmid={id}&rid={id}&albumName={album}&name={name}&singer={singer}&artist={singer}&platform=wy&source=wy&quality=320k&key=6C1F-53W0-GRKI-EVFG",
+      "headers": {
+        "User-Agent": "lx-music-desktop/2.0.0"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 2,
+      "sampleLatencyMs": 544,
+      "responseExtractor": "url"
+    },
+    {
+      "id": "kg_m_kugou_com_8",
+      "name": "轻量音源（四平台多源并行） · m.kugou.com",
+      "platform": "kg",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://m.kugou.com/app/i/getSongInfo.php?cmd=playInfo&hash={hash}",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36",
+        "Referer": "https://m.kugou.com/"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 1,
+      "sampleLatencyMs": 240,
+      "responseExtractor": "url",
+      "metaFields": {
+        "title": "fileName",
+        "artist": "authors[0].author_name"
+      }
+    },
+    {
+      "id": "kg_mcp_nianxinxz_com_9",
+      "name": "K×H测试 · mcp.nianxinxz.com",
+      "platform": "kg",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://mcp.nianxinxz.com/share/ceshi/kg.php?id={hash}&level=320kmp3",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 yy-lx-hub/2.0"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 1,
+      "sampleLatencyMs": 966,
+      "responseExtractor": "url"
+    },
+    {
+      "id": "tx_cyapi_top_10",
+      "name": "收集の聚合接口(LX版) · cyapi.top",
+      "platform": "tx",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://cyapi.top/API/qq_music.php?apikey=1ffdf5733f5d538760e63d7e46ba17438d9f7b9dfc18c51be1109386fd74c3a1&type=json&mid={id}",
+      "headers": {
+        "User-Agent": "lx-music-desktop/2.0.0"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 1,
+      "sampleLatencyMs": 1137,
+      "responseExtractor": "url",
+      "metaFields": {
+        "title": "name",
+        "artist": "artists[0].name"
+      }
+    },
+    {
+      "id": "tx_tang_api_s01s_cn_11",
+      "name": "lx-玉宁熙 · tang.api.s01s.cn",
+      "platform": "tx",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://tang.api.s01s.cn/music_open_api.php?mid={id}",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 yy-lx-hub/2.0"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 1,
+      "sampleLatencyMs": 1416,
+      "responseExtractor": "song_play_url",
+      "metaFields": {
+        "title": "song_name",
+        "artist": "singer_name"
+      }
+    },
+    {
+      "id": "wy_oiapi_net_12",
+      "name": "非常刀 · oiapi.net",
+      "platform": "wy",
+      "matchMode": "id",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://oiapi.net/api/Music_163?id={id}",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 yy-lx-hub/2.0",
+        "Accept": "application/json"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 16,
+      "sampleLatencyMs": 503,
+      "responseExtractor": "data[0].url",
+      "metaFields": {
+        "title": "data[0].name",
+        "artist": "data[0].singers[0].name"
+      }
+    },
+    {
+      "id": "mg_oiapi_net_13",
+      "name": "𝖧౿ᥣᥣ𝗈 Ԝ𝗈𝗋ᥣᑯ · oiapi.net",
+      "platform": "mg",
+      "matchMode": "search",
+      "supportQualities": [
+        "320k"
+      ],
+      "type": "json",
+      "method": "GET",
+      "urlTemplate": "https://oiapi.net/api/MiGu_Music?msg={name}&br=HQ&n=1",
+      "headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+      },
+      "verifiedStatus": "ok",
+      "hitCount": 5,
+      "sampleLatencyMs": 1193,
+      "responseExtractor": "data.url",
+      "metaFields": {
+        "title": "data.song",
+        "artist": "data.singer"
+      }
+    }
+  ]
+}

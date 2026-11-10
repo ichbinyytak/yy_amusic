@@ -21,13 +21,15 @@
 
 import os
 import sys
+import re
 import time
 import json
 import socket
 import threading
 import datetime
+import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from net_pool import http_get, verify_audio_stream, MIN_VALID_BYTES, FAKE_AUDIO_LENGTHS
+from net_pool import http_get, http_post_json, verify_audio_stream, MIN_VALID_BYTES, FAKE_AUDIO_LENGTHS, _HTTP_POOL
 
 # ----------------------------------------------------
 # 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
@@ -46,14 +48,16 @@ except Exception:
 
 # 标准测速基准曲目（按平台严格对齐歌曲ID与元数据，杜绝跨平台ID错配）
 TEST_TRACKS = {
-    "kw": {"id": "5886682", "songmid": "5886682", "title": "海阔天空", "artist": "Beyond"},
-    "wy": {"id": "347230", "songmid": "347230", "title": "海阔天空", "artist": "Beyond"},
-    "tx": {"id": "002WkUkN2L0dqm", "songmid": "002WkUkN2L0dqm", "title": "海阔天空", "artist": "Beyond"},
-    "kg": {"id": "596E403326AFD24A38E95A5225E1A139", "songmid": "596E403326AFD24A38E95A5225E1A139", "title": "海阔天空", "artist": "Beyond"},
+    "kw": {"id": "5886682", "songmid": "5886682", "title": "海阔天空", "artist": "Beyond", "album": "乐与怒", "interval": "05:26"},
+    "wy": {"id": "347230", "songmid": "347230", "title": "海阔天空", "artist": "Beyond", "album": "乐与怒", "interval": "05:26"},
+    "tx": {"id": "0039MnYb0qxYhV", "songmid": "0039MnYb0qxYhV", "title": "晴天", "artist": "周杰伦", "album": "叶惠美", "interval": "04:29"},
+    "kg": {"id": "596E403326AFD24A38E95A5225E1A139", "songmid": "596E403326AFD24A38E95A5225E1A139", "title": "海阔天空", "artist": "Beyond", "album": "乐与怒", "interval": "05:26"},
+    "mg": {"id": "6005752DXKE", "songmid": "6005752DXKE", "title": "海阔天空", "artist": "Beyond", "album": "乐与怒", "interval": "05:26"},
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RANKING_FILE = os.path.join(BASE_DIR, "sources_ranking.json")
+EXTRACTED_APIS_FILE = os.path.join(BASE_DIR, "extracted_apis.json")
 
 
 def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
@@ -173,6 +177,165 @@ def _probe_kg_official(song_info, target_platform="kg", timeout: float = 2.0):
         except Exception:
             pass
     return None
+
+
+# ========================================================
+# 动态萃取 API 通用原生探针引擎 (消费 yy-lx-hub 提取的物理接口规则)
+# ========================================================
+
+def _extract_json_path(data, path_expr: str):
+    """按点号与下标路径提取 JSON 字段（如 'data[0].url' 或 'authors[0].author_name'）"""
+    if not data or not path_expr:
+        return None
+    cur = data
+    for part in path_expr.split('.'):
+        m = re.match(r'^([^\[\]]+)(?:\[(\d+)\])?$', part)
+        if not m:
+            return None
+        key, idx = m.group(1), m.group(2)
+        if isinstance(cur, dict):
+            cur = cur.get(key)
+        else:
+            return None
+        if idx is not None:
+            if isinstance(cur, list) and int(idx) < len(cur):
+                cur = cur[int(idx)]
+            else:
+                return None
+    return cur
+
+
+def _format_interval(song_info) -> str:
+    """将歌曲时长统一格式化为 MM:SS"""
+    if not isinstance(song_info, dict):
+        return ""
+    if song_info.get("interval"):
+        return str(song_info["interval"])
+    dur = song_info.get("duration")
+    try:
+        sec = int(float(dur))
+        if sec > 0:
+            return f"{sec // 60:02d}:{sec % 60:02d}"
+    except Exception:
+        pass
+    return ""
+
+
+def _render_api_template(tpl: str, song_info, url_encode: bool = True) -> str:
+    """安全替换 API URL/Body 模板占位符（支持 JSON 花括号共存）"""
+    info = song_info if isinstance(song_info, dict) else {}
+    sid = str(info.get("id") or info.get("songmid") or ("" if isinstance(song_info, dict) else song_info) or "")
+    smid = str(info.get("songmid") or sid)
+    shash = str(info.get("hash") or sid)
+    title = str(info.get("title") or info.get("name") or "")
+    artist = str(info.get("artist") or info.get("singer") or "")
+    album = str(info.get("album") or info.get("albumName") or "")
+    interval = _format_interval(info)
+
+    def _fmt(val: str) -> str:
+        if url_encode:
+            return urllib.parse.quote(val)
+        return json.dumps(val, ensure_ascii=False)[1:-1]
+
+    return (str(tpl or "")
+            .replace("{id}", _fmt(sid))
+            .replace("{songmid}", _fmt(smid))
+            .replace("{hash}", _fmt(shash))
+            .replace("{name}", _fmt(title))
+            .replace("{singer}", _fmt(artist))
+            .replace("{album}", _fmt(album))
+            .replace("{interval}", _fmt(interval)))
+
+
+def make_dynamic_probe(rule: dict):
+    """根据 extracted_apis.json 中的规则生成纯 Python 原生探针（内置防串曲与魔数门禁）"""
+    plat = rule.get("platform", "kw")
+    match_mode = rule.get("matchMode", "id")
+    rule_type = rule.get("type", "json")
+    method = rule.get("method", "GET").upper()
+    url_tpl = rule.get("urlTemplate", "")
+    body_tpl = rule.get("bodyTemplate", "")
+    base_headers = dict(rule.get("headers") or {})
+    resp_extractor = rule.get("responseExtractor", "url")
+    url_prefix = rule.get("urlPrefix", "")
+    meta_fields = rule.get("metaFields") or {}
+    source_label = rule.get("name", rule.get("id", "动态原生通道"))
+
+    def _probe(song_info, target_platform=plat, timeout: float = 2.0):
+        sid = _extract_id(song_info)
+        title = song_info.get("title", "") if isinstance(song_info, dict) else ""
+        artist = song_info.get("artist", "") if isinstance(song_info, dict) else ""
+
+        # 前置格式门禁：防止非法的跨平台 ID 误投
+        if match_mode == "id":
+            if not sid:
+                return None
+            if plat in ("kw", "wy") and not sid.isdigit():
+                return None
+            if plat == "kg" and len(sid) < 16:
+                return None
+        elif match_mode == "search":
+            if not title:
+                return None
+
+        url = _render_api_template(url_tpl, song_info, url_encode=True)
+        if not url or not url.startswith("http"):
+            return None
+
+        if rule_type == "redirect":
+            ok, sz, purl = verify_audio_url(url, timeout=timeout)
+            if ok:
+                return {"url": purl, "bytes": sz, "source": source_label}
+            return None
+
+        st, data_bytes = 0, b""
+        if method == "POST":
+            body_str = _render_api_template(body_tpl, song_info, url_encode=False)
+            ct = (base_headers.get("Content-Type") or base_headers.get("content-type") or "").lower()
+            try:
+                if "application/json" in ct or body_str.lstrip().startswith("{"):
+                    payload = json.loads(body_str)
+                    st, data_bytes, _ = http_post_json(url, payload, headers=base_headers, timeout=timeout)
+                elif _HTTP_POOL:
+                    r = _HTTP_POOL.request("POST", url, body=body_str.encode("utf-8"), headers=base_headers, timeout=timeout)
+                    st, data_bytes = r.status, r.data
+            except Exception:
+                return None
+        else:
+            st, data_bytes, _, _ = http_get(url, headers=base_headers, timeout=timeout)
+
+        if st != 200 or not data_bytes:
+            return None
+
+        try:
+            data = json.loads(data_bytes.decode("utf-8", errors="ignore"))
+        except Exception:
+            return None
+
+        # 搜索型端点或带元数据返回：执行歌名歌手一致性校验，杜绝翻唱/串曲
+        if title and (match_mode == "search" or meta_fields):
+            ret_title = str(_extract_json_path(data, meta_fields["title"]) or "") if meta_fields.get("title") else ""
+            ret_artist = str(_extract_json_path(data, meta_fields["artist"]) or "") if meta_fields.get("artist") else ""
+            if match_mode == "search" or ret_title:
+                from song_search import calculate_song_match_score
+                eff_target_artist = artist if (match_mode == "search" or ret_artist) else ""
+                _, ok = calculate_song_match_score(
+                    ret_title, ret_artist, "",
+                    target_title=title, target_artist=eff_target_artist
+                )
+                if not ok:
+                    return None
+
+        audio_url = _extract_json_path(data, resp_extractor)
+        if audio_url and isinstance(audio_url, str):
+            audio_url = url_prefix + audio_url.strip()
+            if audio_url.startswith("http"):
+                ok, sz, purl = verify_audio_url(audio_url, timeout=min(1.8, max(0.8, timeout)))
+                if ok:
+                    return {"url": purl, "bytes": sz, "source": source_label}
+        return None
+
+    return _probe
 
 
 # ========================================================
@@ -351,8 +514,62 @@ class SourceManager:
         s_kg.success_count = 20
         self.register(s_kg)
 
+        # 载入 yy-lx-hub 萃取的高可用物理 API 规则（自动与内置通道去重）
+        self.load_extracted_apis()
+
         # 载入持久化测速指标
         self.load_local_cached_sources()
+
+    def load_extracted_apis(self):
+        """从本地 extracted_apis.json 动态注册萃取出的纯 HTTP 原生通道（零 Node 依赖）"""
+        if not os.path.exists(EXTRACTED_APIS_FILE):
+            return
+        # 已知内置硬编码物理端点指纹，避免同一底层服务器被重复并发占坑
+        builtin_signatures = {
+            ("wy", "oiapi.net", "/api/Music_163"),
+            ("kg", "m.kugou.com", "/app/i/getSongInfo.php"),
+            ("kw", "musicapi.haitangw.net", "/music/kw.php"),
+            ("kw", "music.nxinxz.com", "/kw.php"),
+            ("kw", "api.yaohud.cn", "/api/music/kuwo"),
+        }
+        seen_sigs = set(builtin_signatures)
+        try:
+            with open(EXTRACTED_APIS_FILE, "r", encoding="utf-8") as f:
+                data = json.loads(f.read())
+            for rule in data.get("endpoints", []):
+                if not isinstance(rule, dict):
+                    continue
+                if rule.get("verifiedStatus") == "failed":
+                    continue
+                sid = rule.get("id")
+                plat = rule.get("platform")
+                tpl = rule.get("urlTemplate", "")
+                if not sid or not plat or not tpl or sid in self.sources:
+                    continue
+                try:
+                    parsed = urllib.parse.urlparse(tpl)
+                    sig = (plat, parsed.hostname or "", parsed.path or "/")
+                except Exception:
+                    sig = (plat, tpl, "")
+                if sig in seen_sigs:
+                    continue
+                seen_sigs.add(sig)
+
+                probe = make_dynamic_probe(rule)
+                test_tid = TEST_TRACKS.get(plat, {}).get("id", "5886682")
+                label = f"{rule.get('name', sid)} ({plat})"
+                src = AudioSource(sid, label, [plat], probe, test_tid)
+                base_lat = float(rule.get("sampleLatencyMs") or 800.0)
+                if rule.get("matchMode") == "search":
+                    base_lat += 400.0
+                src.status = "ok"
+                src.latency_ms = base_lat
+                src.platform_latencies = {plat: base_lat}
+                src.platform_status = {plat: "ok"}
+                src.success_count = min(20, max(1, int(rule.get("hitCount") or 1)))
+                self.register(src)
+        except Exception:
+            pass
 
     def load_local_cached_sources(self):
         """纯本地极速载入 sources_ranking.json 的实测延迟指标（严禁覆盖代码中的平台定义）"""
@@ -409,7 +626,7 @@ class SourceManager:
 
         try:
             tasks = []
-            with ThreadPoolExecutor(max_workers=min(6, len(self.sources))) as executor:
+            with ThreadPoolExecutor(max_workers=min(10, len(self.sources))) as executor:
                 for s in self.sources.values():
                     tasks.append(executor.submit(s.test_health))
                 for f in as_completed(tasks):
