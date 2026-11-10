@@ -1,20 +1,8 @@
 {
-  "generatedAt": "2026-11-09T14:37:04Z",
-  "testedAt": "2026-11-09T14:37:04Z",
+  "generatedAt": "2026-11-10T02:57:51Z",
+  "testedAt": "2026-11-10T02:57:51Z",
   "total": 5,
   "sources": [
-    {
-      "id": "kw_yaohu",
-      "name": "妖狐直通源 (酷我)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 631.2,
-      "consecutive_fails": 0,
-      "success_count": 50
-    },
     {
       "id": "kw_haitang",
       "name": "海棠SVIP穿透源 (酷我)",
@@ -23,7 +11,7 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 651.0,
+      "latency_ms": 1828.6,
       "consecutive_fails": 0,
       "success_count": 15
     },
@@ -35,7 +23,7 @@
         "wy"
       ],
       "status": "ok",
-      "latency_ms": 740.9,
+      "latency_ms": 1930.9,
       "consecutive_fails": 0,
       "success_count": 25
     },
@@ -47,9 +35,21 @@
         "kg"
       ],
       "status": "ok",
-      "latency_ms": 2114.6,
+      "latency_ms": 2427.7,
       "consecutive_fails": 0,
       "success_count": 20
+    },
+    {
+      "id": "kw_yaohu",
+      "name": "妖狐直通源 (酷我)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 2623.1,
+      "consecutive_fails": 0,
+      "success_count": 50
     },
     {
       "id": "kw_nxinxz",
@@ -58,9 +58,9 @@
       "platforms": [
         "kw"
       ],
-      "status": "ok",
-      "latency_ms": 3185.4,
-      "consecutive_fails": 0,
+      "status": "failed",
+      "latency_ms": 9999.0,
+      "consecutive_fails": 1,
       "success_count": 5
     }
   ]
