@@ -16,7 +16,7 @@ import urllib.request
 import api_crypto
 from source_manager import SourceManager, BASE_DIR, RANKING_FILE, EXTRACTED_APIS_ENC_FILE
 
-DEFAULT_LXHUB_ENC_URL = "https://github.com/ichbinyytak/yy-lx-hub/releases/download/sync-latest/extracted_apis.enc"
+DEFAULT_LXHUB_ENC_URL = "https://github.com/ichbinyytak/yy-lx-hub/releases/download/amusic-sync/extracted_apis.enc"
 
 
 def pull_encrypted_apis(url: str = None) -> bool:

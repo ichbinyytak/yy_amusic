@@ -181,7 +181,7 @@ sequenceDiagram
 ## 六、 与 yy-lx-hub 对接与密文速查（🤖 AI 维护速览）
 
 1. **上游来源与同步节奏**：
-   - 上游仓库 `ichbinyytak/yy-lx-hub` 每日 **04:00**（UTC `0 20 * * *`）发布加密端点包到 `https://github.com/ichbinyytak/yy-lx-hub/releases/download/sync-latest/extracted_apis.enc`。
+   - 上游仓库 `ichbinyytak/yy-lx-hub` 每日 **04:00**（UTC `0 20 * * *`）发布加密端点包到 `https://github.com/ichbinyytak/yy-lx-hub/releases/download/amusic-sync/extracted_apis.enc`。
    - 本仓库 `.github/workflows/daily_sync.yml` 每日 **05:00**（UTC `0 21 * * *`）自动执行 `python3 sync_sources.py --pull` 拉取并更新 `extracted_apis.enc` 与 `sources_ranking.json`，提交后自动触发 Vercel 部署。
 2. **零配置内存解密**：
    - 解密模块：`api_crypto.py`（纯 Python 标准库 `hashlib` + `hmac`，0 第三方依赖）。
