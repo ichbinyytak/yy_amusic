@@ -9,9 +9,44 @@ sync_sources.py - 音源健康度全量并发测速与智能排班生成器
 """
 
 import os
+import sys
 import time
 import json
-from source_manager import SourceManager, BASE_DIR, RANKING_FILE
+import urllib.request
+import api_crypto
+from source_manager import SourceManager, BASE_DIR, RANKING_FILE, EXTRACTED_APIS_ENC_FILE
+
+DEFAULT_LXHUB_ENC_URL = "https://github.com/ichbinyytak/yy-lx-hub/releases/download/sync-latest/extracted_apis.enc"
+
+
+def pull_encrypted_apis(url: str = None) -> bool:
+    """从 yy-lx-hub 拉取强加密的 extracted_apis.enc，验签解密通过后再原子覆盖本地密文"""
+    target_url = (url or os.environ.get("LXHUB_ENC_URL") or DEFAULT_LXHUB_ENC_URL).strip()
+    secret = api_crypto.get_sync_secret()
+    if not secret:
+        print("⚠️ 未配置 AMUSIC_SYNC_KEY，跳过拉取远端密文（沿用本地缓存）")
+        return False
+
+    print(f"正在从 yy-lx-hub 拉取加密 API 包: {target_url}")
+    try:
+        req = urllib.request.Request(target_url, headers={"User-Agent": "Amusic-Sync/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8")
+        # 必须先在内存校验 MAC 并成功解密为有效 endpoints 清单，才允许覆盖本地密文
+        payload = api_crypto.decrypt_json(raw, secret)
+        endpoints = payload.get("endpoints") if isinstance(payload, dict) else None
+        if not isinstance(endpoints, list):
+            raise ValueError("解密内容缺少 endpoints 列表")
+
+        tmp_path = EXTRACTED_APIS_ENC_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(raw)
+        os.replace(tmp_path, EXTRACTED_APIS_ENC_FILE)
+        print(f"✓ 密文校验解密成功，已更新本地 {os.path.basename(EXTRACTED_APIS_ENC_FILE)}（共 {len(endpoints)} 个端点）")
+        return True
+    except Exception as e:
+        print(f"⚠️ 拉取或校验远端密文失败（保留现存文件）: {e}")
+        return False
 
 
 def sync() -> dict:
@@ -48,4 +83,6 @@ def sync() -> dict:
 
 
 if __name__ == "__main__":
+    if "--pull" in sys.argv:
+        pull_encrypted_apis()
     sync()

@@ -2,8 +2,8 @@ name: Daily Sync Sound Sources
 
 on:
   schedule:
-    # 每天 UTC 20:45 (北京时间每天凌晨 04:45 自动运行)
-    - cron: '45 20 * * *'
+    # 每天 UTC 21:00 (北京时间每天凌晨 05:00 自动运行，与 yy-lx-hub 04:00 相差 1 小时)
+    - cron: '0 21 * * *'
   # 支持在 GitHub Actions 网页上一键手动立即执行
   workflow_dispatch:
 
@@ -22,12 +22,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 运行纯 Python 原生音源测速排班
-        run: python3 sync_sources.py
+      - name: 拉取 yy-lx-hub 密文并运行纯 Python 原生音源测速排班
+        env:
+          AMUSIC_SYNC_KEY: ${{ secrets.AMUSIC_SYNC_KEY }}
+          AMUSIC_SYNC_SECRET: ${{ secrets.AMUSIC_SYNC_SECRET }}
+        run: python3 sync_sources.py --pull
 
-      - name: 提交并推送最新测速排班表
+      - name: 提交并推送最新密文与测速排班表
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          [ -f extracted_apis.enc ] && git add extracted_apis.enc
           git add sources_ranking.json
-          git diff --staged --quiet || (git commit -m "chore(auto): 自动测速原生音源并更新排班表 [skip ci]" && git push)
+          git diff --staged --quiet || (git commit -m "chore(auto): 同步 yy-lx-hub 密文并更新排班表 [skip ci]" && git push)

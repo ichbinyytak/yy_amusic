@@ -58,6 +58,7 @@ TEST_TRACKS = {
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RANKING_FILE = os.path.join(BASE_DIR, "sources_ranking.json")
 EXTRACTED_APIS_FILE = os.path.join(BASE_DIR, "extracted_apis.json")
+EXTRACTED_APIS_ENC_FILE = os.path.join(BASE_DIR, "extracted_apis.enc")
 
 
 def verify_audio_url(url: str, timeout: float = 2.0) -> tuple:
@@ -520,9 +521,29 @@ class SourceManager:
         # 载入持久化测速指标
         self.load_local_cached_sources()
 
+    def _read_extracted_apis_payload(self):
+        """优先内存解密 extracted_apis.enc，无密文/密钥时回退本地开发明文 extracted_apis.json"""
+        if os.path.exists(EXTRACTED_APIS_ENC_FILE):
+            try:
+                import api_crypto
+                secret = api_crypto.get_sync_secret()
+                if secret:
+                    with open(EXTRACTED_APIS_ENC_FILE, "r", encoding="utf-8") as f:
+                        return api_crypto.decrypt_json(f.read(), secret)
+            except Exception as e:
+                print(f"[source_manager] 解密 extracted_apis.enc 失败: {e}", file=sys.stderr)
+        if os.path.exists(EXTRACTED_APIS_FILE):
+            try:
+                with open(EXTRACTED_APIS_FILE, "r", encoding="utf-8") as f:
+                    return json.loads(f.read())
+            except Exception:
+                return None
+        return None
+
     def load_extracted_apis(self):
-        """从本地 extracted_apis.json 动态注册萃取出的纯 HTTP 原生通道（零 Node 依赖）"""
-        if not os.path.exists(EXTRACTED_APIS_FILE):
+        """从密文 extracted_apis.enc（或本地 extracted_apis.json）动态注册纯 HTTP 原生通道（零 Node 依赖）"""
+        data = self._read_extracted_apis_payload()
+        if not isinstance(data, dict):
             return
         # 已知内置硬编码物理端点指纹，避免同一底层服务器被重复并发占坑
         builtin_signatures = {
@@ -534,8 +555,6 @@ class SourceManager:
         }
         seen_sigs = set(builtin_signatures)
         try:
-            with open(EXTRACTED_APIS_FILE, "r", encoding="utf-8") as f:
-                data = json.loads(f.read())
             for rule in data.get("endpoints", []):
                 if not isinstance(rule, dict):
                     continue
