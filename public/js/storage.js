@@ -68,14 +68,7 @@ window.StorageManager = (function () {
         return setJson(KEY_CUSTOM, list, "custom_playlists");
     }
 
-    function normalizeCategory(cat) {
-        if (!cat || typeof cat !== 'string') return "未分组";
-        const trimmed = cat.trim();
-        if (trimmed === "默认" || trimmed === "未分类" || trimmed === "未分组" || !trimmed) {
-            return "未分组";
-        }
-        return trimmed;
-    }
+    const normalizeCategory = (cat) => window.AmusicUtils.normalizeCategory(cat);
 
     function createCustomPlaylist(title, category = "未分组") {
         if (!title || !title.trim()) return null;
@@ -422,78 +415,6 @@ window.StorageManager = (function () {
         }
     }
 
-    /**
-     * 收藏按键交互流：弹出选项选择【1: 新建分类】还是【2: 加入已有分类】
-     */
-    function promptFavoriteFlow(playlistData, onDone) {
-        if (!playlistData || !playlistData.id) return;
-        const plName = playlistData.name || playlistData.title || "歌单";
-        const isFaved = isPlaylistFaved(playlistData.id);
-
-        if (isFaved) {
-            const favs = getFavPlaylists();
-            const curItem = favs.find(f => f.id === playlistData.id);
-            const curCat = normalizeCategory(curItem ? curItem.category : "");
-            const choice = prompt(
-                `歌单《${plName}》已在收藏中 (当前分类: ${curCat})：\n1: 🏷️ 更改所属分类\n2: ❌ 取消收藏\n\n请输入 1 或 2:`,
-                "1"
-            );
-            if (choice === "2") {
-                unfavPlaylist(playlistData.id);
-                if (window.showToast) window.showToast(`已从收藏夹中移除《${plName}》`);
-                if (typeof onDone === 'function') onDone({ action: 'unfaved' });
-                return;
-            } else if (choice !== "1") {
-                return; // 用户取消
-            }
-        }
-
-        // 核心分支：新建分类 还是 加入已有分类
-        const branchChoice = prompt(
-            `收藏歌单《${plName}》：\n1: 📁 新建分类\n2: 📌 加入已有分类\n\n请输入 1 或 2:`,
-            "2"
-        );
-        if (!branchChoice) return;
-
-        if (branchChoice.trim() === "1") {
-            const newCat = prompt("请输入新分类名称 (例如: 华语流行 / 摇滚 / 车载):");
-            if (!newCat || !newCat.trim()) return;
-            const trimmedCat = newCat.trim();
-            addCategory('fav', trimmedCat);
-            favPlaylistWithCategory(playlistData, trimmedCat);
-            if (window.showToast) window.showToast(`⭐ 已收藏《${plName}》至新分类【${trimmedCat}】！`);
-            if (typeof onDone === 'function') onDone({ action: 'added', category: trimmedCat });
-        } else if (branchChoice.trim() === "2") {
-            const cats = getRegisteredCategories('fav');
-            let chosenCat = "未分组";
-            if (cats.length <= 1) {
-                // 仅有未分组
-                chosenCat = "未分组";
-                favPlaylistWithCategory(playlistData, chosenCat);
-                if (window.showToast) window.showToast(`⭐ 已收藏《${plName}》至【未分组】！`);
-                if (typeof onDone === 'function') onDone({ action: 'added', category: chosenCat });
-            } else {
-                let msg = `请选择目标分类序号 (1 - ${cats.length})：\n`;
-                cats.forEach((c, idx) => {
-                    msg += `${idx + 1}: 📁 ${c}\n`;
-                });
-                msg += `\n请输入分类序号:`;
-                const catIdxStr = prompt(msg, "1");
-                if (!catIdxStr) return;
-                const idx = parseInt(catIdxStr.trim(), 10) - 1;
-                if (idx >= 0 && idx < cats.length) {
-                    chosenCat = cats[idx];
-                } else if (catIdxStr.trim()) {
-                    chosenCat = catIdxStr.trim();
-                    addCategory('fav', chosenCat);
-                }
-                favPlaylistWithCategory(playlistData, chosenCat);
-                if (window.showToast) window.showToast(`⭐ 已收藏《${plName}》至【${chosenCat}】！`);
-                if (typeof onDone === 'function') onDone({ action: 'added', category: chosenCat });
-            }
-        }
-    }
-
     function renameFavPlaylist(id, newName) {
         if (!newName || !newName.trim()) return false;
         const list = getFavPlaylists();
@@ -674,7 +595,6 @@ window.StorageManager = (function () {
         toggleFavPlaylist,
         favPlaylistWithCategory,
         unfavPlaylist,
-        promptFavoriteFlow,
 
         // 历史记忆
         getLastPlaylist,

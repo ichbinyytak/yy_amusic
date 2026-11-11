@@ -18,21 +18,13 @@ window.LeftPanel = (function () {
 
     const expandedTopAccordions = new Set(["top_library"]); // 网站推荐内 Apple/街声 默认均折叠，点击再展开加载
 
-    const iconArrowCollapsed = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
-    const iconArrowExpanded = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
+    const iconArrowCollapsed = window.AmusicUtils.ICON_ARROW_COLLAPSED_LG;
+    const iconArrowExpanded = window.AmusicUtils.ICON_ARROW_EXPANDED_LG;
 
     let switchTab = function () {};
     let exitSearch = function () {};
 
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
 
     /**
      * 脱水清洗策划人/歌手文本：

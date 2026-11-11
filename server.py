@@ -33,26 +33,11 @@ import ssl
 from concurrent.futures import ThreadPoolExecutor
 import net_pool
 
-# ----------------------------------------------------
-# 优先 IPv4 地址解析 (避免在 net_pool 已缓存包装之上重复套娃)
-# ----------------------------------------------------
-try:
-    if getattr(socket.getaddrinfo, "__name__", "") not in ("_cached_getaddrinfo", "_ipv4_first_getaddrinfo"):
-        _orig_getaddrinfo = socket.getaddrinfo
-
-        def _ipv4_first_getaddrinfo(*args, **kwargs):
-            res = _orig_getaddrinfo(*args, **kwargs)
-            ipv4 = [r for r in res if r[0] == socket.AF_INET]
-            return ipv4 if ipv4 else res
-
-        socket.getaddrinfo = _ipv4_first_getaddrinfo
-except Exception:
-    pass
-
-# 引入底层音源调度与歌曲检索核心模块 (来自 music_underlying)
+# 引入底层音源调度、歌曲检索、歌词与解析编排模块
 from source_manager import source_hub
-from song_search import search_candidates, search_candidates_fallback, get_song_lyric
-from kv_cache import get_cached_candidate, set_cached_candidate, delete_cached_candidate
+from song_search import search_candidates
+from lyric_service import get_song_lyric
+from resolver import resolve_track
 from auth_store import (
     AuthClientError,
     AuthConfigError,
@@ -64,12 +49,6 @@ from auth_store import (
     save_user_library,
     verify_session,
 )
-
-# 核心音频寻链热点缓存 (Title+Artist -> ResolveResult)，存活 15 分钟 (对齐前端 TTL，杜绝 CDN Token 过期 403)，容量 256 首
-_RESOLVE_CACHE = {}
-_RESOLVE_CACHE_LOCK = threading.Lock()
-_CACHE_MAX_ENTRIES = 256
-_CACHE_TTL_SEC = 900  # 15 分钟缓存期
 
 # 方案 4: Apple Catalog API 官方数据代理服务端缓存 (URL -> (bytes, etag, ts))，存活 20 分钟
 _APPLE_CATALOG_CACHE = {}
@@ -97,6 +76,15 @@ from streetvoice_catalog import (
 # ========================================================
 # 区块 1: 网络安全校验与 SSRF / 私网穿透探测防护
 # ========================================================
+def _is_forbidden_ip(ip_obj) -> bool:
+    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved or ip_obj.is_unspecified:
+        return True
+    mapped = getattr(ip_obj, "ipv4_mapped", None)
+    if mapped and _is_forbidden_ip(mapped):
+        return True
+    return False
+
+
 def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
     """
     网络安全防御：校验外部请求 URL 是否合法安全，严防 SSRF、本地敏感文件读取 (file://) 及私有内网穿透探测。
@@ -121,20 +109,19 @@ def is_safe_external_url(url: str, allowed_hosts: list = None) -> bool:
         if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.endswith(".local") or hostname.endswith(".internal"):
             return False
 
-        # 3. 拦截私有 IP 与链路本地段 (防御针对 169.254.x.x / 192.168.x.x 等地址的 SSRF)
+        # 3. 拦截私有 IP 与链路本地段 (含 IPv4-mapped IPv6)
         try:
             ip = ipaddress.ip_address(hostname)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            if _is_forbidden_ip(ip):
                 return False
         except ValueError:
-            # 域名解析 A/AAAA 记录防 DNS 重绑定或内网解析绕过 (Fail-Close 默认安全原则)
             try:
                 addrinfo = socket.getaddrinfo(hostname, None)
                 if not addrinfo:
                     return False
                 for item in addrinfo:
                     resolved_ip = ipaddress.ip_address(item[4][0])
-                    if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved:
+                    if _is_forbidden_ip(resolved_ip):
                         return False
             except Exception:
                 return False
@@ -173,9 +160,8 @@ def _fetch_apple_native_metadata(song_id: str, timeout: float = 1.5):
             "Origin": "https://music.apple.com",
             "User-Agent": USER_AGENT
         }
-        req = urllib.request.Request(apple_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw_bytes = resp.read()
+        st, raw_bytes, _, _ = net_pool.http_get(apple_url, headers=headers, timeout=timeout, secure=True)
+        if st == 200 and raw_bytes:
             with _APPLE_CATALOG_CACHE_LOCK:
                 if len(_APPLE_CATALOG_CACHE) > 300:
                     _APPLE_CATALOG_CACHE.pop(next(iter(_APPLE_CATALOG_CACHE)))
@@ -194,7 +180,8 @@ def _fetch_apple_native_metadata(song_id: str, timeout: float = 1.5):
     return None
 
 PORT = 8088
-DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DIRECTORY = os.path.join(BASE_DIR, "public")
 
 # 官方 Web 播放器公共只读访客 Token (有效期至 2027 年)
 DEFAULT_TOKEN = (
@@ -319,9 +306,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 1. /new 页面结构化抓取 (全歌单/专辑模式)
-        if self.path.startswith("/api/apple_new"):
-            parsed = urllib.parse.urlparse(self.path)
-            sf = urllib.parse.parse_qs(parsed.query).get("storefront", ["cn"])[0]
+        if req_path == "/api/apple_new":
+            sf = urllib.parse.parse_qs(parsed_req.query).get("storefront", ["cn"])[0]
             try:
                 self.send_json(fetch_apple_new_page(sf))
             except Exception as e:
@@ -329,9 +315,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 2. /search 探索中枢全部分类专区抓取
-        if self.path.startswith("/api/apple_search_page"):
-            parsed = urllib.parse.urlparse(self.path)
-            sf = urllib.parse.parse_qs(parsed.query).get("storefront", ["cn"])[0]
+        if req_path == "/api/apple_search_page":
+            sf = urllib.parse.parse_qs(parsed_req.query).get("storefront", ["cn"])[0]
             try:
                 self.send_json(fetch_apple_search_page(sf))
             except Exception as e:
@@ -339,9 +324,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 3. 专区官方主页真实板块抓取 (与官网 100% 对齐)
-        if self.path.startswith("/api/apple_curator_page") or self.path.startswith("/api/apple_curator"):
-            parsed = urllib.parse.urlparse(self.path)
-            curator_url = urllib.parse.parse_qs(parsed.query).get("url", [""])[0]
+        if req_path in ("/api/apple_curator_page", "/api/apple_curator"):
+            curator_url = urllib.parse.parse_qs(parsed_req.query).get("url", [""])[0]
             if not curator_url:
                 self.send_error_json("Missing url parameter", 400)
                 return
@@ -355,9 +339,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 4. 专题 Room 完整曲目抓取 (如 100 首完整合集)
-        if self.path.startswith("/api/apple_room"):
-            parsed = urllib.parse.urlparse(self.path)
-            room_url = urllib.parse.parse_qs(parsed.query).get("url", [""])[0]
+        if req_path == "/api/apple_room":
+            room_url = urllib.parse.parse_qs(parsed_req.query).get("url", [""])[0]
             if not room_url:
                 self.send_error_json("Missing url parameter", 400)
                 return
@@ -371,7 +354,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 5. 官方数据库请求代理转发 (附带 Bearer Token 与合法 Origin，支持 304 快速协商)
-        if self.path.startswith("/api/apple/"):
+        if req_path.startswith("/api/apple/"):
             apple_path = self.path[len("/api/apple/"):]
             if not apple_path or ".." in apple_path or "@" in apple_path or "\\" in apple_path or re.search(r"[\s\x00-\x1f]", apple_path):
                 self.send_error_json("Invalid Apple API path", 400)
@@ -412,57 +395,54 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 }
                 if client_etag:
                     headers["If-None-Match"] = client_etag
-                req = urllib.request.Request(apple_url, headers=headers)
-                try:
-                    with urllib.request.urlopen(req, timeout=12) as resp:
-                        res_bytes = resp.read()
-                        etag = resp.headers.get("ETag") or f'"{hashlib.md5(res_bytes).hexdigest()}"'
+                st, res_bytes, _, resp_hdrs = net_pool.http_get(apple_url, headers=headers, timeout=12, secure=True)
+                if st == 304:
+                    self.send_response(304)
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    if client_etag:
+                        self.send_header("ETag", client_etag)
+                    self.end_headers()
+                    return
+                if st == 200 and res_bytes:
+                    etag = resp_hdrs.get("ETag") or resp_hdrs.get("etag") or f'"{hashlib.md5(res_bytes).hexdigest()}"'
+                    with _APPLE_CATALOG_CACHE_LOCK:
+                        if len(_APPLE_CATALOG_CACHE) > 300:
+                            _APPLE_CATALOG_CACHE.pop(next(iter(_APPLE_CATALOG_CACHE)))
+                        _APPLE_CATALOG_CACHE[apple_url] = {"bytes": res_bytes, "etag": etag, "ts": time.time()}
 
-                        # 写入服务端内存缓存
-                        with _APPLE_CATALOG_CACHE_LOCK:
-                            if len(_APPLE_CATALOG_CACHE) > 300:
-                                _APPLE_CATALOG_CACHE.pop(next(iter(_APPLE_CATALOG_CACHE)))
-                            _APPLE_CATALOG_CACHE[apple_url] = {"bytes": res_bytes, "etag": etag, "ts": time.time()}
-
-                        if client_etag and client_etag.strip('"') == etag.strip('"'):
-                            self.send_response(304)
-                            self.send_header("Access-Control-Allow-Origin", "*")
-                            self.send_header("ETag", etag)
-                            self.end_headers()
-                            return
-
-                        self.send_response(resp.status)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        self.send_header("Access-Control-Allow-Origin", "*")
-                        self.send_header("ETag", etag)
-                        self.send_header("Cache-Control", "private, no-cache")
-                        self.send_header("Content-Length", str(len(res_bytes)))
-                        self.end_headers()
-                        self.wfile.write(res_bytes)
-                except urllib.error.HTTPError as he:
-                    if he.code == 304:
+                    if client_etag and client_etag.strip('"') == etag.strip('"'):
                         self.send_response(304)
                         self.send_header("Access-Control-Allow-Origin", "*")
-                        if client_etag:
-                            self.send_header("ETag", client_etag)
+                        self.send_header("ETag", etag)
                         self.end_headers()
                         return
-                    err_data = he.read()
-                    self.send_response(he.code)
+
+                    self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Access-Control-Allow-Origin", "*")
-                    self.send_header("Content-Length", str(len(err_data)))
+                    self.send_header("ETag", etag)
+                    self.send_header("Cache-Control", "private, no-cache")
+                    self.send_header("Content-Length", str(len(res_bytes)))
                     self.end_headers()
-                    self.wfile.write(err_data)
+                    self.wfile.write(res_bytes)
+                    return
+                if st > 0:
+                    self.send_response(st)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("Content-Length", str(len(res_bytes)))
+                    self.end_headers()
+                    self.wfile.write(res_bytes)
+                    return
+                self.send_error_json("Upstream Apple Music request failed", 502)
             except Exception as e:
                 self.send_error_json(e)
             return
 
         # 5.5 街声专区目录与曲目接口 (启用门禁后严禁 Edge CDN 公共缓存跨用户下发)
         sv_cache_ctl = "private, no-cache"
-        if self.path.startswith("/api/sv_charts"):
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+        if req_path == "/api/sv_charts":
+            qs = urllib.parse.parse_qs(parsed_req.query)
             kind = qs.get("kind", [""])[0]
             category = qs.get("category", [""])[0]
             try:
@@ -474,9 +454,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e, status=400 if isinstance(e, ValueError) else 500)
             return
 
-        if self.path.startswith("/api/sv_playlists"):
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+        if req_path == "/api/sv_playlists":
+            qs = urllib.parse.parse_qs(parsed_req.query)
             section = qs.get("section", ["all"])[0]
             try:
                 page = int(qs.get("page", ["1"])[0])
@@ -488,9 +467,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e)
             return
 
-        if self.path.startswith("/api/sv_playlist_songs"):
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+        if req_path == "/api/sv_playlist_songs":
+            qs = urllib.parse.parse_qs(parsed_req.query)
             pid = qs.get("id", [""])[0]
             try:
                 self.send_json(fetch_sv_playlist_songs(pid), cache_control=sv_cache_ctl)
@@ -499,7 +477,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 6. 音频底层：音源健康度队列 (真实透传各音源健康度与延迟)
-        if self.path == "/api/sources":
+        if req_path == "/api/sources":
             ordered = source_hub.get_ordered_sources()
             data = self._format_sources_data(ordered, force_sv=False)
             self.send_json({
@@ -509,10 +487,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 7. 音频底层：歌曲候选检索 (带 OpenCC 繁简转换与多维打分)
-        if self.path.startswith("/api/search_song"):
+        if req_path == "/api/search_song":
             try:
-                parsed = urllib.parse.urlparse(self.path)
-                qs = urllib.parse.parse_qs(parsed.query)
+                qs = urllib.parse.parse_qs(parsed_req.query)
                 q = qs.get("q", [""])[0]
                 artist = qs.get("artist", [""])[0]
                 dur = qs.get("duration", [None])[0]
@@ -528,9 +505,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         # 8. 音频底层：歌词毫秒级时间轴直通提取
-        if self.path.startswith("/api/lyric"):
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+        if req_path == "/api/lyric":
+            qs = urllib.parse.parse_qs(parsed_req.query)
             plat = qs.get("platform", ["kw"])[0]
             sid = qs.get("id", [""])[0]
             title = qs.get("title", [""])[0]
@@ -542,10 +518,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_json(lines)
             return
 
-        # 9. 零内存流转发中继 (用于前端纯客户端打包 ZIP 跨域音频拉流)
-        if self.path.startswith("/api/stream_proxy"):
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+        # 9. 零内存流转发中继 (逐跳重定向 SSRF 防护 + 连接池复用)
+        if req_path == "/api/stream_proxy":
+            qs = urllib.parse.parse_qs(parsed_req.query)
             target_url = qs.get("url", [""])[0]
             if not target_url:
                 self.send_error_json("Missing url parameter", 400)
@@ -553,30 +528,75 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not is_safe_external_url(target_url):
                 self.send_error_json("Forbidden target URL (SSRF and local file protection)", 403)
                 return
+
+            resp_obj = None
             try:
-                req = urllib.request.Request(target_url, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req, timeout=20) as resp:
-                    if resp.status not in (200, 206):
-                        self.send_error_json(f"Upstream HTTP {resp.status}", 502)
-                        return
-                    self.send_response(200)
-                    self.send_header("Content-Type", resp.headers.get("Content-Type", "audio/mpeg"))
-                    self.send_header("Access-Control-Allow-Origin", "*")
-                    if "Content-Length" in resp.headers:
-                        self.send_header("Content-Length", resp.headers["Content-Length"])
-                    self.end_headers()
-                    while True:
-                        chunk = resp.read(65536)
-                        if not chunk:
-                            break
-                        try:
-                            self.wfile.write(chunk)
-                        except (BrokenPipeError, ConnectionResetError):
-                            break
+                cur_url = target_url
+                for _ in range(5):
+                    if not net_pool._HTTP_POOL:
+                        raise RuntimeError("HTTP pool unavailable")
+                    r = net_pool._HTTP_POOL.request(
+                        "GET",
+                        cur_url,
+                        headers={"User-Agent": USER_AGENT},
+                        timeout=20,
+                        redirect=False,
+                        preload_content=False,
+                    )
+                    if r.status in (301, 302, 303, 307, 308):
+                        loc = r.headers.get("Location") or r.headers.get("location") or ""
+                        r.release_conn()
+                        next_url = urllib.parse.urljoin(cur_url, loc)
+                        if not is_safe_external_url(next_url):
+                            self.send_error_json("Forbidden redirect target (SSRF protection)", 403)
+                            return
+                        cur_url = next_url
+                        continue
+                    resp_obj = r
+                    break
+
+                if resp_obj is None:
+                    self.send_error_json("Too many redirects", 502)
+                    return
+
+                if resp_obj.status not in (200, 206):
+                    self.send_error_json(f"Upstream HTTP {resp_obj.status}", 502)
+                    return
+
+                self.send_response(200)
+                self.send_header("Content-Type", resp_obj.headers.get("Content-Type", "audio/mpeg"))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                cl = resp_obj.headers.get("Content-Length") or resp_obj.headers.get("content-length")
+                if cl:
+                    self.send_header("Content-Length", cl)
+                self.end_headers()
+                while True:
+                    chunk = resp_obj.read(65536)
+                    if not chunk:
+                        break
+                    try:
+                        self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        break
             except Exception as e:
                 self.send_error_json(str(e), 502)
+            finally:
+                if resp_obj is not None:
+                    try:
+                        resp_obj.release_conn()
+                    except Exception:
+                        pass
             return
 
+        if req_path.startswith("/api/"):
+            self.send_error_json("API Not Found", 404)
+            return
+
+        # 仅提供 public/ 目录内的静态文件，严禁目录浏览
+        local_fs_path = self.translate_path(self.path)
+        if os.path.isdir(local_fs_path) and req_path != "/":
+            self.send_error(404, "Not Found")
+            return
         super().do_GET()
 
     # ========================================================
@@ -700,12 +720,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
-        # 核心音频流双核并发解析：贯彻策略 A（短路式阶梯寻链，追求极速出声）
+        # 核心音频流双核并发解析：委托 resolver.py 执行策略 A（短路式阶梯寻链）
         if path == "/api/resolve":
-            req_start = time.time()
-            # 严格时间预算锚定：从请求接收刻起算全局预算 7.5s (在 Vercel 10s 物理上限内保留 2.5s 充裕余量，杜绝 504 Gateway Timeout)
-            overall_deadline = req_start + 7.5
-
             try:
                 cand = json.loads(body) if body else {}
                 if not isinstance(cand, dict):
@@ -713,271 +729,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 self.send_error_json("Invalid JSON payload", 400)
                 return
-            title = (cand.get("title") or cand.get("name") or "").strip()
-            artist = (cand.get("artist") or "").strip()
-            album = cand.get("album", "")
-            duration = cand.get("duration")
-            force_refresh = bool(cand.get("force_refresh", False))
-            if not duration and cand.get("durationMillis"):
-                duration = round(cand.get("durationMillis", 0) / 1000)
-
-            # 0. 快速检查内存热点缓存：同歌单重复切歌或复听 0ms 秒开
-            # 兼容 Apple Music 歌单切歌（即便带有 Apple ID，只要不是已知具体音源平台 platform 即适用标题缓存）
-            cache_key = f"{title.lower()}_{artist.lower()}".strip() if (title and not cand.get("platform")) else ""
-            if cache_key:
-                if force_refresh:
-                    with _RESOLVE_CACHE_LOCK:
-                        _RESOLVE_CACHE.pop(cache_key, None)
-                else:
-                    with _RESOLVE_CACHE_LOCK:
-                        entry = _RESOLVE_CACHE.get(cache_key)
-                        if entry and (time.time() - entry["ts"]) < _CACHE_TTL_SEC:
-                            cached_res = dict(entry["res"])
-                            cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
-                            self.send_json(cached_res)
-                            return
-
-            # 0.5 街声官方直通分支：严禁走策略 A 跨源寻链，直连街声 HLS 与原生歌词
-            if (cand.get("platform") or "").strip().lower() == "streetvoice":
-                sv_id = str(cand.get("id") or "").strip()
-                sv_cache_key = f"sv_{sv_id}" if sv_id else ""
-                if sv_cache_key:
-                    if force_refresh:
-                        with _RESOLVE_CACHE_LOCK:
-                            _RESOLVE_CACHE.pop(sv_cache_key, None)
-                    else:
-                        with _RESOLVE_CACHE_LOCK:
-                            entry = _RESOLVE_CACHE.get(sv_cache_key)
-                            if entry and (time.time() - entry["ts"]) < _CACHE_TTL_SEC:
-                                cached_res = dict(entry["res"])
-                                cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
-                                self.send_json(cached_res)
-                                return
-
-                sv_res = resolve_streetvoice_track(sv_id)
-                if sv_res and sv_res.get("success") and sv_cache_key:
-                    with _RESOLVE_CACHE_LOCK:
-                        if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                            _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                        _RESOLVE_CACHE[sv_cache_key] = {"res": sv_res, "ts": time.time()}
-                self.send_json(sv_res)
-                return
-
-            # 1. 如果已有确切的平台与歌曲 ID，优先直接调度 (歌词与音频并行流水线)
-            if cand.get("platform") and cand.get("id"):
-                remaining = overall_deadline - time.time()
-                if remaining > 0.6:
-                    with ThreadPoolExecutor(max_workers=2) as bg_pool:
-                        lyric_fut = bg_pool.submit(get_song_lyric, cand.get("platform", ""), cand.get("id", ""), title, artist)
-                        res = source_hub.resolve_best_stream(cand, timeout_budget=remaining)
-                        if res and res.get("success"):
-                            rem_lyric = max(0.1, min(1.0, overall_deadline - time.time() - 0.2))
-                            try:
-                                res["lyrics"] = lyric_fut.result(timeout=rem_lyric)
-                            except Exception:
-                                res["lyrics"] = []
-                            self.send_json(res)
-                            return
-
-            # 1.5 跨会话与跨容器云端 ID 沉淀快速检查 (Vercel Upstash KV，音画并行流水线)
-            # 自愈强制刷新时跳过旧沉淀，触发全网重新检索鲜活可用直链
-            if title and not cand.get("platform") and not force_refresh:
-                cloud_cand = get_cached_candidate(title, artist)
-                if cloud_cand and cloud_cand.get("platform") and cloud_cand.get("id"):
-                    cloud_cand["duration"] = cloud_cand.get("duration") or duration
-                    remaining = overall_deadline - time.time()
-                    if remaining > 0.6:
-                        with ThreadPoolExecutor(max_workers=2) as bg_pool:
-                            lyric_fut = bg_pool.submit(get_song_lyric, cloud_cand.get("platform", ""), cloud_cand.get("id", ""), title, artist)
-                            res = source_hub.resolve_best_stream(cloud_cand, timeout_budget=remaining)
-                            if res and res.get("success"):
-                                res["matched_candidate"] = cloud_cand
-                                res["target_title"] = title
-                                res["target_artist"] = artist
-                                res["source_name"] = str(res.get("source_name", "")) + " ☁️云快取"
-                                rem_lyric = max(0.1, min(1.0, overall_deadline - time.time() - 0.2))
-                                try:
-                                    res["lyrics"] = lyric_fut.result(timeout=rem_lyric)
-                                except Exception:
-                                    res["lyrics"] = []
-                                if cache_key:
-                                    with _RESOLVE_CACHE_LOCK:
-                                        if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                                            _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                                        _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
-                                self.send_json(res)
-                                return
-                            else:
-                                # 【防线 3: 自愈机制】若云端已存 ID 在第三方下架失效，立刻删除作废，平滑进入多通道全搜
-                                delete_cached_candidate(title, artist)
-
-            # 2. 纯 Apple Music 元数据：贯彻【策略 A 短路式阶梯寻链】
-            search_key = f"{title} {artist}".strip() if title else ""
-            if not search_key:
-                self.send_error_json("缺少有效歌名或候选信息", 400)
-                return
-
-            last_err = "未找到候选歌曲"
-
-            # 动态检查剩余预算
-            if time.time() >= (overall_deadline - 1.0):
-                self.send_json({
-                    "success": False,
-                    "error": "请求时间预算耗尽",
-                    "title": title,
-                    "artist": artist
-                })
-                return
-
-            # ----------------------------------------------------
-            # 方案 1: 全息多通道并发检索与跨平台容灾冲刺
-            # ----------------------------------------------------
-            cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
-
-            # 跨平台优选：优先提取不同平台的最高分候选 (kw 最优、wy 最优、kg 最优)，实现三足鼎立容灾互备
-            selected_cands = []
-            seen_platforms = set()
-            for c in cands:
-                plat = c.get("platform")
-                if plat not in seen_platforms:
-                    selected_cands.append(c)
-                    seen_platforms.add(plat)
-                if len(selected_cands) >= 3:
-                    break
-            if len(selected_cands) < 3:
-                for c in cands:
-                    if c not in selected_cands:
-                        selected_cands.append(c)
-                    if len(selected_cands) >= 3:
-                        break
-
-            for c in selected_cands:
-                rem = overall_deadline - time.time()
-                if rem <= 1.2:
-                    break
-                c["duration"] = c.get("duration") or duration
-                with ThreadPoolExecutor(max_workers=2) as bg_pool:
-                    lyric_fut = bg_pool.submit(get_song_lyric, c.get("platform", ""), c.get("id", ""), title, artist)
-                    res = source_hub.resolve_best_stream(c, timeout_budget=min(2.5, max(0.6, rem - 0.8)))
-                    if res and res.get("success"):
-                        res["matched_candidate"] = c
-                        res["target_title"] = title
-                        res["target_artist"] = artist
-                        rem_lyric = max(0.1, min(1.0, overall_deadline - time.time() - 0.2))
-                        try:
-                            res["lyrics"] = lyric_fut.result(timeout=rem_lyric)
-                        except Exception:
-                            res["lyrics"] = []
-                        if cache_key:
-                            with _RESOLVE_CACHE_LOCK:
-                                if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                                    _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                                _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
-                        # 【防线 1 与 2】真实出声且原唱高分 (>=80) 候选存入云端 KV
-                        if c.get("score", 0) >= 80.0:
-                            try:
-                                set_cached_candidate(title, artist, c)
-                            except Exception:
-                                pass
-                        self.send_json(res)
-                        return  # 一击即中，立即短路！彻底截断一切后续网络开销！
-                    elif res and res.get("error"):
-                        last_err = res["error"]
-
-            # ----------------------------------------------------
-            # 策略 A 第 1.5 阶梯（原生母语转译）：
-            # 针对海外/香港/台湾 Apple Storefront 将日韩等非英语曲目英译/罗马音化（如 musubi, Shiwaawase, Lilac）导致国内音源搜空的物理痛点，
-            # 通过 Apple 官方原生目录反查母语原名（如 結び, しわあわせ, ライラック），打通多平台正版检索
-            # ----------------------------------------------------
-            apple_song_id = str(cand.get("id") or "").strip()
-            rem = overall_deadline - time.time()
-            if apple_song_id.isdigit() and rem > 2.0:
-                apple_timeout = min(1.5, max(0.5, rem - 1.2))
-                native_meta = _fetch_apple_native_metadata(apple_song_id, timeout=apple_timeout)
-                if native_meta and (native_meta.get("title") != title or native_meta.get("artist") != artist):
-                    native_t = native_meta.get("title")
-                    native_a = native_meta.get("artist") or artist
-                    native_dur = native_meta.get("duration") or duration
-                    native_cands = search_candidates(f"{native_t} {native_a}", target_artist=native_a, target_title=native_t, target_duration=native_dur)
-                    for nc in native_cands[:2]:
-                        rem_cand = overall_deadline - time.time()
-                        if rem_cand <= 1.0:
-                            break
-                        nc["duration"] = nc.get("duration") or native_dur
-                        with ThreadPoolExecutor(max_workers=2) as bg_pool:
-                            lyric_fut = bg_pool.submit(get_song_lyric, nc.get("platform", ""), nc.get("id", ""), native_t, native_a)
-                            res = source_hub.resolve_best_stream(nc, timeout_budget=min(2.2, max(0.6, rem_cand - 0.6)))
-                            if res and res.get("success"):
-                                res["matched_candidate"] = nc
-                                res["target_title"] = title
-                                res["target_artist"] = artist
-                                res["native_title"] = native_t
-                                res["native_artist"] = native_a
-                                res["source_name"] = str(res.get("source_name", "")) + " 🌸母语精配"
-                                rem_lyric = max(0.1, min(1.0, overall_deadline - time.time() - 0.2))
-                                try:
-                                    res["lyrics"] = lyric_fut.result(timeout=rem_lyric)
-                                except Exception:
-                                    res["lyrics"] = []
-                                if cache_key:
-                                    with _RESOLVE_CACHE_LOCK:
-                                        if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                                            _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                                        _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
-                                if nc.get("score", 0) >= 80.0:
-                                    try:
-                                        set_cached_candidate(title, artist, nc)
-                                    except Exception:
-                                        pass
-                                self.send_json(res)
-                                return
-
-            # ----------------------------------------------------
-            # 策略 A 第二阶梯（独家兜底）：当第一梯队全部候选尝试失败时激活 QQ 音乐精准补漏
-            # 弹性受 overall_deadline 预算约束 (保留 1.4 秒底线)，动态分配剩余预算
-            # ----------------------------------------------------
-            rem = overall_deadline - time.time()
-            if rem > 1.4:
-                fallback_cands = search_candidates_fallback(search_key, target_artist=artist, target_title=title, target_duration=duration)
-                for fc in fallback_cands[:2]:
-                    rem_fb = overall_deadline - time.time()
-                    if rem_fb <= 0.6:
-                        break
-                    fc["duration"] = fc.get("duration") or duration
-                    with ThreadPoolExecutor(max_workers=2) as bg_pool:
-                        lyric_fut = bg_pool.submit(get_song_lyric, fc.get("platform", ""), fc.get("id", ""), title, artist)
-                        res = source_hub.resolve_best_stream(fc, timeout_budget=rem_fb)
-                        if res and res.get("success"):
-                            res["matched_candidate"] = fc
-                            res["target_title"] = title
-                            res["target_artist"] = artist
-                            rem_lyric = max(0.1, min(1.0, overall_deadline - time.time() - 0.2))
-                            try:
-                                res["lyrics"] = lyric_fut.result(timeout=rem_lyric)
-                            except Exception:
-                                res["lyrics"] = []
-                            if cache_key:
-                                with _RESOLVE_CACHE_LOCK:
-                                    if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
-                                        _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
-                                    _RESOLVE_CACHE[cache_key] = {"res": res, "ts": time.time()}
-                            # 【防线 1 与 2】真实出声且原唱高分 (>=80) 候选沉淀入云端 KV
-                            if fc.get("score", 0) >= 80.0:
-                                try:
-                                    set_cached_candidate(title, artist, fc)
-                                except Exception:
-                                    pass
-                            self.send_json(res)
-                            return  # 兜底成功，即刻出声
-                        elif res and res.get("error"):
-                            last_err = res["error"]
-
-            self.send_json({
-                "success": False,
-                "error": f"全源库冲刺完成，未能匹配到有效音频流: {last_err}",
-                "title": title,
-                "artist": artist
-            })
+            res_payload, res_status = resolve_track(cand, fetch_apple_native_fn=_fetch_apple_native_metadata)
+            self.send_json(res_payload, status=res_status)
             return
 
         self.send_error(404, "Not Found")
@@ -1005,11 +758,18 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 if __name__ == "__main__":
     os.chdir(DIRECTORY)
+    listen_port = int(os.environ.get("PORT") or os.environ.get("AMUSIC_PORT") or PORT)
     # 异步预热音源并发测速，零阻塞 HTTP 即时响应（非 Vercel 环境下启动）
     if not os.environ.get("VERCEL"):
-        threading.Thread(target=source_hub.test_all, daemon=True).start()
+        def _warmup_sources():
+            try:
+                probe_sv_health(force=False)
+            except Exception:
+                pass
+            source_hub.test_all()
+        threading.Thread(target=_warmup_sources, daemon=True).start()
 
-    with ThreadingTCPServer(("0.0.0.0", PORT), Handler) as httpd:
+    with ThreadingTCPServer(("0.0.0.0", listen_port), Handler) as httpd:
         print(f"==================================================")
         print(f"🍎 Amusic (Apple 音乐纯文本数据库浏览器 + 音频底座) 已就绪！")
         print(f"本地访问地址: http://127.0.0.1:{PORT}")

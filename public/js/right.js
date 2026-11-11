@@ -49,23 +49,8 @@ window.RightPanel = (function () {
         });
     }
 
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    function formatTime(ms) {
-        if (!ms || isNaN(ms)) return "00:00";
-        const totalSec = Math.floor(ms / 1000);
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec % 60;
-        return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
-    }
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
+    const formatTime = (ms) => window.AmusicUtils.formatDuration(ms);
 
     // 点击官方精选合集 (如“新歌精选”、“正在流行中”)
     async function selectCuratedCollection(title, curator, url, roomUrl, fallbackTracks) {

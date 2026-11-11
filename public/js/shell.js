@@ -57,23 +57,8 @@ window.Shell = (function () {
     let initialTranslateY = 0;
     let isMouseDown = false;
 
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    function formatDuration(ms) {
-        if (!ms || isNaN(ms)) return "00:00";
-        const totalSec = Math.floor(ms / 1000);
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec % 60;
-        return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
-    }
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
+    const formatDuration = (ms) => window.AmusicUtils.formatDuration(ms);
 
     function init() {
         if (!window.player) {
@@ -727,37 +712,6 @@ window.Shell = (function () {
         sourcesListBody.innerHTML = html;
     }
 
-    async function testSources() {
-        const btn = document.getElementById("btnTestSources");
-        if (btn) btn.innerText = "⏳ 测速中...";
-        try {
-            const res = await fetch("/api/sources/test", { method: "POST" });
-            const data = await res.json();
-            renderSourceList(data);
-            showToast("音源测速完成！");
-        } catch (err) {
-            showToast(`测速失败: ${err.message}`);
-        } finally {
-            if (btn) btn.innerText = "⚡ 测速";
-        }
-    }
-
-    async function syncSources() {
-        const btn = document.getElementById("btnSyncSources");
-        if (btn) btn.innerText = "⏳ 同步中...";
-        try {
-            const res = await fetch("/api/sources/sync", { method: "POST" });
-            const data = await res.json();
-            renderSourceList(data);
-            const count = Array.isArray(data) ? data.length : (Array.isArray(data?.sources) ? data.sources.length : 0);
-            showToast(`音源同步成功！当前生效: ${count} 个`);
-        } catch (err) {
-            showToast(`同步失败: ${err.message}`);
-        } finally {
-            if (btn) btn.innerText = "🔄 同步";
-        }
-    }
-
     function closeAllDrawers() {
         if (queueDrawer) queueDrawer.classList.remove("open");
         if (sourceDrawer) sourceDrawer.classList.remove("open");
@@ -789,8 +743,6 @@ window.Shell = (function () {
         toggleQueueModal,
         toggleSourceModal,
         closeAllDrawers,
-        testSources,
-        syncSources,
         showToast,
 
         // -------------------- 业务弹窗代理 (向后兼容委托至 window.Modals) --------------------

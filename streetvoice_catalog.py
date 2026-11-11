@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from net_pool import http_get, http_post_json
-from song_search import _parse_lrc_text
+from lyric_service import _parse_lrc_text
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 

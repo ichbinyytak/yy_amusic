@@ -88,26 +88,8 @@ window.BackupManager = (function () {
         setTimeout(() => document.body.removeChild(input), 1000);
     }
 
-    /* ========================================================
-     * 区块 3: 数据管理手风琴面板渲染
-     * ======================================================== */
-    function renderBackupSection(containerEl) {
-        if (!containerEl) return;
-        containerEl.innerHTML = `
-            <div class="data-backup-row">
-                <button class="btn-data-action" onclick="window.BackupManager.exportData()" title="导出备份到本地 JSON 文件">
-                    <span>↑</span> 导出备份
-                </button>
-                <button class="btn-data-action" onclick="window.BackupManager.triggerImport()" title="从本地 JSON 文件还原数据">
-                    <span>↓</span> 导入恢复
-                </button>
-            </div>
-        `;
-    }
-
     return {
         exportData,
-        triggerImport,
-        renderBackupSection
+        triggerImport
     };
 })();

@@ -26,12 +26,7 @@
   const SESSION_CACHE_STORAGE_KEY = 'amusic_resolve_cache_v1';
 
   // 格式化秒数为 mm:ss
-  function formatTime(sec) {
-    if (!sec || isNaN(sec)) return "00:00";
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
-  }
+  const formatTime = (sec) => window.AmusicUtils ? window.AmusicUtils.formatTimeSec(sec) : "00:00";
 
   class MusicPlayer {
     constructor() {
@@ -76,6 +71,7 @@
       this.resolveCache = new Map();
       this._loadSessionCache();
       this.prefetchTimer = null;
+      this._autoSkipTimer = null;
       this._retriedProxy = false;
 
       // 双 Audio 预载器体系与自愈容灾 (借鉴洛雪音乐 usePreloadNextMusic.ts，实现 0ms 秒播与静默自愈)
@@ -437,7 +433,14 @@
           window.Shell.showToast(`《${songName}》音频流失效，已自动顺延下一首`);
         }
         this._emit('stateChange', { isPlaying: false, isResolving: false, error: `《${songName}》音频流失效，已顺延` });
-        setTimeout(() => {
+        if (this._autoSkipTimer) {
+          clearTimeout(this._autoSkipTimer);
+          this._autoSkipTimer = null;
+        }
+        const skipToken = this.resolveToken;
+        this._autoSkipTimer = setTimeout(() => {
+          this._autoSkipTimer = null;
+          if (this.resolveToken !== skipToken) return;
           if (this.playMode === 'shuffle') {
             const candidates = [];
             for (let i = 0; i < this.playlist.length; i++) {
@@ -738,6 +741,10 @@
       if (!isAutoSkip) {
         this.autoSkipCount = 0;
       }
+      if (this._autoSkipTimer) {
+        clearTimeout(this._autoSkipTimer);
+        this._autoSkipTimer = null;
+      }
       this._retriedProxy = false;
       if (this.currentAbortController) {
         try { this.currentAbortController.abort(); } catch (e) {}
@@ -961,7 +968,8 @@
               window.Shell.showToast(`《${songName}》${reason}，已自动跳到下一首`);
             }
             const nextIdx = (idx + 1) % this.playlist.length;
-            setTimeout(() => {
+            this._autoSkipTimer = setTimeout(() => {
+              this._autoSkipTimer = null;
               if (this.resolveToken === currentToken) {
                 this.playIndex(nextIdx, true, false); // 第二首及之后不再是歌单首曲，不重复等待 5 秒
               }
@@ -990,7 +998,9 @@
           error: "网络连接异常，无法解析音频流"
         });
       } finally {
-        this.isResolving = false;
+        if (this.resolveToken === currentToken) {
+          this.isResolving = false;
+        }
       }
     }
 
@@ -1008,8 +1018,11 @@
         this.audio.play().catch(() => {});
       } else {
         this.audio.pause();
-        // 核心加固：用户主动暂停时，递增 token 立即作废任何后台异步挂起的跳歌顺延定时器，杜绝幽灵切歌
-        this.resolveToken = (this.resolveToken || 0) + 1;
+        // 清理挂起的自动顺延定时器，避免阻塞正在异步加载的当前歌曲歌词
+        if (this._autoSkipTimer) {
+          clearTimeout(this._autoSkipTimer);
+          this._autoSkipTimer = null;
+        }
       }
     }
 

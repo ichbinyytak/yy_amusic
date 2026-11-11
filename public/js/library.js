@@ -26,18 +26,9 @@ window.LibraryPanel = (function () {
     let containerElement = null;
     const expandedLibraryGroups = new Set(["lib_cat_未分组"]);
 
-    const iconArrowCollapsed = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
-    const iconArrowExpanded = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
-
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
+    const iconArrowCollapsed = window.AmusicUtils.ICON_ARROW_COLLAPSED;
+    const iconArrowExpanded = window.AmusicUtils.ICON_ARROW_EXPANDED;
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
 
     /* ========================================================
      * 区块 1: 音乐库生命周期与数据驱动主渲染

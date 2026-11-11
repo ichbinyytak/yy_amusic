@@ -5,7 +5,7 @@
  * 依赖协同：window.currentStorefront, window.swrFetch, window.RightPanel
  * --------------------------------------------------------
  * 职责定位：
- *   1. 6大地区切换 (中国大陆|香港|台湾|美国|日本|英国) - 紧凑微型下拉
+ *   1. 4大地区切换 (中国大陆|香港|台湾|美国) - 紧凑微型下拉
  *   2. 最新发布 (/new 13个音乐板块手风琴展开)
  *   3. 类别探索 (/search 48+ 官方音乐专区与排行榜多层就地展开)
  *   4. 严格执行按需懒加载 (Lazy Loading) 与 SWR 缓存
@@ -29,18 +29,9 @@ window.RegionPanel = (function () {
     const expandedPartitions = new Set();
     const expandedSubSections = new Set();
 
-    const iconArrowCollapsed = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
-    const iconArrowExpanded = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
-
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
+    const iconArrowCollapsed = window.AmusicUtils.ICON_ARROW_COLLAPSED;
+    const iconArrowExpanded = window.AmusicUtils.ICON_ARROW_EXPANDED;
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
 
     function cleanZoneTitle(str) {
         if (!str) return "";

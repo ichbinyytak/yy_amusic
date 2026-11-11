@@ -60,7 +60,7 @@ def _execute_kv_command(command_list: list, timeout: float = 1.0):
         return None
     try:
         headers = {"Authorization": f"Bearer {token}"}
-        st, data_bytes, _ = http_post_json(url, command_list, headers=headers, timeout=timeout)
+        st, data_bytes, _ = http_post_json(url, command_list, headers=headers, timeout=timeout, secure=True)
         if st == 200 and data_bytes:
             data = json.loads(data_bytes.decode("utf-8"))
             return data.get("result")

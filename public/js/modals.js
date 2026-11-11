@@ -17,24 +17,8 @@
 window.Modals = (function () {
     'use strict';
 
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-
-    function normalizeCategory(cat) {
-        if (!cat || typeof cat !== 'string') return "未分组";
-        const trimmed = cat.trim();
-        if (!trimmed || trimmed === "默认" || trimmed === "未分类" || trimmed === "未分组") {
-            return "未分组";
-        }
-        return trimmed;
-    }
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
+    const normalizeCategory = (cat) => window.AmusicUtils.normalizeCategory(cat);
 
     function showToast(msg) {
         if (window.Shell?.showToast) {

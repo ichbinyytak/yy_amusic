@@ -19,8 +19,8 @@ window.StreetVoicePanel = (function () {
     const expandedChartGroups = new Set(["sv_group_realtime"]);
     const expandedPlaylistSections = new Set();
 
-    const iconArrowCollapsed = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
-    const iconArrowExpanded = `<svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
+    const iconArrowCollapsed = window.AmusicUtils.ICON_ARROW_COLLAPSED;
+    const iconArrowExpanded = window.AmusicUtils.ICON_ARROW_EXPANDED;
 
     const FALLBACK_CHARTS = [
         { id: "sv_chart_realtime_all", kind: "realtime", category: "all", group: "即时排行", title: "即时榜 · 总榜" },
@@ -56,15 +56,7 @@ window.StreetVoicePanel = (function () {
         sections: FALLBACK_SECTIONS
     };
 
-    function escapeHtml(str) {
-        if (!str) return "";
-        return String(str)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
+    const escapeHtml = (str) => window.AmusicUtils.escapeHtml(str);
 
     function init(containerEl) {
         svContainerEl = containerEl;

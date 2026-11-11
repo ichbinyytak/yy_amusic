@@ -22,9 +22,9 @@ _DNS_LOCK = threading.Lock()
 _DNS_TTL_SEC = 300  # 5 分钟缓存期
 _ORIG_GETADDRINFO = socket.getaddrinfo
 
-def _cached_getaddrinfo(host, port, *args, **kwargs):
+def _cached_getaddrinfo(host, port, family=0, *args, **kwargs):
     now = time.time()
-    cache_key = (host, port)
+    cache_key = (host, port, family, args, tuple(sorted(kwargs.items())))
     with _DNS_LOCK:
         if cache_key in _DNS_CACHE:
             res, expire_at = _DNS_CACHE[cache_key]
@@ -32,11 +32,14 @@ def _cached_getaddrinfo(host, port, *args, **kwargs):
                 return res
 
     try:
-        raw_res = _ORIG_GETADDRINFO(host, port, *args, **kwargs)
-        ipv4 = [r for r in raw_res if r[0] == socket.AF_INET]
-        filtered = ipv4 if ipv4 else raw_res
+        raw_res = _ORIG_GETADDRINFO(host, port, family, *args, **kwargs)
+        if family in (0, socket.AF_UNSPEC):
+            ipv4 = [r for r in raw_res if r[0] == socket.AF_INET]
+            filtered = ipv4 if ipv4 else raw_res
+        else:
+            filtered = raw_res
     except Exception:
-        return _ORIG_GETADDRINFO(host, port, *args, **kwargs)
+        return _ORIG_GETADDRINFO(host, port, family, *args, **kwargs)
 
     with _DNS_LOCK:
         if len(_DNS_CACHE) > 500:
@@ -50,6 +53,7 @@ socket.getaddrinfo = _cached_getaddrinfo
 # ========================================================
 # 区块 2: 全局持久 HTTP 连接池 (urllib3 Keep-Alive)
 # ========================================================
+_SECURE_HTTP_POOL = None
 try:
     import urllib3
     import logging
@@ -74,15 +78,22 @@ try:
         retries=_RETRY_CONFIG,
         timeout=urllib3.Timeout(connect=2.0, read=4.0)
     )
+    _SECURE_HTTP_POOL = urllib3.PoolManager(
+        maxsize=30,
+        ssl_context=ssl.create_default_context(),
+        retries=_RETRY_CONFIG,
+        timeout=urllib3.Timeout(connect=2.0, read=6.0)
+    )
 except Exception:
     _HTTP_POOL = None
+    _SECURE_HTTP_POOL = None
 
 
 # 铁律常量：假音频与试听截断黑名单字节数
 FAKE_AUDIO_LENGTHS = {81629, 181521}
 MIN_VALID_BYTES = 1200000  # 1.2MB
 
-def http_get(url: str, headers: dict = None, timeout: float = 3.0, redirect: bool = True):
+def http_get(url: str, headers: dict = None, timeout: float = 3.0, redirect: bool = True, secure: bool = False):
     """
     通用极速 HTTP GET 请求（优先使用连接池复用 Keep-Alive，平滑回退标准库）
     返回: (status: int, body_bytes: bytes, final_url: str, resp_headers: dict)
@@ -91,9 +102,10 @@ def http_get(url: str, headers: dict = None, timeout: float = 3.0, redirect: boo
     if "User-Agent" not in hdrs:
         hdrs["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
-    if _HTTP_POOL:
+    pool = _SECURE_HTTP_POOL if secure else _HTTP_POOL
+    if pool:
         try:
-            r = _HTTP_POOL.request(
+            r = pool.request(
                 'GET',
                 url,
                 headers=hdrs,
@@ -112,7 +124,7 @@ def http_get(url: str, headers: dict = None, timeout: float = 3.0, redirect: boo
     # 平滑回退 urllib.request
     try:
         req = urllib.request.Request(url, headers=hdrs)
-        ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+        ctx = ssl.create_default_context() if secure else (ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None)
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
             final_url = resp.geturl()
             data = resp.read()
@@ -121,7 +133,7 @@ def http_get(url: str, headers: dict = None, timeout: float = 3.0, redirect: boo
         return 0, b"", url, {}
 
 
-def http_post_json(url: str, payload: dict, headers: dict = None, timeout: float = 3.0):
+def http_post_json(url: str, payload: dict, headers: dict = None, timeout: float = 3.0, secure: bool = False):
     """
     通用极速 HTTP POST JSON 请求
     返回: (status: int, body_bytes: bytes, resp_headers: dict)
@@ -134,9 +146,10 @@ def http_post_json(url: str, payload: dict, headers: dict = None, timeout: float
 
     data_bytes = json.dumps(payload).encode("utf-8")
 
-    if _HTTP_POOL:
+    pool = _SECURE_HTTP_POOL if secure else _HTTP_POOL
+    if pool:
         try:
-            r = _HTTP_POOL.request(
+            r = pool.request(
                 'POST',
                 url,
                 body=data_bytes,
@@ -148,7 +161,7 @@ def http_post_json(url: str, payload: dict, headers: dict = None, timeout: float
             pass
 
     req = urllib.request.Request(url, data=data_bytes, headers=hdrs)
-    ctx = ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None
+    ctx = ssl.create_default_context() if secure else (ssl._create_unverified_context() if hasattr(ssl, '_create_unverified_context') else None)
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         return resp.status, resp.read(), dict(resp.headers)
 

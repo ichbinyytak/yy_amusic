@@ -15,8 +15,8 @@ import json
 import re
 import time
 import threading
-import urllib.request
 import urllib.parse
+from net_pool import http_get
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -47,11 +47,12 @@ def _cached_catalog_call(cache_key: str, fn, *args, **kwargs):
     return res
 
 def http_get_html(url, timeout=15):
-    """发起 HTTP GET 请求抓取 HTML 页面 (自动安全转义中文等非 ASCII URL)"""
+    """发起 HTTP GET 请求抓取 HTML 页面 (复用严格校验证书的连接池)"""
     safe_url = urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=")
-    req = urllib.request.Request(safe_url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode("utf-8", errors="ignore")
+    status, body, _, _ = http_get(safe_url, headers={"User-Agent": USER_AGENT}, timeout=timeout, secure=True)
+    if status == 200 and body:
+        return body.decode("utf-8", errors="ignore")
+    raise RuntimeError(f"Apple Music HTTP {status or 'timeout'}")
 
 def extract_ssr_data(html, keyword="data"):
     """从 HTML 的 <script> 标签中精准提取 Apple SSR 结构化数据"""

@@ -1,0 +1,11 @@
+.git/
+.github/
+__pycache__/
+*.pyc
+.DS_Store
+.local_auth.json
+extracted_apis.json
+extracted_apis.enc.tmp
+interaction/
+test_*.js
+*.md

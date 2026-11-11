@@ -24,27 +24,11 @@ import sys
 import re
 import time
 import json
-import socket
 import threading
 import datetime
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from net_pool import http_get, http_post_json, verify_audio_stream, MIN_VALID_BYTES, FAKE_AUDIO_LENGTHS, _HTTP_POOL
-
-# ----------------------------------------------------
-# 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
-# ----------------------------------------------------
-try:
-    _orig_getaddrinfo = socket.getaddrinfo
-
-    def _ipv4_first_getaddrinfo(*args, **kwargs):
-        res = _orig_getaddrinfo(*args, **kwargs)
-        ipv4 = [r for r in res if r[0] == socket.AF_INET]
-        return ipv4 if ipv4 else res
-
-    socket.getaddrinfo = _ipv4_first_getaddrinfo
-except Exception:
-    pass
 
 # 标准测速基准曲目（按平台严格对齐歌曲ID与元数据，杜绝跨平台ID错配）
 TEST_TRACKS = {
@@ -374,7 +358,7 @@ class AudioSource:
             track_info = TEST_TRACKS.get(plat, TEST_TRACKS.get("kw"))
             t0 = time.perf_counter()
             try:
-                res = self.probe_func(track_info, plat, timeout=3.0)
+                res = self.probe_func(track_info, plat, timeout=4.5)
                 ms = round((time.perf_counter() - t0) * 1000, 1)
                 if res and res.get('url'):
                     self.platform_latencies[plat] = ms

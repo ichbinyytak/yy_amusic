@@ -154,23 +154,8 @@ async function apiRequest(endpoint, etag = '', customSf = null) {
 /* ========================================================
  * 区块 4: 全局基础通用工具箱与命名空间挂载
  * ======================================================== */
-function escapeHtml(str) {
-    if (!str) return "";
-    return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-function formatDuration(millis) {
-    if (!millis || isNaN(millis)) return "00:00";
-    const totalSec = Math.floor(millis / 1000);
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-}
+const escapeHtml = (str) => window.AmusicUtils ? window.AmusicUtils.escapeHtml(str) : String(str || "");
+const formatDuration = (millis) => window.AmusicUtils ? window.AmusicUtils.formatDuration(millis) : "00:00";
 
 function showToast(msg) {
     if (window.Shell && window.Shell.showToast) {
