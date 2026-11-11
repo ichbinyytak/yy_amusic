@@ -16,7 +16,7 @@
 window.LeftPanel = (function () {
     'use strict';
 
-    const expandedTopAccordions = new Set(["top_region", "top_library"]); // 默认展开音乐库与区域
+    const expandedTopAccordions = new Set(["top_library"]); // 网站推荐内 Apple/街声 默认均折叠，点击再展开加载
 
     const iconArrowCollapsed = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"></polygon></svg>`;
     const iconArrowExpanded = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="3,6 12,20 21,6"></polygon></svg>`;
@@ -99,7 +99,7 @@ window.LeftPanel = (function () {
             <div class="left-tabs-group">
                 <div class="left-tab-col" id="tabAppleCol" data-tab="apple">
                     <div id="top_region">
-                        <span class="top-accordion-left" id="tabAppleBtn">Apple专区</span>
+                        <span class="top-accordion-left" id="tabAppleBtn">网站推荐</span>
                     </div>
                 </div>
                 <div class="left-tab-divider"></div>
@@ -123,7 +123,7 @@ window.LeftPanel = (function () {
         viewLibrary.id = "viewLibrary";
         viewLibrary.className = "left-view-pane";
 
-        // 2.1 Apple专区视图首行：独立设置行放置【地区选择器】(纯就地下拉，彻底防止顶部Tab误触)
+        // 2.1 网站推荐视图：上下双折叠手风琴（Apple 专区 + 街声），默认进入均折叠，点击再展开加载
         const appleToolbar = document.createElement("div");
         appleToolbar.className = "left-view-toolbar-row";
         appleToolbar.id = "appleToolbarRow";
@@ -151,11 +151,44 @@ window.LeftPanel = (function () {
                 </select>
             </div>
         `;
-        viewApple.appendChild(appleToolbar);
 
         const appleContent = document.createElement("div");
         appleContent.id = "appleContent";
-        viewApple.appendChild(appleContent);
+
+        const svContent = document.createElement("div");
+        svContent.id = "svContent";
+
+        let appleInitialized = false;
+        let svInitialized = false;
+        const microSelect = appleToolbar.querySelector("#regionMicroSelect");
+
+        const appleAcc = createTopAccordion({
+            id: "top_apple_zone",
+            title: "🍎 Apple 专区",
+            onToggle: (isOpen) => {
+                if (isOpen && !appleInitialized) {
+                    appleInitialized = true;
+                    window.RegionPanel?.init?.(appleContent, microSelect);
+                }
+            }
+        });
+        appleAcc.bodyEl.appendChild(appleToolbar);
+        appleAcc.bodyEl.appendChild(appleContent);
+        viewApple.appendChild(appleAcc.blockEl);
+
+        const svAcc = createTopAccordion({
+            id: "top_streetvoice_zone",
+            title: "🎸 街声",
+            extraHeaderHtml: '<span class="sv-badge-readonly">192k · .com</span>',
+            onToggle: (isOpen) => {
+                if (isOpen && !svInitialized) {
+                    svInitialized = true;
+                    window.StreetVoicePanel?.init?.(svContent);
+                }
+            }
+        });
+        svAcc.bodyEl.appendChild(svContent);
+        viewApple.appendChild(svAcc.blockEl);
 
         // 2.2 我的音乐库视图首行：独立设置行放置【备份歌单】与【恢复歌单】(彻底防止顶部Tab误触)
         const libToolbar = document.createElement("div");
@@ -189,7 +222,6 @@ window.LeftPanel = (function () {
         const regionTrigger = appleToolbar.querySelector("#regionDropdownTrigger");
         const regionMenu = appleToolbar.querySelector("#regionDropdownMenu");
         const regionCurrentText = appleToolbar.querySelector("#regionCurrentText");
-        const microSelect = appleToolbar.querySelector("#regionMicroSelect");
 
         function closeRegionDropdown() {
             regionWrapper?.classList.remove("open");
@@ -225,8 +257,7 @@ window.LeftPanel = (function () {
             }
         });
 
-        // 3. 分别挂载 Apple专区、我的音乐库 与 搜索结果控制器至独立内容容器
-        window.RegionPanel?.init?.(appleContent, microSelect);
+        // 3. 挂载我的音乐库与搜索结果控制器（Apple 专区与街声按需懒初始化）
         window.LibraryPanel?.init?.(libContent);
         window.SearchPanel?.init?.(viewSearch);
 
@@ -312,7 +343,7 @@ window.LeftPanel = (function () {
         switchTab(activeTab);
     }
 
-    function createTopAccordion({ id, title, extraHeaderHtml }) {
+    function createTopAccordion({ id, title, extraHeaderHtml, onToggle }) {
         const block = document.createElement("div");
         block.className = "top-accordion-block";
         if (id) block.id = id;
@@ -342,6 +373,7 @@ window.LeftPanel = (function () {
                 const arrow = hdr.querySelector(".top-accordion-arrow");
                 arrow.classList.remove("open");
                 arrow.innerHTML = iconArrowCollapsed;
+                if (onToggle) onToggle(false);
             } else {
                 expandedTopAccordions.add(id);
                 body.classList.add("open");
@@ -349,6 +381,7 @@ window.LeftPanel = (function () {
                 const arrow = hdr.querySelector(".top-accordion-arrow");
                 arrow.classList.add("open");
                 arrow.innerHTML = iconArrowExpanded;
+                if (onToggle) onToggle(true);
             }
         };
 
@@ -373,10 +406,12 @@ window.LeftPanel = (function () {
         const onDelete = options.onDelete;
         const onRename = options.onRename;
 
-        const isCurated = !!item.isCurated || item.type === "curated" || item.kind === "curated" || (item.tracks && item.tracks.length > 0);
+        const isStreetVoice = item.platform === "streetvoice" || String(item.id || "").startsWith("sv_");
+        const isSvChart = isStreetVoice && (item.svType === "chart" || String(item.id || "").startsWith("sv_chart_"));
+        const isCurated = !isStreetVoice && (!!item.isCurated || item.type === "curated" || item.kind === "curated" || (item.tracks && item.tracks.length > 0));
         const kind = item.kind || item.type || (item.attributes ? (item.type === "albums" ? "album" : "playlist") : "playlist");
-        const isAlbum = kind === "album" || kind === "albums";
-        const typeLabel = isCustom ? "[自建]" : (isCurated ? "[精选]" : (isAlbum ? "[专辑]" : "[歌单]"));
+        const isAlbum = !isStreetVoice && (kind === "album" || kind === "albums");
+        const typeLabel = isCustom ? "[自建]" : (isSvChart ? "[榜单]" : (isCurated ? "[精选]" : (isAlbum ? "[专辑]" : "[歌单]")));
         // 遵循色彩规范：仅大标题红，卡片内标签采用标准中性/副色，杜绝红字
         const tagColor = isCustom ? "var(--accent)" : (isAlbum ? "#e3b341" : "var(--text-secondary)");
 
@@ -393,7 +428,7 @@ window.LeftPanel = (function () {
         if (item.id) card.id = `card-${item.id}`;
 
         const sf = window.RegionPanel?.getStorefront?.() || "cn";
-        const url = item.url || item.attributes?.url || `https://music.apple.com/${sf}/${isAlbum ? 'album' : 'playlist'}/${item.id || ''}`;
+        const url = item.url || item.attributes?.url || (isStreetVoice ? "" : `https://music.apple.com/${sf}/${isAlbum ? 'album' : 'playlist'}/${item.id || ''}`);
 
         card.innerHTML = `
             <div class="playlist-card-row1">
@@ -477,11 +512,33 @@ window.LeftPanel = (function () {
 
     function openItem(item, isCustom, isCurated, isAlbum, name, curator, onLoaded) {
         const sf = window.RegionPanel?.getStorefront?.() || "cn";
-        const url = item.url || item.attributes?.url || `https://music.apple.com/${sf}/${isAlbum ? 'album' : 'playlist'}/${item.id || ''}`;
+        const isStreetVoice = item.platform === "streetvoice" || String(item.id || "").startsWith("sv_");
+        const url = item.url || item.attributes?.url || (isStreetVoice ? "" : `https://music.apple.com/${sf}/${isAlbum ? 'album' : 'playlist'}/${item.id || ''}`);
 
         if (isCustom) {
             window.RightPanel?.selectCustomPlaylist?.(item.id);
             if (onLoaded) setTimeout(onLoaded, 100);
+            return;
+        }
+
+        if (isStreetVoice) {
+            const isSvChart = item.svType === "chart" || String(item.id || "").startsWith("sv_chart_");
+            if (isSvChart) {
+                let svKind = item.svKind || "";
+                let svCategory = item.svCategory || "";
+                if (!svKind || !svCategory) {
+                    const m = String(item.id || "").match(/^sv_chart_(realtime|weekly)_(.+)$/);
+                    if (m) {
+                        svKind = m[1];
+                        svCategory = m[2];
+                    }
+                }
+                window.RightPanel?.selectSvChart?.(svKind, svCategory, name, curator, item.id, url);
+            } else {
+                const svId = item.svId || String(item.id || "").replace(/^sv_pl_/, "");
+                window.RightPanel?.selectSvPlaylist?.(svId, name, curator, url, item.id);
+            }
+            if (onLoaded) setTimeout(onLoaded, 300);
             return;
         }
 

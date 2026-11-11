@@ -155,7 +155,16 @@ window.Downloader = (function () {
         const resp = await fetch("/api/resolve", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: title, title: title, artist: artist, album: album })
+            body: JSON.stringify({
+                id: track.id || "",
+                platform: track.platform || "",
+                name: title,
+                title: title,
+                artist: artist,
+                album: album,
+                durationMillis: track.durationMillis,
+                duration: track.duration
+            })
         });
         if (!resp.ok) {
             throw new Error(`获取音频直链失败 (HTTP ${resp.status})`);
@@ -167,14 +176,144 @@ window.Downloader = (function () {
         return {
             url: data.url,
             bitrate: data.bitrate || "128k",
-            source: data.source || "default"
+            source: data.source || "default",
+            is_hls: !!data.is_hls
         };
     }
 
     /**
-     * 拉取音频字节流 (优先直接拉取，遇到跨域 CORS 时自动走无内存中继拉取)
+     * 纯 JS MPEG-TS 脱壳器：提取音频 PES 载荷为标准原生 MP3 字节流
      */
-    async function fetchAudioBytes(audioUrl) {
+    function demuxMpegTsSegmentsToMp3(segmentArrays) {
+        const mp3Chunks = [];
+        let totalLen = 0;
+        let audioPid = null;
+
+        for (const tsBytes of segmentArrays) {
+            if (!tsBytes || tsBytes.length < 188) continue;
+
+            // 定位 0x47 同步字节
+            let start = 0;
+            while (start < tsBytes.length && start < 188) {
+                if (tsBytes[start] === 0x47 && (start + 188 >= tsBytes.length || tsBytes[start + 188] === 0x47)) {
+                    break;
+                }
+                start++;
+            }
+
+            for (let i = start; i + 188 <= tsBytes.length; i += 188) {
+                if (tsBytes[i] !== 0x47) continue;
+                const pktEnd = i + 188;
+                const pusi = (tsBytes[i + 1] & 0x40) !== 0;
+                const pid = ((tsBytes[i + 1] & 0x1F) << 8) | tsBytes[i + 2];
+                const afc = (tsBytes[i + 3] >> 4) & 0x03;
+
+                if (afc === 0 || afc === 2) continue; // 无 payload
+
+                let payloadOffset = i + 4;
+                if (afc === 3) {
+                    const adaptLen = tsBytes[payloadOffset];
+                    payloadOffset += 1 + adaptLen;
+                }
+                if (payloadOffset >= pktEnd) continue;
+
+                if (pusi) {
+                    if (
+                        payloadOffset + 9 <= pktEnd &&
+                        tsBytes[payloadOffset] === 0x00 &&
+                        tsBytes[payloadOffset + 1] === 0x00 &&
+                        tsBytes[payloadOffset + 2] === 0x01
+                    ) {
+                        const streamId = tsBytes[payloadOffset + 3];
+                        if (streamId >= 0xC0 && streamId <= 0xDF) {
+                            audioPid = pid;
+                            const pesHdrLen = tsBytes[payloadOffset + 8];
+                            payloadOffset += 9 + pesHdrLen;
+                        } else if (audioPid === null || pid !== audioPid) {
+                            continue;
+                        }
+                    }
+                }
+
+                if (audioPid !== null && pid === audioPid && payloadOffset < pktEnd) {
+                    const chunk = tsBytes.subarray(payloadOffset, pktEnd);
+                    mp3Chunks.push(chunk);
+                    totalLen += chunk.length;
+                }
+            }
+        }
+
+        if (totalLen === 0) {
+            throw new Error("HLS 分片脱壳未提取到有效 MP3 音频帧");
+        }
+
+        const out = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const chunk of mp3Chunks) {
+            out.set(chunk, offset);
+            offset += chunk.length;
+        }
+        return out;
+    }
+
+    /**
+     * 拉取 HLS .m3u8 清单并并发抓取全部 .ts 分片，浏览器端直接脱壳为标准 .mp3
+     */
+    async function fetchHlsAsMp3Bytes(m3u8Url) {
+        const resp = await fetch(m3u8Url);
+        if (!resp.ok) throw new Error(`获取 HLS 清单失败 (HTTP ${resp.status})`);
+        const text = await resp.text();
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+        // 若遇到主清单 (Master Playlist)，自动跳转到第一个子清单
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith("#EXT-X-STREAM-INF")) {
+                const nextUri = lines.slice(i + 1).find(l => !l.startsWith("#"));
+                if (nextUri) {
+                    return fetchHlsAsMp3Bytes(new URL(nextUri, m3u8Url).href);
+                }
+            }
+        }
+
+        const segUrls = lines
+            .filter(l => !l.startsWith("#"))
+            .map(l => new URL(l, m3u8Url).href);
+
+        if (segUrls.length === 0) {
+            throw new Error("HLS 清单中未包含有效音频分片");
+        }
+
+        const segmentArrays = new Array(segUrls.length);
+        let cursor = 0;
+        const SEG_CONCURRENCY = Math.min(5, segUrls.length);
+
+        async function segWorker() {
+            while (cursor < segUrls.length) {
+                const idx = cursor++;
+                const segResp = await fetch(segUrls[idx]);
+                if (!segResp.ok) {
+                    throw new Error(`拉取音频分片 #${idx + 1} 失败 (HTTP ${segResp.status})`);
+                }
+                segmentArrays[idx] = new Uint8Array(await segResp.arrayBuffer());
+            }
+        }
+
+        const workers = [];
+        for (let w = 0; w < SEG_CONCURRENCY; w++) {
+            workers.push(segWorker());
+        }
+        await Promise.all(workers);
+
+        return demuxMpegTsSegmentsToMp3(segmentArrays);
+    }
+
+    /**
+     * 拉取音频字节流 (HLS 直拉并客户端脱壳为 MP3；直链优先直拉，跨域自动走流代理)
+     */
+    async function fetchAudioBytes(audioUrl, isHls = false) {
+        if (isHls || String(audioUrl).includes(".m3u8")) {
+            return await fetchHlsAsMp3Bytes(audioUrl);
+        }
         try {
             const resp = await fetch(audioUrl);
             if (resp.ok) {
@@ -220,17 +359,27 @@ window.Downloader = (function () {
 
         window.Shell?.showToast?.(`正在解析《${title}》音频直链...`);
 
+        let resolved = null;
         try {
-            const res = await resolveTrackAudioUrl(track);
-            const bytes = await fetchAudioBytes(res.url);
+            resolved = await resolveTrackAudioUrl(track);
+            const bytes = await fetchAudioBytes(resolved.url, resolved.is_hls);
             const blob = new Blob([bytes], { type: "audio/mpeg" });
             triggerDownloadBlob(blob, filename);
             window.Shell?.showToast?.(`《${title}》已开始下载`);
         } catch (err) {
             console.error("[Downloader] 单曲下载失败:", err);
-            // 降级使用 a.href 直连
+            const isHls = Boolean(resolved?.is_hls || String(resolved?.url || "").includes(".m3u8") || track.platform === "streetvoice");
+            if (isHls) {
+                window.Shell?.showToast?.(`下载失败: ${err.message}`);
+                return;
+            }
+            // 仅对普通直链降级使用 a.href 直连（禁止对 .m3u8 保存假 MP3）
             try {
-                const res = await resolveTrackAudioUrl(track);
+                const res = resolved || await resolveTrackAudioUrl(track);
+                if (res.is_hls || String(res.url).includes(".m3u8")) {
+                    window.Shell?.showToast?.(`下载失败: ${err.message}`);
+                    return;
+                }
                 const a = document.createElement("a");
                 a.style.display = "none";
                 a.href = res.url;
@@ -302,7 +451,7 @@ window.Downloader = (function () {
 
                 try {
                     const res = await resolveTrackAudioUrl(track);
-                    const bytes = await fetchAudioBytes(res.url);
+                    const bytes = await fetchAudioBytes(res.url, res.is_hls);
                     files.push({ name: filename, data: bytes });
                     successCount++;
                 } catch (err) {

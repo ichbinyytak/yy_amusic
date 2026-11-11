@@ -34,6 +34,10 @@ window.addEventListener("DOMContentLoaded", () => {
                 if (customs.some(c => c.id === lastPl.id)) {
                     window.RightPanel?.selectCustomPlaylist?.(lastPl.id);
                 }
+            } else if (lastPl.kind === 'sv_chart' && lastPl.svKind && lastPl.svCategory) {
+                window.RightPanel?.selectSvChart?.(lastPl.svKind, lastPl.svCategory, lastPl.name, lastPl.curator, lastPl.id, lastPl.url);
+            } else if (lastPl.kind === 'sv_playlist' && lastPl.svId) {
+                window.RightPanel?.selectSvPlaylist?.(lastPl.svId, lastPl.name, lastPl.curator, lastPl.url, lastPl.id);
             } else if (lastPl.id && lastPl.type) {
                 window.RightPanel?.selectPlaylist?.(lastPl.id, lastPl.type, lastPl.name, lastPl.curator, lastPl.url);
             }

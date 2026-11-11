@@ -259,6 +259,131 @@ window.RightPanel = (function () {
         }
     }
 
+    // 加载街声官方排行榜 / 精选歌单公共渲染器
+    function _loadStreetVoiceCollection({ apiUrl, cacheKey, emptyTitle, subtitleLabel, playlistMeta, lastPlPayload }) {
+        clearSelection();
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = playlistMeta;
+        currentTracks = [];
+
+        window.StorageManager?.setLastPlaylist?.(lastPlPayload);
+
+        if (detailTitle) detailTitle.innerText = playlistMeta.name || emptyTitle;
+        if (detailSubtitle) detailSubtitle.innerText = `${playlistMeta.curator || 'StreetVoice'} • 正在获取曲目...`;
+        renderHeaderActions();
+        if (detailBody) {
+            detailBody.innerHTML = '<div class="loading-state">正在加载街声曲目清单...</div>';
+        }
+
+        const applyTracks = (data) => {
+            const rawTracks = (data && Array.isArray(data.tracks)) ? data.tracks : [];
+            currentTracks = rawTracks.map((t, idx) => ({
+                index: idx + 1,
+                id: String(t.id || ""),
+                name: t.name || t.title || "未知曲目",
+                title: t.name || t.title || "未知曲目",
+                artist: t.artist || "未知音乐人",
+                album: t.album || "",
+                durationMillis: t.durationMillis || (t.duration ? t.duration * 1000 : 0),
+                duration: t.duration,
+                cover: t.cover || "",
+                platform: "streetvoice",
+                url: t.url || ""
+            }));
+            if (detailSubtitle) {
+                detailSubtitle.innerText = `${playlistMeta.curator || 'StreetVoice'} • ${subtitleLabel} (共 ${currentTracks.length} 首)`;
+            }
+            renderHeaderActions();
+            renderTracklist(currentTracks);
+            if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+                window.player.setPlaylist(currentTracks, -1);
+            }
+        };
+
+        if (window.swrFetch) {
+            window.swrFetch(apiUrl, cacheKey, {
+                onCached: (data) => applyTracks(data),
+                onUpdated: (data) => applyTracks(data),
+                onError: (err) => {
+                    if (!currentTracks || currentTracks.length === 0) {
+                        if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取街声曲目失败: ${escapeHtml(err.message)}</div>`;
+                        if (detailSubtitle) detailSubtitle.innerText = "获取街声曲目失败";
+                    }
+                }
+            });
+        } else {
+            fetch(apiUrl).then(r => r.json()).then(applyTracks).catch(err => {
+                if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取街声曲目失败: ${escapeHtml(err.message)}</div>`;
+            });
+        }
+    }
+
+    function selectSvChart(kind, category, name, curator, cardId, url) {
+        if (!kind || !category) return;
+        const id = cardId || `sv_chart_${kind}_${category}`;
+        const displayName = name || "街声排行榜";
+        const displayCurator = curator || "StreetVoice";
+        _loadStreetVoiceCollection({
+            apiUrl: `/api/sv_charts?kind=${encodeURIComponent(kind)}&category=${encodeURIComponent(category)}`,
+            cacheKey: `sv_chart_${kind}_${category}`,
+            emptyTitle: displayName,
+            subtitleLabel: "街声官方榜",
+            playlistMeta: {
+                id,
+                type: "playlist",
+                platform: "streetvoice",
+                svType: "chart",
+                svKind: kind,
+                svCategory: category,
+                name: displayName,
+                curator: displayCurator,
+                url: url || ""
+            },
+            lastPlPayload: {
+                kind: "sv_chart",
+                id,
+                svKind: kind,
+                svCategory: category,
+                name: displayName,
+                curator: displayCurator,
+                url: url || ""
+            }
+        });
+    }
+
+    function selectSvPlaylist(svId, name, curator, url, storageId) {
+        if (!svId) return;
+        const rawId = String(svId).replace(/^sv_pl_/, "");
+        const favId = storageId || `sv_pl_${rawId}`;
+        const displayName = name || "街声精选歌单";
+        const displayCurator = curator || "StreetVoice";
+        _loadStreetVoiceCollection({
+            apiUrl: `/api/sv_playlist_songs?id=${encodeURIComponent(rawId)}`,
+            cacheKey: `sv_pl_songs_${rawId}`,
+            emptyTitle: displayName,
+            subtitleLabel: "街声歌单",
+            playlistMeta: {
+                id: favId,
+                type: "playlist",
+                platform: "streetvoice",
+                svType: "playlist",
+                svId: rawId,
+                name: displayName,
+                curator: displayCurator,
+                url: url || ""
+            },
+            lastPlPayload: {
+                kind: "sv_playlist",
+                id: favId,
+                svId: rawId,
+                name: displayName,
+                curator: displayCurator,
+                url: url || ""
+            }
+        });
+    }
+
     /**
      * 实体总览顶部纯图标操作栏渲染
      */
@@ -368,9 +493,11 @@ window.RightPanel = (function () {
         `;
 
         tracks.forEach((t, idx) => {
-            const isPlayingThis = curPlayingSong &&
-                (curPlayingSong.title === t.name || curPlayingSong.name === t.name) &&
-                (curPlayingSong.artist === t.artist);
+            const samePlatform = (curPlayingSong?.platform || '') === (t.platform || '');
+            const isPlayingThis = curPlayingSong && samePlatform && (
+                (t.id && curPlayingSong.id && String(t.id) === String(curPlayingSong.id)) ||
+                ((curPlayingSong.title === t.name || curPlayingSong.name === t.name) && (curPlayingSong.artist === t.artist))
+            );
             const rowClass = isPlayingThis ? 'track-row-playing' : '';
             const isSelected = selectedTrackIndices.has(idx);
 
@@ -697,6 +824,11 @@ window.RightPanel = (function () {
             const plData = {
                 id: currentPlaylistData.id,
                 type: currentPlaylistData.type || "playlist",
+                platform: currentPlaylistData.platform || "",
+                svType: currentPlaylistData.svType || "",
+                svId: currentPlaylistData.svId || "",
+                svKind: currentPlaylistData.svKind || "",
+                svCategory: currentPlaylistData.svCategory || "",
                 name: currentPlaylistData.name,
                 title: currentPlaylistData.name,
                 curator: currentPlaylistData.curator || "Apple Music",
@@ -922,6 +1054,8 @@ window.RightPanel = (function () {
         selectCuratedCollection,
         selectPlaylist,
         selectCustomPlaylist,
+        selectSvChart,
+        selectSvPlaylist,
         renderTracklist,
         playCurrentAll,
         playSong,
