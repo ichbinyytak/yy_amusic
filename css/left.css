@@ -9,6 +9,7 @@
     left: 0;
     width: 320px;
     max-width: 85vw;
+    height: auto;
     z-index: 850;
     background-color: var(--bg-main);
     border-right: 1px solid var(--border-color);
@@ -142,8 +143,11 @@
 /* 列表栏滚动容器 (单窗口无跳转滚动) */
 .list-panel-scroll {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
     scrollbar-width: thin;
     scrollbar-color: var(--border-color) transparent;
 }
