@@ -185,10 +185,19 @@ async function run() {
     console.log(`切回后 viewApple重新激活: ${appleRestored}`);
     if (!appleRestored) throw new Error("切回【Apple专区】全页失败！");
 
-    console.log("\n--- 开始验证 3: Apple专区与地区精简 ---");
+    console.log("\n--- 开始验证 3: 网站推荐双抽屉默认折叠与 Apple 地区精简 ---");
     const appleHdrText = await evaluate(`document.querySelector('#top_region .top-accordion-left')?.innerText || ''`);
-    console.log(`专区标题: "${appleHdrText}" (包含 "Apple专区")`);
-    if (!appleHdrText.includes("Apple专区")) throw new Error(`标题未改名为 Apple专区: ${appleHdrText}`);
+    console.log(`顶部 Tab 标题: "${appleHdrText}" (包含 "网站推荐")`);
+    if (!appleHdrText.includes("网站推荐")) throw new Error(`标题未改名为 网站推荐: ${appleHdrText}`);
+
+    // 验证初始默认折叠，点击后再展开加载 Apple 专区
+    const appleAccOpenInitially = await evaluate(`document.querySelector('#top_apple_zone .top-accordion-body')?.classList.contains('open') || false`);
+    const svAccOpenInitially = await evaluate(`document.querySelector('#top_streetvoice_zone .top-accordion-body')?.classList.contains('open') || false`);
+    if (appleAccOpenInitially || svAccOpenInitially) {
+        throw new Error(`网站推荐内 Apple 与街声默认均应折叠 (apple=${appleAccOpenInitially}, sv=${svAccOpenInitially})`);
+    }
+    await evaluate(`document.querySelector('#top_apple_zone .top-accordion-hdr')?.click()`);
+    await sleep(600);
 
     const selectOptions = await evaluate(`Array.from(document.querySelectorAll('#regionMicroSelect option')).map(o => o.value + ':' + o.text.trim())`);
     console.log(`地区下拉选项:`, selectOptions);

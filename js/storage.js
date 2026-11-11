@@ -124,10 +124,11 @@ window.StorageManager = (function () {
         if (!pl) return false;
 
         if (!Array.isArray(pl.tracks)) pl.tracks = [];
-        // 避免同一歌单内重复加入同名同歌手的曲目
+        // 避免同一歌单内重复加入同名同歌手或同平台同ID的曲目
+        const trackPlat = track.platform || "";
         const isDuplicate = pl.tracks.some(t =>
-            (t.name === track.name && t.artist === track.artist) ||
-            (track.id && t.id && t.id === track.id)
+            (t.name === track.name && t.artist === track.artist && (t.platform || "") === trackPlat) ||
+            (track.id && t.id && String(t.id) === String(track.id) && (t.platform || "") === trackPlat)
         );
         if (isDuplicate) {
             return { ok: false, duplicate: true };
@@ -137,9 +138,11 @@ window.StorageManager = (function () {
             index: pl.tracks.length + 1,
             name: track.name || track.title || "未知曲目",
             artist: track.artist || "未知歌手",
-            album: track.album || pl.title,
+            album: track.album || (trackPlat === "streetvoice" ? "" : pl.title),
             durationMillis: track.durationMillis || (track.duration ? track.duration * 1000 : 0),
             id: track.id || "",
+            platform: trackPlat,
+            cover: track.cover || track.artwork || "",
             url: track.url || ""
         });
 
@@ -362,12 +365,22 @@ window.StorageManager = (function () {
             if (playlistData.name) favs[idx].name = playlistData.name;
             if (playlistData.title) favs[idx].title = playlistData.title;
             if (playlistData.trackCount !== undefined) favs[idx].trackCount = playlistData.trackCount;
+            if (playlistData.platform) favs[idx].platform = playlistData.platform;
+            if (playlistData.svType) favs[idx].svType = playlistData.svType;
+            if (playlistData.svId) favs[idx].svId = playlistData.svId;
+            if (playlistData.svKind) favs[idx].svKind = playlistData.svKind;
+            if (playlistData.svCategory) favs[idx].svCategory = playlistData.svCategory;
             saveFavPlaylists(favs);
             return { action: 'updated', category: cat };
         } else {
             favs.unshift({
                 id: playlistData.id,
                 type: playlistData.type || 'playlist',
+                platform: playlistData.platform || '',
+                svType: playlistData.svType || '',
+                svId: playlistData.svId || '',
+                svKind: playlistData.svKind || '',
+                svCategory: playlistData.svCategory || '',
                 title: playlistData.name || playlistData.title || '精选歌单',
                 name: playlistData.name || playlistData.title || '精选歌单',
                 curator: playlistData.curator || 'Apple Music',

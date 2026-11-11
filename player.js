@@ -83,6 +83,8 @@
       this.preloadedKey = null;
       this._currentPreloadingKey = null;
       this._selfHealRetries = 0;
+      this.hlsInstance = null;
+      this._currentMediaSrc = "";
 
       // 回调钩子 (用于更新 UI)
       this.listeners = {
@@ -208,6 +210,150 @@
       } catch (e) {}
     }
 
+    _destroyHls() {
+      if (this.hlsInstance) {
+        try {
+          this.hlsInstance.destroy();
+        } catch (e) {}
+        this.hlsInstance = null;
+      }
+    }
+
+    _ensureHlsLoaded() {
+      if (typeof window === 'undefined') return Promise.resolve(false);
+      if (window.Hls) return Promise.resolve(true);
+      if (this._hlsLoadPromise) return this._hlsLoadPromise;
+      this._hlsLoadPromise = new Promise((resolve) => {
+        const existing = document.querySelector('script[src*="hls.min.js"]');
+        if (existing) {
+          existing.addEventListener('load', () => resolve(!!window.Hls), { once: true });
+          existing.addEventListener('error', () => resolve(false), { once: true });
+          setTimeout(() => resolve(!!window.Hls), 5000);
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';
+        s.async = true;
+        s.onload = () => resolve(!!window.Hls);
+        s.onerror = () => resolve(false);
+        document.head.appendChild(s);
+      });
+      return this._hlsLoadPromise;
+    }
+
+    _setAudioSource(url) {
+      this._destroyHls();
+      this._currentMediaSrc = url || "";
+      if (!url) {
+        try {
+          this.audio.removeAttribute('src');
+          this.audio.load();
+        } catch (e) {}
+        return;
+      }
+
+      const isHls = String(url).includes('.m3u8');
+      if (isHls) {
+        if (typeof window !== 'undefined' && window.Hls && window.Hls.isSupported()) {
+          const hls = new window.Hls({ enableWorker: true });
+          this.hlsInstance = hls;
+          hls.on(window.Hls.Events.ERROR, (event, data) => {
+            if (data && data.fatal) {
+              console.warn("[Player] HLS fatal error:", data.type, data.details);
+              this._destroyHls();
+              this._handleAudioError(new Error(data.details || "HLS fatal error"));
+            }
+          });
+          hls.loadSource(url);
+          hls.attachMedia(this.audio);
+          return;
+        }
+        if (this.audio.canPlayType && this.audio.canPlayType('application/vnd.apple.mpegurl')) {
+          this.audio.src = url;
+          return;
+        }
+        // 若 async hls.min.js 仍在下载中，异步就绪后挂载并续播
+        this._ensureHlsLoaded().then((ok) => {
+          if (ok && this._currentMediaSrc === url && window.Hls && window.Hls.isSupported()) {
+            this._setAudioSource(url);
+            this.audio.play().catch(() => {});
+          }
+        });
+        return;
+      }
+
+      this.audio.src = url;
+    }
+
+    _handleAudioError(e) {
+      const code = this.audio.error ? this.audio.error.code : 0;
+      if (code === 1) return; // MEDIA_ERR_ABORTED (正常切歌中断，忽略)
+
+      const song = this.playlist[this.currentIndex];
+      const songName = song ? (song.title || song.name || "当前曲目") : "当前曲目";
+      const songKey = song ? this._getSongKey(song) : null;
+      if (songKey) {
+        // 清除失效的直链缓存，避免后续切歌再次命中失效死链
+        this._removeCachedResolve(songKey);
+      }
+
+      // 借鉴洛雪音乐自愈机制：当音频流因 403 / 防盗链 Token 失效时，静默向后端发起带 force_refresh 的换链自愈
+      if (song && (this._selfHealRetries || 0) < 2) {
+        this._selfHealRetries = (this._selfHealRetries || 0) + 1;
+        console.warn(`[Player] 音频直链播放异常(code=${code})，尝试第 ${this._selfHealRetries} 次换链自愈: ${songName}`);
+        if (typeof window !== 'undefined' && window.Shell?.showToast) {
+          window.Shell.showToast(`《${songName}》音频流刷新中，正在自愈恢复...`);
+        }
+
+        const payload = {
+          title: song.title || song.name || "",
+          name: song.name || song.title || "",
+          artist: song.artist || "",
+          album: song.album || "",
+          id: song.id || "",
+          platform: song.platform || "",
+          isrc: song.isrc || "",
+          url: song.url || "",
+          durationMillis: song.durationMillis,
+          duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined),
+          force_refresh: true
+        };
+
+        fetch('/api/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(r => r.json()).then(data => {
+          if (data && data.success && data.url) {
+            this._setAudioSource(data.url);
+            const retryPlay = this.audio.play();
+            if (retryPlay !== undefined) {
+              retryPlay.catch(err => {
+                console.warn("[Player] 自愈换链起播受限:", err);
+              });
+            }
+            if (songKey) {
+              this._setCachedResolve(songKey, {
+                url: data.url,
+                bytes: data.bytes,
+                sourceName: data.source_name,
+                costMs: 0,
+                ts: Date.now(),
+                lyrics: data.lyrics || this.lyrics || []
+              });
+            }
+          } else {
+            this._handleStreamFallback(song, songName, code, e);
+          }
+        }).catch(() => {
+          this._handleStreamFallback(song, songName, code, e);
+        });
+        return;
+      }
+
+      this._handleStreamFallback(song, songName, code, e);
+    }
+
     // 绑定底层音频事件
     _bindAudioEvents() {
       this.audio.addEventListener('play', () => {
@@ -259,83 +405,19 @@
 
       this.audio.addEventListener('error', (e) => {
         if (!this.audio.src || this.audio.src.startsWith('data:') || this.audio.src === (typeof window !== 'undefined' ? window.location.href : '')) return;
-        const code = this.audio.error ? this.audio.error.code : 0;
-        if (code === 1) return; // MEDIA_ERR_ABORTED (正常切歌中断，忽略)
-
-        const song = this.playlist[this.currentIndex];
-        const songName = song ? (song.title || song.name || "当前曲目") : "当前曲目";
-        const songKey = song ? this._getSongKey(song) : null;
-        if (songKey) {
-          // 清除失效的直链缓存，避免后续切歌再次命中失效死链
-          this._removeCachedResolve(songKey);
-        }
-
-        // 借鉴洛雪音乐自愈机制：当音频流因 403 / 防盗链 Token 失效时，静默向后端发起带 force_refresh 的换链自愈
-        if (song && (this._selfHealRetries || 0) < 2) {
-          this._selfHealRetries = (this._selfHealRetries || 0) + 1;
-          console.warn(`[Player] 音频直链播放异常(code=${code})，尝试第 ${this._selfHealRetries} 次换链自愈: ${songName}`);
-          if (typeof window !== 'undefined' && window.Shell?.showToast) {
-            window.Shell.showToast(`《${songName}》音频流刷新中，正在自愈恢复...`);
-          }
-
-          const payload = {
-            title: song.title || song.name || "",
-            name: song.name || song.title || "",
-            artist: song.artist || "",
-            album: song.album || "",
-            id: song.id || "",
-            platform: song.platform || "",
-            isrc: song.isrc || "",
-            url: song.url || "",
-            durationMillis: song.durationMillis,
-            duration: song.duration || (song.durationMillis ? Math.round(song.durationMillis / 1000) : undefined),
-            force_refresh: true
-          };
-
-          fetch('/api/resolve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).then(r => r.json()).then(data => {
-            if (data && data.success && data.url) {
-              this.audio.src = data.url;
-              const retryPlay = this.audio.play();
-              if (retryPlay !== undefined) {
-                retryPlay.catch(err => {
-                  console.warn("[Player] 自愈换链起播受限:", err);
-                });
-              }
-              if (songKey) {
-                this._setCachedResolve(songKey, {
-                  url: data.url,
-                  bytes: data.bytes,
-                  sourceName: data.source_name,
-                  costMs: 0,
-                  ts: Date.now(),
-                  lyrics: data.lyrics || this.lyrics || []
-                });
-              }
-            } else {
-              this._handleStreamFallback(song, songName, code, e);
-            }
-          }).catch(() => {
-            this._handleStreamFallback(song, songName, code, e);
-          });
-          return;
-        }
-
-        this._handleStreamFallback(song, songName, code, e);
+        this._handleAudioError(e);
       });
     }
 
     // 音频流降级代理与多曲目顺延兜底
     _handleStreamFallback(song, songName, code, e) {
-      const currentSrc = this.audio.src;
-      // 1. 若当前是直链且尚未走过中继代理，尝试自动走 stream_proxy 中继流 (绕过 403 防盗链 / CORS 限制)
-      if (currentSrc && !currentSrc.includes('/api/stream_proxy') && !this._retriedProxy) {
+      const currentSrc = this._currentMediaSrc || this.audio.src;
+      const isHls = (currentSrc && currentSrc.includes('.m3u8')) || (song && song.platform === 'streetvoice');
+      // 1. 若当前是普通直链且尚未走过中继代理，尝试自动走 stream_proxy 中继流 (禁止对 .m3u8 走清单代理)
+      if (!isHls && currentSrc && !currentSrc.includes('/api/stream_proxy') && !this._retriedProxy) {
         this._retriedProxy = true;
         console.warn(`[Player] 音频直链播放异常(code=${code})，尝试走安全中继流代理:`, currentSrc);
-        this.audio.src = `/api/stream_proxy?url=${encodeURIComponent(currentSrc)}`;
+        this._setAudioSource(`/api/stream_proxy?url=${encodeURIComponent(currentSrc)}`);
         const retryPlay = this.audio.play();
         if (retryPlay !== undefined) {
           retryPlay.catch(err => {
@@ -398,7 +480,7 @@
     }
 
     _preloadAudioBuffer(key, url) {
-      if (!url || url.startsWith('data:') || this.preloadedKey === key) return;
+      if (!url || url.startsWith('data:') || String(url).includes('.m3u8') || this.preloadedKey === key) return;
       this._initPreloadAudio();
       this._currentPreloadingKey = key;
       try {
@@ -430,19 +512,26 @@
       }
     }
 
-    // 毫秒级歌词同步 (带 150ms 听觉-视觉感知前置补偿)
+    // 毫秒级歌词同步 (带 150ms 听觉-视觉感知前置补偿；纯文本无时间戳歌词保持首行)
     _syncLyrics(currentTime) {
       if (!this.lyrics || this.lyrics.length === 0) return;
 
-      // 引入 150ms 听觉感知前置补偿，抵消 HTML5 audio timeupdate 事件 250ms 采样周期滞后感
-      const syncTime = (currentTime || 0) + 0.15;
+      const isUntimed = this.lyrics.some(l => l && l.untimed) ||
+        (this.lyrics.length > 1 && this.lyrics.every(l => !l || !l.time));
 
       let idx = -1;
-      for (let i = 0; i < this.lyrics.length; i++) {
-        if (syncTime >= this.lyrics[i].time) {
-          idx = i;
-        } else {
-          break;
+      if (isUntimed) {
+        idx = 0;
+      } else {
+        // 引入 150ms 听觉感知前置补偿，抵消 HTML5 audio timeupdate 事件 250ms 采样周期滞后感
+        const syncTime = (currentTime || 0) + 0.15;
+
+        for (let i = 0; i < this.lyrics.length; i++) {
+          if (syncTime >= this.lyrics[i].time) {
+            idx = i;
+          } else {
+            break;
+          }
         }
       }
 
@@ -562,7 +651,7 @@
       if (!song) return "";
       const title = (song.title || song.name || "").trim().toLowerCase();
       const artist = (song.artist || "").trim().toLowerCase();
-      if (song.platform && ["kw", "wy", "tx", "kg", "mg"].includes(song.platform) && (song.id || song.songmid)) {
+      if (song.platform && ["kw", "wy", "tx", "kg", "mg", "streetvoice"].includes(song.platform) && (song.id || song.songmid)) {
         return `${song.platform}_${song.id || song.songmid}_${title}_${artist}`;
       }
       return `${title}_${artist}`;
@@ -666,7 +755,9 @@
       this.shuffledNextIndex = null;
       const song = this.playlist[idx];
 
-      // 立即停止正在播放的上一首音频，彻底切断前一首歌的声音与 ended 事件
+      // 立即停止正在播放的上一首音频，彻底切断前一首歌的声音、HLS 拉流与 ended 事件
+      this._destroyHls();
+      this._currentMediaSrc = "";
       try {
         this.audio.pause();
         this.audio.currentTime = 0;
@@ -686,7 +777,7 @@
         const isPreloadHit = (this.preloadedKey === songKey);
         this._resetPreloadAudio();
         this.preloadedKey = null;
-        this.audio.src = cached.url;
+        this._setAudioSource(cached.url);
 
         // 若缓存已有解析好的歌词，直接装配，彻底免除 /api/lyric 请求
         if (cached.lyrics && cached.lyrics.length > 0) {
@@ -699,6 +790,10 @@
             nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
             allLines: this.lyrics
           });
+        } else if (cached.lyricsResolved || song.platform === 'streetvoice') {
+          this.lyrics = [];
+          this.currentLyricIdx = -1;
+          this._emit('lyricUpdate', { index: -1, currentLine: "纯音乐 / 暂无歌词", nextLine: "", allLines: [] });
         } else {
           this.fetchLyrics(song);
         }
@@ -804,22 +899,27 @@
               nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
               allLines: this.lyrics
             });
+          } else if (song.platform === 'streetvoice') {
+            this.lyrics = [];
+            this.currentLyricIdx = -1;
+            this._emit('lyricUpdate', { index: -1, currentLine: "纯音乐 / 暂无歌词", nextLine: "", allLines: [] });
           } else {
             // 后端未能提取到同源歌词时，异步兜底独立抓取
             this.fetchLyrics(song);
           }
 
-          // 写入前端短效缓存供回切与复听使用 (45分钟TTL)
+          // 写入前端短效缓存供回切与复听使用 (15分钟TTL)
           this._setCachedResolve(songKey, {
             url: data.url,
             bytes: data.bytes,
             sourceName: data.source_name,
             costMs: cost,
             ts: Date.now(),
-            lyrics: this.lyrics || []
+            lyrics: this.lyrics || [],
+            lyricsResolved: song.platform === 'streetvoice'
           });
 
-          this.audio.src = data.url;
+          this._setAudioSource(data.url);
           const playPromise = this.audio.play();
           if (playPromise !== undefined) {
             playPromise.then(() => {
@@ -1000,7 +1100,10 @@
         durationMillis: t.durationMillis,
         duration: t.duration || (t.durationMillis ? Math.round(t.durationMillis / 1000) : undefined),
         id: t.id || "",
-        platform: t.platform || ""
+        platform: t.platform || "",
+        cover: t.cover || t.artwork || "",
+        artwork: t.artwork || t.cover || "",
+        url: t.url || ""
       }));
       this.isDefaultList = false;
       this._emit('playlistChange', { playlist: this.playlist, isDefault: false });
@@ -1059,7 +1162,10 @@
         durationMillis: t.durationMillis,
         duration: t.duration || (t.durationMillis ? Math.round(t.durationMillis / 1000) : undefined),
         id: t.id || "",
-        platform: t.platform || ""
+        platform: t.platform || "",
+        cover: t.cover || t.artwork || "",
+        artwork: t.artwork || t.cover || "",
+        url: t.url || ""
       }));
       this.isDefaultList = false;
       this._emit('playlistChange', { playlist: this.playlist, isDefault: false });

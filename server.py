@@ -72,6 +72,15 @@ from apple_catalog import (
     fetch_apple_curator_page,
     fetch_apple_room
 )
+from streetvoice_catalog import (
+    get_sv_chart_catalog,
+    fetch_sv_chart,
+    fetch_sv_playlists,
+    fetch_sv_playlist_songs,
+    fetch_sv_song_lyrics,
+    resolve_streetvoice_track,
+    probe_sv_health,
+)
 
 # ========================================================
 # 区块 1: 网络安全校验与 SSRF / 私网穿透探测防护
@@ -189,7 +198,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, directory=DIRECTORY, **kwargs):
         super().__init__(*args, directory=directory, **kwargs)
 
-    def send_json(self, data, status=200):
+    def send_json(self, data, status=200, cache_control=None):
         """统一 JSON 响应辅助函数，支持 ETag 与 HTTP 304 快速协商（客户端主导缓存）"""
         res_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
         etag = f'"{hashlib.md5(res_bytes).hexdigest()}"'
@@ -199,6 +208,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(304)
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("ETag", etag)
+            if cache_control:
+                self.send_header("Cache-Control", cache_control)
             self.end_headers()
             return
 
@@ -206,7 +217,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("ETag", etag)
-        self.send_header("Cache-Control", "private, no-cache")
+        self.send_header("Cache-Control", cache_control or "private, no-cache")
         self.send_header("Content-Length", str(len(res_bytes)))
         self.end_headers()
         self.wfile.write(res_bytes)
@@ -216,9 +227,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_json({"error": str(message)}, status=status)
 
     @staticmethod
-    def _format_sources_data(ordered):
-        """真实透传音源健康度与实测延迟，杜绝虚假全绿"""
+    def _format_sources_data(ordered, force_sv=False):
+        """真实透传音源健康度与实测延迟，杜绝虚假全绿（街声官方通道置顶第 1 行）"""
         data = []
+        try:
+            data.append(probe_sv_health(force=force_sv))
+        except Exception:
+            pass
         for s in ordered:
             lat = 9999.0 if (s.latency_ms == float('inf') or s.latency_ms is None) else round(s.latency_ms, 1)
             data.append({
@@ -373,10 +388,50 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e)
             return
 
+        # 5.5 街声专区目录与曲目接口 (SWR + Edge CDN 缓存)
+        sv_cache_ctl = "public, s-maxage=1800, stale-while-revalidate=3600"
+        if self.path.startswith("/api/sv_charts"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            kind = qs.get("kind", [""])[0]
+            category = qs.get("category", [""])[0]
+            try:
+                if kind and category:
+                    self.send_json(fetch_sv_chart(kind, category), cache_control=sv_cache_ctl)
+                else:
+                    self.send_json(get_sv_chart_catalog(), cache_control=sv_cache_ctl)
+            except Exception as e:
+                self.send_error_json(e, status=400 if isinstance(e, ValueError) else 500)
+            return
+
+        if self.path.startswith("/api/sv_playlists"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            section = qs.get("section", ["all"])[0]
+            try:
+                page = int(qs.get("page", ["1"])[0])
+            except Exception:
+                page = 1
+            try:
+                self.send_json(fetch_sv_playlists(section=section, page=page), cache_control=sv_cache_ctl)
+            except Exception as e:
+                self.send_error_json(e)
+            return
+
+        if self.path.startswith("/api/sv_playlist_songs"):
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            pid = qs.get("id", [""])[0]
+            try:
+                self.send_json(fetch_sv_playlist_songs(pid), cache_control=sv_cache_ctl)
+            except Exception as e:
+                self.send_error_json(e, status=400 if isinstance(e, ValueError) else 500)
+            return
+
         # 6. 音频底层：音源健康度队列 (真实透传各音源健康度与延迟)
         if self.path == "/api/sources":
             ordered = source_hub.get_ordered_sources()
-            data = self._format_sources_data(ordered)
+            data = self._format_sources_data(ordered, force_sv=False)
             self.send_json({
                 "tested_at": source_hub.tested_at,
                 "sources": data
@@ -410,6 +465,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             sid = qs.get("id", [""])[0]
             title = qs.get("title", [""])[0]
             artist = qs.get("artist", [""])[0]
+            if (plat or "").strip().lower() == "streetvoice":
+                self.send_json(fetch_sv_song_lyrics(sid))
+                return
             lines = get_song_lyric(plat, sid, title, artist)
             self.send_json(lines)
             return
@@ -459,7 +517,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path in ("/api/sources/test", "/api/sources_test"):
             source_hub.test_all()
             ordered = source_hub.get_ordered_sources()
-            data = self._format_sources_data(ordered)
+            data = self._format_sources_data(ordered, force_sv=True)
             self.send_json({
                 "tested_at": source_hub.tested_at,
                 "sources": data
@@ -470,7 +528,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path in ("/api/sources/sync", "/api/sources_sync"):
             source_hub.test_all()
             ordered = source_hub.get_ordered_sources()
-            data = self._format_sources_data(ordered)
+            data = self._format_sources_data(ordered, force_sv=True)
             self.send_json({
                 "tested_at": source_hub.tested_at,
                 "sources": data
@@ -507,6 +565,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
                             self.send_json(cached_res)
                             return
+
+            # 0.5 街声官方直通分支：严禁走策略 A 跨源寻链，直连街声 HLS 与原生歌词
+            if (cand.get("platform") or "").strip().lower() == "streetvoice":
+                sv_id = str(cand.get("id") or "").strip()
+                sv_cache_key = f"sv_{sv_id}" if sv_id else ""
+                if sv_cache_key:
+                    if force_refresh:
+                        with _RESOLVE_CACHE_LOCK:
+                            _RESOLVE_CACHE.pop(sv_cache_key, None)
+                    else:
+                        with _RESOLVE_CACHE_LOCK:
+                            entry = _RESOLVE_CACHE.get(sv_cache_key)
+                            if entry and (time.time() - entry["ts"]) < _CACHE_TTL_SEC:
+                                cached_res = dict(entry["res"])
+                                cached_res["source_name"] = str(cached_res.get("source_name", "")) + " ⚡快取"
+                                self.send_json(cached_res)
+                                return
+
+                sv_res = resolve_streetvoice_track(sv_id)
+                if sv_res and sv_res.get("success") and sv_cache_key:
+                    with _RESOLVE_CACHE_LOCK:
+                        if len(_RESOLVE_CACHE) >= _CACHE_MAX_ENTRIES:
+                            _RESOLVE_CACHE.pop(next(iter(_RESOLVE_CACHE)))
+                        _RESOLVE_CACHE[sv_cache_key] = {"res": sv_res, "ts": time.time()}
+                self.send_json(sv_res)
+                return
 
             # 1. 如果已有确切的平台与歌曲 ID，优先直接调度 (歌词与音频并行流水线)
             if cand.get("platform") and cand.get("id"):
