@@ -4,3 +4,4 @@ __pycache__/
 interaction/
 extracted_apis.json
 extracted_apis.enc.tmp
+.local_auth.json

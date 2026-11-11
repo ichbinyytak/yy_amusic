@@ -413,7 +413,7 @@ window.LeftPanel = (function () {
         const isAlbum = !isStreetVoice && (kind === "album" || kind === "albums");
         const typeLabel = isCustom ? "[自建]" : (isSvChart ? "[榜单]" : (isCurated ? "[精选]" : (isAlbum ? "[专辑]" : "[歌单]")));
         // 遵循色彩规范：仅大标题红，卡片内标签采用标准中性/副色，杜绝红字
-        const tagColor = isCustom ? "var(--accent)" : (isAlbum ? "#e3b341" : "var(--text-secondary)");
+        const tagColor = isCustom ? "var(--accent)" : (isAlbum ? "var(--tag-album-color)" : "var(--text-secondary)");
 
         const name = item.title || item.name || item.attributes?.name || "未知标题";
         const rawCurator = item.curator || item.subtitle || item.attributes?.curatorName || item.attributes?.artistName || "";

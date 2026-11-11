@@ -423,9 +423,7 @@ window.RegionPanel = (function () {
             subBlock.className = "sub-accordion-block";
 
             const subHdr = document.createElement("div");
-            subHdr.className = `sub-accordion-hdr ${isSubOpen ? 'open' : ''}`;
-            subHdr.style.paddingLeft = "24px";
-            subHdr.style.backgroundColor = "#0e1117";
+            subHdr.className = `sub-accordion-hdr level-4 ${isSubOpen ? 'open' : ''}`;
             subHdr.innerHTML = `
                 <div class="sub-accordion-left">
                     <span class="sub-accordion-arrow ${isSubOpen ? 'open' : ''}">${isSubOpen ? iconArrowExpanded : iconArrowCollapsed}</span>

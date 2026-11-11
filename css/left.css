@@ -13,7 +13,7 @@
     z-index: 850;
     background-color: var(--bg-main);
     border-right: 1px solid var(--border-color);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.65);
+    box-shadow: var(--shadow-drawer);
     transform: translateX(-100%);
     transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
     display: flex;
@@ -32,7 +32,7 @@
     display: flex;
     align-items: center;
     height: 42px;
-    background-color: #161b22;
+    background-color: var(--bg-elevated);
     border-bottom: 1px solid var(--border-color);
     position: sticky;
     top: 0;
@@ -67,7 +67,7 @@
 
 .left-tab-col:hover {
     color: var(--text-primary);
-    background-color: rgba(255, 255, 255, 0.03);
+    background-color: var(--bg-overlay-soft);
 }
 
 .left-tab-col.active {
@@ -101,7 +101,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 7px 12px;
-    background-color: #141820;
+    background-color: var(--bg-sub);
     border-bottom: 1px solid var(--border-subtle);
     gap: 8px;
     box-sizing: border-box;
@@ -128,7 +128,7 @@
 .btn-lib-text-action:hover {
     background-color: var(--bg-surface-hover);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--text-strong);
 }
 
 /* 左右全页视图切换面板 (独占全页) */
@@ -162,7 +162,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 8px 10px;
-    background-color: #161b22;
+    background-color: var(--bg-elevated);
     border-bottom: 1px solid var(--border-subtle);
     cursor: pointer;
     user-select: none;
@@ -173,7 +173,7 @@
 }
 
 .top-accordion-hdr:hover {
-    background-color: #1c222b;
+    background-color: var(--bg-surface-hover);
 }
 
 .top-accordion-left {
@@ -222,8 +222,8 @@
 }
 
 .lib-tool-btn:hover {
-    color: #fff;
-    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-strong);
+    background-color: var(--bg-overlay-hover);
 }
 
 .top-accordion-body {
@@ -240,7 +240,7 @@
     font-size: 10px;
     font-family: var(--font-mono, monospace);
     color: var(--text-muted);
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--bg-overlay-soft);
     border: 1px solid var(--border-subtle);
     border-radius: 3px;
     padding: 1px 5px;
@@ -317,10 +317,10 @@
     top: calc(100% + 4px);
     left: 0;
     min-width: 82px;
-    background-color: #1c2128;
+    background-color: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: 5px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+    box-shadow: var(--shadow-popup);
     z-index: 1000;
     padding: 4px 0;
     overflow: hidden;
@@ -341,14 +341,14 @@
 }
 
 .region-dropdown-item:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--bg-overlay-hover);
     color: var(--text-primary);
 }
 
 .region-dropdown-item.active {
     color: var(--accent-apple);
     font-weight: 700;
-    background-color: rgba(250, 45, 72, 0.1);
+    background-color: var(--accent-apple-soft-bg);
 }
 
 /* 紧凑微型地区下拉选择器 (极简无边框，释放最大纵向空间) */
@@ -378,8 +378,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    background-color: #13171e;
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    background-color: var(--bg-sub);
+    border-top: 1px solid var(--border-subtle);
     border-bottom: 1px solid var(--border-subtle);
     cursor: pointer;
     user-select: none;
@@ -390,13 +390,20 @@
 }
 
 .sub-accordion-hdr:hover {
-    background-color: #1a202a;
+    background-color: var(--bg-surface-hover);
     color: var(--text-primary);
 }
 
 .sub-accordion-hdr.level-3 {
     padding-left: 18px;
-    background-color: #11141a;
+    background-color: var(--bg-sub-deep);
+    font-size: var(--fs-t3);
+    font-weight: 500;
+}
+
+.sub-accordion-hdr.level-4 {
+    padding-left: 24px;
+    background-color: var(--bg-sub-deep);
     font-size: var(--fs-t3);
     font-weight: 500;
 }
@@ -434,7 +441,7 @@
 }
 
 .count-badge {
-    background-color: rgba(255, 255, 255, 0.06);
+    background-color: var(--bg-overlay-soft);
     color: var(--text-muted);
     border-radius: 10px;
     padding: 1px 6px;
@@ -461,7 +468,7 @@
 }
 
 .playlist-card.active {
-    background-color: rgba(88, 166, 255, 0.1);
+    background-color: var(--accent-soft-bg);
     border-left: 2px solid var(--accent);
 }
 
@@ -520,7 +527,7 @@
 }
 
 .btn-card-action:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--bg-overlay-hover);
     color: var(--text-primary);
 }
 
@@ -529,7 +536,7 @@
 }
 
 .btn-card-action.btn-del:hover {
-    color: #ff7588;
+    color: var(--danger-text);
 }
 
 /* 第二行：清洗后的歌手/策划人 + 真实曲目数 */
@@ -593,7 +600,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px 6px 14px;
-    background-color: #141820;
+    background-color: var(--bg-sub);
     border-bottom: 1px solid var(--border-subtle);
     font-size: var(--fs-t3);
     color: var(--text-secondary);
@@ -648,12 +655,12 @@
 }
 
 .btn-group-action:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--bg-overlay-hover);
     color: var(--text-primary);
 }
 
 .btn-group-action.btn-del:hover {
-    color: #ff7588;
+    color: var(--danger-text);
 }
 
 .library-group-body {
@@ -673,7 +680,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 8px 12px;
-    background-color: #161b22;
+    background-color: var(--bg-elevated);
     border-bottom: 1px solid var(--border-color);
     gap: 8px;
     position: sticky;
@@ -684,7 +691,7 @@
 
 .btn-search-return {
     color: var(--accent) !important;
-    border: 1px solid rgba(88, 166, 255, 0.4) !important;
+    border: 1px solid var(--accent-border-soft) !important;
     background: transparent;
     cursor: pointer;
     border-radius: 4px;
@@ -695,6 +702,6 @@
 }
 
 .btn-search-return:hover {
-    background: rgba(88, 166, 255, 0.15) !important;
+    background: var(--accent-soft-bg) !important;
     border-color: var(--accent) !important;
 }

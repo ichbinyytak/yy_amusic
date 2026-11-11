@@ -696,7 +696,7 @@ window.Shell = (function () {
                 }
             }
             if (timeStr) {
-                subtitleEl.innerHTML = `云端每日自动测速 · 最近更新: <span style="color:var(--text-main); font-weight:600;">${escapeHtml(timeStr)}</span> · 双核冲刺毫秒出声`;
+                subtitleEl.innerHTML = `云端每日自动测速 · 最近更新: <span style="color:var(--text-primary); font-weight:600;">${escapeHtml(timeStr)}</span> · 双核冲刺毫秒出声`;
             } else {
                 subtitleEl.innerText = "云端每日自动测速与同步，双核并发冲刺，毫秒出声";
             }
@@ -749,7 +749,8 @@ window.Shell = (function () {
             const res = await fetch("/api/sources/sync", { method: "POST" });
             const data = await res.json();
             renderSourceList(data);
-            showToast(`音源同步成功！当前生效: ${data.length || 0} 个`);
+            const count = Array.isArray(data) ? data.length : (Array.isArray(data?.sources) ? data.sources.length : 0);
+            showToast(`音源同步成功！当前生效: ${count} 个`);
         } catch (err) {
             showToast(`同步失败: ${err.message}`);
         } finally {

@@ -14,38 +14,38 @@
  * ========================================================
  */
 
-window.addEventListener("DOMContentLoaded", () => {
-    /* ========================================================
-     * 区块 1: 初始化左侧大一统手风琴与外壳播控
-     * ======================================================== */
-    window.LeftPanel?.init?.();
-    window.Shell?.init?.();
-
-    /* ========================================================
-     * 区块 2: 恢复上一次记忆的歌单或加载默认推荐歌单
-     * ======================================================== */
+function loadInitialWorkspacePlaylist() {
     const lastPl = window.StorageManager?.getLastPlaylist?.();
+    let loaded = false;
+
     if (lastPl) {
         try {
             if (lastPl.kind === 'curated' && lastPl.name) {
                 window.RightPanel?.selectCuratedCollection?.(lastPl.name, lastPl.curator, lastPl.url, lastPl.roomUrl, lastPl.tracks);
+                loaded = true;
             } else if (lastPl.kind === 'custom' && lastPl.id) {
                 const customs = window.StorageManager?.getCustomPlaylists?.() || [];
                 if (customs.some(c => c.id === lastPl.id)) {
                     window.RightPanel?.selectCustomPlaylist?.(lastPl.id);
+                    loaded = true;
                 }
             } else if (lastPl.kind === 'sv_chart' && lastPl.svKind && lastPl.svCategory) {
                 window.RightPanel?.selectSvChart?.(lastPl.svKind, lastPl.svCategory, lastPl.name, lastPl.curator, lastPl.id, lastPl.url);
+                loaded = true;
             } else if (lastPl.kind === 'sv_playlist' && lastPl.svId) {
                 window.RightPanel?.selectSvPlaylist?.(lastPl.svId, lastPl.name, lastPl.curator, lastPl.url, lastPl.id);
+                loaded = true;
             } else if (lastPl.id && lastPl.type) {
                 window.RightPanel?.selectPlaylist?.(lastPl.id, lastPl.type, lastPl.name, lastPl.curator, lastPl.url);
+                loaded = true;
             }
         } catch (e) {
             console.warn("[Main] 恢复上一次歌单失败:", e);
         }
-    } else {
-        // 首次打开：默认加载【潜力新歌：国语流行】
+    }
+
+    if (!loaded) {
+        // 首次打开或新账号：默认加载【潜力新歌：国语流行】
         window.RightPanel?.selectPlaylist?.(
             'pl.80e13199d5db46c7b519b25cf6e5816a',
             'playlist',
@@ -53,5 +53,28 @@ window.addEventListener("DOMContentLoaded", () => {
             '国语流行',
             'https://music.apple.com/cn/playlist/%E6%BD%9C%E5%8A%9B%E6%96%B0%E6%AD%8C-%E5%9B%BD%E8%AF%AD%E6%B5%81%E8%A1%8C/pl.80e13199d5db46c7b519b25cf6e5816a'
         );
+    }
+}
+
+let hasInitializedAppShell = false;
+
+window.addEventListener("DOMContentLoaded", () => {
+    window.ThemeManager?.init?.();
+
+    const startOrRefreshApp = () => {
+        if (!hasInitializedAppShell) {
+            hasInitializedAppShell = true;
+            window.LeftPanel?.init?.();
+            window.Shell?.init?.();
+        } else {
+            window.LibraryPanel?.renderLibrary?.();
+        }
+        loadInitialWorkspacePlaylist();
+    };
+
+    if (window.AuthManager?.boot) {
+        window.AuthManager.boot(startOrRefreshApp);
+    } else {
+        startOrRefreshApp();
     }
 });

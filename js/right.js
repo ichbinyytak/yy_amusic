@@ -31,9 +31,6 @@ window.RightPanel = (function () {
     const detailActions = document.getElementById("detailActions");
     const detailBody = document.getElementById("detailBody");
     const detailPanel = document.getElementById("detailPanel");
-    const btnFavCurrent = document.getElementById("btnFavCurrent");
-    const floatingBatchBar = document.getElementById("floatingBatchBar");
-    const batchCountText = document.getElementById("batchCountText");
 
     // 点击右侧区域时，若左侧抽屉正展开则自动缩回
     if (detailPanel) {
@@ -1086,6 +1083,19 @@ window.RightPanel = (function () {
         updateCurrentCustomTitle: (newTitle) => {
             if (isViewingCustomPlaylist && detailTitle) {
                 detailTitle.innerText = newTitle;
+            }
+        },
+        resetView: () => {
+            clearSelection();
+            currentTracks = [];
+            currentPlaylistData = null;
+            isViewingCustomPlaylist = false;
+            currentCustomPlaylistId = null;
+            if (detailTitle) detailTitle.innerText = "YY-Amusic";
+            if (detailSubtitle) detailSubtitle.innerText = "点击左上角 ☰ 展开歌单，即可点播任意歌曲";
+            if (detailActions) detailActions.style.display = "none";
+            if (detailBody) {
+                detailBody.innerHTML = '<div class="placeholder-box"><p>👈 点击左上角 ☰ 展开歌单导航，选择任意歌单展开曲目。</p><p class="muted">纯文字极速加载，秒级出声，双核音源冲刺。</p></div>';
             }
         }
     };

@@ -23,7 +23,17 @@ window.Modals = (function () {
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function normalizeCategory(cat) {
+        if (!cat || typeof cat !== 'string') return "未分组";
+        const trimmed = cat.trim();
+        if (!trimmed || trimmed === "默认" || trimmed === "未分类" || trimmed === "未分组") {
+            return "未分组";
+        }
+        return trimmed;
     }
 
     function showToast(msg) {
@@ -53,7 +63,7 @@ window.Modals = (function () {
         if (isFaved) {
             const favs = window.StorageManager.getFavPlaylists();
             const curItem = favs.find(f => f.id === playlistData.id);
-            curCat = curItem ? (curItem.category || "未分类") : "未分类";
+            curCat = normalizeCategory(curItem ? curItem.category : "");
         }
 
         if (infoEl) {
@@ -61,7 +71,7 @@ window.Modals = (function () {
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span>${escapeHtml(name)} <span style="opacity:0.7; font-size:var(--fs-t4);">• ${escapeHtml(curator)}</span></span>
                     ${isFaved ? `
-                        <button class="btn btn-sm btn-ghost" style="color:#ff7588; font-size:var(--fs-t4); padding:1px 5px; cursor:pointer;" onclick="window.Modals.unfavCurrentFromModal()" title="取消收藏">✕ 取消收藏</button>
+                        <button class="btn btn-sm btn-ghost" style="color:var(--danger-text); font-size:var(--fs-t4); padding:1px 5px; cursor:pointer;" onclick="window.Modals.unfavCurrentFromModal()" title="取消收藏">✕ 取消收藏</button>
                     ` : ''}
                 </div>
             `;
@@ -72,10 +82,10 @@ window.Modals = (function () {
             const favs = window.StorageManager.getFavPlaylists();
             let html = '';
             cats.forEach(c => {
-                const count = favs.filter(f => (f.category || '未分类') === c).length;
+                const count = favs.filter(f => normalizeCategory(f.category) === c).length;
                 const isCurrent = isFaved && curCat === c;
                 html += `
-                    <div class="playlist-choice-item" onclick="window.Modals.selectFavCategory('${escapeHtml(c)}')" style="${isCurrent ? 'background:rgba(88,166,255,0.15); border-left:2px solid var(--accent);' : ''}">
+                    <div class="playlist-choice-item" data-category="${escapeHtml(c)}" onclick="window.Modals.selectFavCategory(this.dataset.category)" style="${isCurrent ? 'background:var(--accent-soft-bg); border-left:2px solid var(--accent);' : ''}">
                         <div>
                             <strong>${escapeHtml(c)}</strong>
                             ${isCurrent ? '<span style="color:var(--accent); font-size:var(--fs-t4); margin-left:6px;">(当前分类)</span>' : ''}
@@ -132,7 +142,8 @@ window.Modals = (function () {
 
     function openMoveCategoryModal(kind, playlistId, curCat) {
         if (!playlistId) return;
-        pendingMoveData = { kind, id: playlistId, curCat: curCat || "未分组" };
+        const normCurCat = normalizeCategory(curCat);
+        pendingMoveData = { kind, id: playlistId, curCat: normCurCat };
 
         const modal = document.getElementById("moveCategoryModal");
         const infoEl = document.getElementById("moveModalPlaylistInfo");
@@ -151,16 +162,16 @@ window.Modals = (function () {
         }
 
         if (infoEl) {
-            infoEl.innerHTML = `<span>移动歌单：<strong>${escapeHtml(plName)}</strong> <span style="opacity:0.7; font-size:var(--fs-t4);">(当前: ${escapeHtml(curCat || '未分组')})</span></span>`;
+            infoEl.innerHTML = `<span>移动歌单：<strong>${escapeHtml(plName)}</strong> <span style="opacity:0.7; font-size:var(--fs-t4);">(当前: ${escapeHtml(normCurCat)})</span></span>`;
         }
 
         if (choiceList) {
             const cats = window.StorageManager.getAllCategories ? window.StorageManager.getAllCategories() : window.StorageManager.getRegisteredCategories(kind);
             let html = '';
             cats.forEach(c => {
-                const isCurrent = (curCat || '未分组') === c;
+                const isCurrent = normCurCat === c;
                 html += `
-                    <div class="playlist-choice-item" onclick="window.Modals.selectMoveCategory('${escapeHtml(c)}')" style="${isCurrent ? 'background:rgba(88,166,255,0.15); border-left:2px solid var(--accent);' : ''}">
+                    <div class="playlist-choice-item" data-category="${escapeHtml(c)}" onclick="window.Modals.selectMoveCategory(this.dataset.category)" style="${isCurrent ? 'background:var(--accent-soft-bg); border-left:2px solid var(--accent);' : ''}">
                         <div>
                             <strong>${escapeHtml(c)}</strong>
                             ${isCurrent ? '<span style="color:var(--accent); font-size:var(--fs-t4); margin-left:6px;">(当前分组)</span>' : ''}
@@ -223,7 +234,7 @@ window.Modals = (function () {
                 customs.forEach(pl => {
                     const count = pl.tracks ? pl.tracks.length : 0;
                     html += `
-                        <div class="playlist-choice-item" onclick="window.RightPanel.confirmAddPendingToPlaylist('${escapeHtml(pl.id)}')">
+                        <div class="playlist-choice-item" data-playlist-id="${escapeHtml(pl.id)}" onclick="window.RightPanel.confirmAddPendingToPlaylist(this.dataset.playlistId)">
                             <strong>${escapeHtml(pl.title)}</strong>
                             <span class="meta-tag">共 ${count} 首歌</span>
                         </div>
@@ -248,7 +259,7 @@ window.Modals = (function () {
             showToast("请输入新歌单名称");
             return;
         }
-        const newPl = window.StorageManager.createCustomPlaylist(title, "默认");
+        const newPl = window.StorageManager.createCustomPlaylist(title, "未分组");
         if (newPl) {
             window.RightPanel.confirmAddPendingToPlaylist(newPl.id);
             window.LibraryPanel?.renderLibrary?.();
@@ -274,7 +285,7 @@ window.Modals = (function () {
                 const artist = t.artist || "未知歌手";
                 const dur = t.durationMillis ? `${Math.floor(t.durationMillis / 60000)}:${String(Math.floor((t.durationMillis % 60000) / 1000)).padStart(2, '0')}` : "";
                 html += `
-                    <div style="padding:3px 4px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="padding:3px 4px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-subtle);">
                         <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">${i + 1}. <strong>${escapeHtml(title)}</strong> - ${escapeHtml(artist)}</span>
                         ${dur ? `<span style="color:var(--text-muted); font-size:10px; flex-shrink:0;">${dur}</span>` : ''}
                     </div>

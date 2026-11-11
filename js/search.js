@@ -189,7 +189,7 @@ window.SearchPanel = (function () {
                 <span style="font-size:var(--fs-t2); font-weight:600; color:var(--text-primary);">🔍 搜索异常</span>
                 <button class="btn-search-return" onclick="window.SearchPanel.exitSearch()">← 返回</button>
             </div>
-            <div class="loading-state" style="padding: 24px 16px; font-size: var(--fs-t3); color: #ff7588; text-align: center;">
+            <div class="loading-state" style="padding: 24px 16px; font-size: var(--fs-t3); color: var(--danger-text); text-align: center;">
                 ❌ 检索失败: ${escapeHtml(errMsg)}
             </div>
         `;

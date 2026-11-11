@@ -212,7 +212,7 @@ window.LibraryPanel = (function () {
      * ======================================================== */
     function promptRenameCategory(oldName) {
         if (oldName === "未分组") {
-            alert("【未分组】不可重命名");
+            window.Shell?.showToast?.("【未分组】不可重命名");
             return;
         }
         const doRename = (newName) => {
@@ -222,7 +222,7 @@ window.LibraryPanel = (function () {
                 window.Shell?.showToast?.(`分组已更名为《${newName.trim()}》`);
                 renderLibrary();
             } else {
-                alert(res.error || "重命名失败");
+                window.Shell?.showToast?.(res.error || "重命名失败");
             }
         };
 
@@ -241,12 +241,11 @@ window.LibraryPanel = (function () {
 
     function promptDeleteCategory(catName, itemCount) {
         if (catName === "未分组") {
-            alert("【未分组】为根分类，不能删除");
+            window.Shell?.showToast?.("【未分组】为根分类，不能删除");
             return;
         }
         if (itemCount > 0) {
-            window.Shell?.showToast?.("该组内包含歌单，无法删除");
-            alert("该组内包含歌单，无法删除。请先清空或移出组内歌单。");
+            window.Shell?.showToast?.("该组内包含歌单，无法删除，请先移出或删除歌单");
             return;
         }
         const doDelete = () => {
@@ -255,7 +254,7 @@ window.LibraryPanel = (function () {
                 window.Shell?.showToast?.(`已删除分组《${catName}》`);
                 renderLibrary();
             } else {
-                alert(res.error || "删除失败");
+                window.Shell?.showToast?.(res.error || "删除失败");
             }
         };
 

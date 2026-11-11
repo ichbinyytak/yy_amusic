@@ -113,9 +113,37 @@ async function run() {
     await sendCmd('Runtime.enable');
     await sendCmd('Page.enable');
 
-    console.log("导航至 http://127.0.0.1:8088/ ...");
-    await sendCmd('Page.navigate', { url: 'http://127.0.0.1:8088/' });
-    await sleep(2000);
+    const baseUrl = `http://127.0.0.1:${process.env.AMUSIC_TEST_PORT || 8088}`;
+    console.log(`导航至 ${baseUrl}/ ...`);
+    await sendCmd('Page.navigate', { url: `${baseUrl}/` });
+    await sleep(1500);
+
+    // 若弹出登录门禁，先自动完成注册/登录前置步骤
+    const gateOpen = await evaluate(`document.getElementById('authGateOverlay')?.classList.contains('open')`);
+    if (gateOpen) {
+        console.log("检测到登录门禁，自动执行测试账号注册/登录...");
+        await evaluate(`(async () => {
+            const u = 'test_headless_user';
+            const p = 'test123456';
+            document.getElementById('authTabRegister')?.click();
+            document.getElementById('authUsername').value = u;
+            document.getElementById('authPassword').value = p;
+            document.getElementById('authInviteCode').value = '1111';
+            document.getElementById('authSubmitBtn').click();
+        })()`);
+        await sleep(1200);
+        const stillOpen = await evaluate(`document.getElementById('authGateOverlay')?.classList.contains('open')`);
+        if (stillOpen) {
+            await evaluate(`(() => {
+                document.getElementById('authTabLogin')?.click();
+                document.getElementById('authUsername').value = 'test_headless_user';
+                document.getElementById('authPassword').value = 'test123456';
+                document.getElementById('authSubmitBtn').click();
+            })()`);
+            await sleep(1200);
+        }
+    }
+    await sleep(1000);
 
     console.log("\n--- 开始验证 1: 基础框架与字号阶梯 ---");
     const t2Fs = await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--fs-t2').trim()`);

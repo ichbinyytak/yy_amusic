@@ -34,17 +34,18 @@ from concurrent.futures import ThreadPoolExecutor
 import net_pool
 
 # ----------------------------------------------------
-# 优先 IPv4 地址解析 (解决跨国/Serverless云机房对国内双栈域名的 IPv6 黑洞与握手超时)
+# 优先 IPv4 地址解析 (避免在 net_pool 已缓存包装之上重复套娃)
 # ----------------------------------------------------
 try:
-    _orig_getaddrinfo = socket.getaddrinfo
+    if getattr(socket.getaddrinfo, "__name__", "") not in ("_cached_getaddrinfo", "_ipv4_first_getaddrinfo"):
+        _orig_getaddrinfo = socket.getaddrinfo
 
-    def _ipv4_first_getaddrinfo(*args, **kwargs):
-        res = _orig_getaddrinfo(*args, **kwargs)
-        ipv4 = [r for r in res if r[0] == socket.AF_INET]
-        return ipv4 if ipv4 else res
+        def _ipv4_first_getaddrinfo(*args, **kwargs):
+            res = _orig_getaddrinfo(*args, **kwargs)
+            ipv4 = [r for r in res if r[0] == socket.AF_INET]
+            return ipv4 if ipv4 else res
 
-    socket.getaddrinfo = _ipv4_first_getaddrinfo
+        socket.getaddrinfo = _ipv4_first_getaddrinfo
 except Exception:
     pass
 
@@ -52,6 +53,17 @@ except Exception:
 from source_manager import source_hub
 from song_search import search_candidates, search_candidates_fallback, get_song_lyric
 from kv_cache import get_cached_candidate, set_cached_candidate, delete_cached_candidate
+from auth_store import (
+    AuthClientError,
+    AuthConfigError,
+    build_clear_cookie_header,
+    build_session_cookie_header,
+    get_user_library,
+    login_user,
+    register_user,
+    save_user_library,
+    verify_session,
+)
 
 # 核心音频寻链热点缓存 (Title+Artist -> ResolveResult)，存活 15 分钟 (对齐前端 TTL，杜绝 CDN Token 过期 403)，容量 256 首
 _RESOLVE_CACHE = {}
@@ -198,13 +210,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, directory=DIRECTORY, **kwargs):
         super().__init__(*args, directory=directory, **kwargs)
 
-    def send_json(self, data, status=200, cache_control=None):
+    def send_json(self, data, status=200, cache_control=None, extra_headers=None):
         """统一 JSON 响应辅助函数，支持 ETag 与 HTTP 304 快速协商（客户端主导缓存）"""
         res_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
         etag = f'"{hashlib.md5(res_bytes).hexdigest()}"'
 
         client_etag = self.headers.get("If-None-Match")
-        if client_etag and client_etag.strip('"') == etag.strip('"'):
+        if status == 200 and not extra_headers and client_etag and client_etag.strip('"') == etag.strip('"'):
             self.send_response(304)
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("ETag", etag)
@@ -218,13 +230,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("ETag", etag)
         self.send_header("Cache-Control", cache_control or "private, no-cache")
+        if extra_headers:
+            for k, v in extra_headers:
+                self.send_header(k, v)
         self.send_header("Content-Length", str(len(res_bytes)))
         self.end_headers()
         self.wfile.write(res_bytes)
 
     def send_error_json(self, message, status=500):
         """统一错误 JSON 响应"""
-        self.send_json({"error": str(message)}, status=status)
+        self.send_json({"error": str(message)}, status=status, cache_control="private, no-store")
+
+    def _is_https_request(self) -> bool:
+        proto = (self.headers.get("X-Forwarded-Proto") or "").strip().lower()
+        return proto == "https" or bool(os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"))
+
+    def _require_auth_user(self):
+        """全局接口门禁校验：未通过认证一律返回 401"""
+        user = verify_session(self.headers)
+        if not user:
+            self.send_json(
+                {"error": "请先登录", "code": "AUTH_REQUIRED"},
+                status=401,
+                cache_control="private, no-store",
+            )
+            return None
+        return user
 
     @staticmethod
     def _format_sources_data(ordered, force_sv=False):
@@ -251,6 +282,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # 区块 3: GET 路由分发矩阵 (Apple 数据代理、歌词与音频流中继)
     # ========================================================
     def do_GET(self):
+        parsed_req = urllib.parse.urlparse(self.path)
+        req_path = parsed_req.path
+
+        # 0. 登录态检查接口 (门禁豁免)
+        if req_path == "/api/auth/me":
+            user = verify_session(self.headers)
+            if user:
+                self.send_json({"authenticated": True, "username": user}, cache_control="private, no-store")
+            else:
+                self.send_json(
+                    {"authenticated": False, "error": "请先登录", "code": "AUTH_REQUIRED"},
+                    status=401,
+                    cache_control="private, no-store",
+                )
+            return
+
+        # 全局 /api/* 门禁拦截（静态资源与 /api/auth/* 放行）
+        auth_user = None
+        if req_path.startswith("/api/"):
+            auth_user = self._require_auth_user()
+            if not auth_user:
+                return
+
+        # 0.5 云端歌单资产读取
+        if req_path == "/api/sync/library":
+            try:
+                lib = get_user_library(auth_user)
+                self.send_json(lib, cache_control="private, no-store")
+            except AuthClientError as ce:
+                self.send_error_json(str(ce), ce.status)
+            except AuthConfigError as cfg_e:
+                self.send_error_json(str(cfg_e), 503)
+            except Exception as e:
+                self.send_error_json(str(e), 500)
+            return
+
         # 1. /new 页面结构化抓取 (全歌单/专辑模式)
         if self.path.startswith("/api/apple_new"):
             parsed = urllib.parse.urlparse(self.path)
@@ -306,6 +373,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # 5. 官方数据库请求代理转发 (附带 Bearer Token 与合法 Origin，支持 304 快速协商)
         if self.path.startswith("/api/apple/"):
             apple_path = self.path[len("/api/apple/"):]
+            if not apple_path or ".." in apple_path or "@" in apple_path or "\\" in apple_path or re.search(r"[\s\x00-\x1f]", apple_path):
+                self.send_error_json("Invalid Apple API path", 400)
+                return
             # 安全钳制：Apple Music 官方 search 等接口 limit 上限为 25
             apple_path = re.sub(r'([?&]limit=)(?:[3-9]\d|\d{3,}|2[6-9])', r'\g<1>25', apple_path)
             apple_url = f"https://api.music.apple.com/{apple_path}"
@@ -388,8 +458,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_json(e)
             return
 
-        # 5.5 街声专区目录与曲目接口 (SWR + Edge CDN 缓存)
-        sv_cache_ctl = "public, s-maxage=1800, stale-while-revalidate=3600"
+        # 5.5 街声专区目录与曲目接口 (启用门禁后严禁 Edge CDN 公共缓存跨用户下发)
+        sv_cache_ctl = "private, no-cache"
         if self.path.startswith("/api/sv_charts"):
             parsed = urllib.parse.urlparse(self.path)
             qs = urllib.parse.parse_qs(parsed.query)
@@ -486,6 +556,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             try:
                 req = urllib.request.Request(target_url, headers={"User-Agent": USER_AGENT})
                 with urllib.request.urlopen(req, timeout=20) as resp:
+                    if resp.status not in (200, 206):
+                        self.send_error_json(f"Upstream HTTP {resp.status}", 502)
+                        return
                     self.send_response(200)
                     self.send_header("Content-Type", resp.headers.get("Content-Type", "audio/mpeg"))
                     self.send_header("Access-Control-Allow-Origin", "*")
@@ -496,7 +569,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         chunk = resp.read(65536)
                         if not chunk:
                             break
-                        self.wfile.write(chunk)
+                        try:
+                            self.wfile.write(chunk)
+                        except (BrokenPipeError, ConnectionResetError):
+                            break
             except Exception as e:
                 self.send_error_json(str(e), 502)
             return
@@ -510,8 +586,97 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(length).decode('utf-8') if length > 0 else ""
+        try:
+            length = int(self.headers.get('Content-Length', 0) or 0)
+        except (ValueError, TypeError):
+            self.send_error_json("Invalid Content-Length", 400)
+            return
+        if length < 0 or length > 2 * 1024 * 1024:
+            self.send_error_json("Payload too large or invalid", 413 if length > 0 else 400)
+            return
+        body = self.rfile.read(length).decode('utf-8', errors='replace') if length > 0 else ""
+
+        # 0. 登录 / 注册 / 退出接口 (门禁豁免)
+        if path in ("/api/auth/register", "/api/auth/login", "/api/auth/logout"):
+            secure_cookie = self._is_https_request()
+            if path == "/api/auth/logout":
+                self.send_json(
+                    {"ok": True},
+                    cache_control="private, no-store",
+                    extra_headers=[("Set-Cookie", build_clear_cookie_header(secure=secure_cookie))],
+                )
+                return
+
+            try:
+                payload = json.loads(body) if body else {}
+                if not isinstance(payload, dict):
+                    payload = {}
+            except Exception:
+                self.send_error_json("Invalid JSON payload", 400)
+                return
+
+            username = payload.get("username", "")
+            password = payload.get("password", "")
+
+            if path == "/api/auth/register":
+                invite_code = payload.get("inviteCode") or payload.get("invite_code") or ""
+                try:
+                    res = register_user(username, password, invite_code)
+                    self.send_json(
+                        {
+                            "authenticated": True,
+                            "username": res["username"],
+                            "library": res["library"],
+                        },
+                        cache_control="private, no-store",
+                        extra_headers=[("Set-Cookie", build_session_cookie_header(res["token"], secure=secure_cookie))],
+                    )
+                except AuthClientError as ce:
+                    self.send_error_json(str(ce), ce.status)
+                except AuthConfigError as cfg_e:
+                    self.send_error_json(str(cfg_e), 503)
+                except Exception as e:
+                    self.send_error_json(str(e), 500)
+                return
+
+            if path == "/api/auth/login":
+                try:
+                    res = login_user(username, password)
+                    self.send_json(
+                        {"authenticated": True, "username": res["username"]},
+                        cache_control="private, no-store",
+                        extra_headers=[("Set-Cookie", build_session_cookie_header(res["token"], secure=secure_cookie))],
+                    )
+                except AuthClientError as ce:
+                    self.send_error_json(str(ce), ce.status)
+                except AuthConfigError as cfg_e:
+                    self.send_error_json(str(cfg_e), 503)
+                except Exception as e:
+                    self.send_error_json(str(e), 500)
+                return
+
+        # 全局 /api/* POST 门禁拦截
+        auth_user = self._require_auth_user()
+        if not auth_user:
+            return
+
+        # 云端歌单资产保存 (POST /api/sync/library)
+        if path == "/api/sync/library":
+            try:
+                payload = json.loads(body) if body else {}
+            except Exception:
+                self.send_error_json("Invalid JSON payload", 400)
+                return
+            try:
+                saved = save_user_library(auth_user, payload)
+                self.send_json({"ok": True, "updatedAt": saved["updatedAt"]}, cache_control="private, no-store")
+            except AuthClientError as ce:
+                self.send_error_json(str(ce), ce.status)
+            except AuthConfigError as cfg_e:
+                self.send_error_json(str(cfg_e), 503)
+            except Exception as e:
+                self.send_error_json(str(e), 500)
+            return
 
         # 音源并发测速重排 (真实透传实测结果)
         if path in ("/api/sources/test", "/api/sources_test"):
@@ -541,7 +706,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 严格时间预算锚定：从请求接收刻起算全局预算 7.5s (在 Vercel 10s 物理上限内保留 2.5s 充裕余量，杜绝 504 Gateway Timeout)
             overall_deadline = req_start + 7.5
 
-            cand = json.loads(body) if body else {}
+            try:
+                cand = json.loads(body) if body else {}
+                if not isinstance(cand, dict):
+                    cand = {}
+            except Exception:
+                self.send_error_json("Invalid JSON payload", 400)
+                return
             title = (cand.get("title") or cand.get("name") or "").strip()
             artist = (cand.get("artist") or "").strip()
             album = cand.get("album", "")

@@ -439,7 +439,13 @@
         this._emit('stateChange', { isPlaying: false, isResolving: false, error: `《${songName}》音频流失效，已顺延` });
         setTimeout(() => {
           if (this.playMode === 'shuffle') {
-            const nextIdx = Math.floor(Math.random() * this.playlist.length);
+            const candidates = [];
+            for (let i = 0; i < this.playlist.length; i++) {
+              if (i !== this.currentIndex) candidates.push(i);
+            }
+            const nextIdx = candidates.length > 0
+              ? candidates[Math.floor(Math.random() * candidates.length)]
+              : 0;
             this.playIndex(nextIdx, true);
           } else {
             const nextIdx = (this.currentIndex + 1) % this.playlist.length;

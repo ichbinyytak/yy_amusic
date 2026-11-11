@@ -39,14 +39,16 @@ window.StorageManager = (function () {
         }
     }
 
-    // 辅助安全写入 JSON 并广播变更事件
-    function setJson(key, val, eventType = "update") {
+    // 辅助安全写入 JSON 并广播变更事件 (支持 silent: true 静默写入)
+    function setJson(key, val, eventType = "update", options = {}) {
         try {
             localStorage.setItem(key, JSON.stringify(val));
-            window.dispatchEvent(new CustomEvent("amusic-storage-changed", {
-                detail: { key, eventType, data: val }
-            }));
-            window.EventBus?.emit?.("storageChanged", { key, eventType, data: val });
+            if (!options?.silent) {
+                window.dispatchEvent(new CustomEvent("amusic-storage-changed", {
+                    detail: { key, eventType, data: val }
+                }));
+                window.EventBus?.emit?.("storageChanged", { key, eventType, data: val });
+            }
             return true;
         } catch (e) {
             console.error(`[StorageManager] 写入 ${key} 失败:`, e);
@@ -211,7 +213,7 @@ window.StorageManager = (function () {
     }
 
     function changePlaylistCategory(kind, id, newCategory) {
-        const cat = (newCategory || "未分类").trim();
+        const cat = normalizeCategory(newCategory);
         if (kind === 'fav') {
             const list = getFavPlaylists();
             const item = list.find(f => f.id === id);
@@ -406,7 +408,7 @@ window.StorageManager = (function () {
         return false;
     }
 
-    function toggleFavPlaylist(playlistData, targetCategory = "未分类") {
+    function toggleFavPlaylist(playlistData, targetCategory = "未分组") {
         if (!playlistData || !playlistData.id) return false;
         const favs = getFavPlaylists();
         const idx = favs.findIndex(f => f.id === playlistData.id);
@@ -431,7 +433,7 @@ window.StorageManager = (function () {
         if (isFaved) {
             const favs = getFavPlaylists();
             const curItem = favs.find(f => f.id === playlistData.id);
-            const curCat = curItem ? (curItem.category || "未分类") : "未分类";
+            const curCat = normalizeCategory(curItem ? curItem.category : "");
             const choice = prompt(
                 `歌单《${plName}》已在收藏中 (当前分类: ${curCat})：\n1: 🏷️ 更改所属分类\n2: ❌ 取消收藏\n\n请输入 1 或 2:`,
                 "1"
@@ -463,12 +465,12 @@ window.StorageManager = (function () {
             if (typeof onDone === 'function') onDone({ action: 'added', category: trimmedCat });
         } else if (branchChoice.trim() === "2") {
             const cats = getRegisteredCategories('fav');
-            let chosenCat = "未分类";
+            let chosenCat = "未分组";
             if (cats.length <= 1) {
-                // 仅有未分类
-                chosenCat = "未分类";
+                // 仅有未分组
+                chosenCat = "未分组";
                 favPlaylistWithCategory(playlistData, chosenCat);
-                if (window.showToast) window.showToast(`⭐ 已收藏《${plName}》至【未分类】！`);
+                if (window.showToast) window.showToast(`⭐ 已收藏《${plName}》至【未分组】！`);
                 if (typeof onDone === 'function') onDone({ action: 'added', category: chosenCat });
             } else {
                 let msg = `请选择目标分类序号 (1 - ${cats.length})：\n`;
@@ -576,15 +578,15 @@ window.StorageManager = (function () {
             const newCustoms = Array.isArray(data.customPlaylists) ? data.customPlaylists : [];
             const newFavs = Array.isArray(data.favPlaylists) ? data.favPlaylists : [];
 
-            // 智能合并或覆盖
-            saveCustomPlaylists(newCustoms);
-            saveFavPlaylists(newFavs);
+            // 智能合并或覆盖（静默写入，统一由下方 restore 事件广播一次）
+            setJson(KEY_CUSTOM, newCustoms, "custom_playlists", { silent: true });
+            setJson(KEY_FAV, newFavs, "fav_playlists", { silent: true });
 
             if (Array.isArray(data.categoriesCustom)) {
-                setJson(KEY_CAT_CUSTOM, data.categoriesCustom);
+                setJson(KEY_CAT_CUSTOM, data.categoriesCustom, "update", { silent: true });
             }
             if (Array.isArray(data.categoriesFav)) {
-                setJson(KEY_CAT_FAV, data.categoriesFav);
+                setJson(KEY_CAT_FAV, data.categoriesFav, "update", { silent: true });
             }
 
             if (data.lastPlaylist) setLastPlaylist(data.lastPlaylist);
@@ -594,6 +596,7 @@ window.StorageManager = (function () {
             window.dispatchEvent(new CustomEvent("amusic-storage-changed", {
                 detail: { key: "all", eventType: "restore" }
             }));
+            window.EventBus?.emit?.("storageChanged", { key: "all", eventType: "restore" });
 
             return {
                 ok: true,
@@ -605,6 +608,45 @@ window.StorageManager = (function () {
             console.error("[StorageManager] 导入备份解析异常:", e);
             return { ok: false, error: "备份文件解析失败，请确认是否为有效的 JSON 格式" };
         }
+    }
+
+    function getCloudLibraryPayload() {
+        return {
+            customPlaylists: getCustomPlaylists(),
+            favPlaylists: getFavPlaylists(),
+            categoriesCustom: getJson(KEY_CAT_CUSTOM, []),
+            categoriesFav: getJson(KEY_CAT_FAV, [])
+        };
+    }
+
+    function applyCloudLibrary(data) {
+        const payload = (data && typeof data === 'object') ? data : {};
+        const customs = Array.isArray(payload.customPlaylists) ? payload.customPlaylists : [];
+        const favs = Array.isArray(payload.favPlaylists) ? payload.favPlaylists : [];
+        const catsCustom = Array.isArray(payload.categoriesCustom) ? payload.categoriesCustom : [];
+        const catsFav = Array.isArray(payload.categoriesFav) ? payload.categoriesFav : [];
+
+        setJson(KEY_CUSTOM, customs, "custom_playlists", { silent: true });
+        setJson(KEY_FAV, favs, "fav_playlists", { silent: true });
+        setJson(KEY_CAT_CUSTOM, catsCustom, "update", { silent: true });
+        setJson(KEY_CAT_FAV, catsFav, "update", { silent: true });
+
+        window.LibraryPanel?.renderLibrary?.();
+        return getCloudLibraryPayload();
+    }
+
+    function clearUserLibrary() {
+        try {
+            localStorage.removeItem(KEY_CUSTOM);
+            localStorage.removeItem(KEY_FAV);
+            localStorage.removeItem(KEY_CAT_CUSTOM);
+            localStorage.removeItem(KEY_CAT_FAV);
+            localStorage.removeItem(KEY_LAST);
+        } catch (e) {}
+        try {
+            sessionStorage.removeItem("amusic_resolve_cache_v1");
+        } catch (e) {}
+        window.LibraryPanel?.renderLibrary?.();
     }
 
     return {
@@ -640,6 +682,11 @@ window.StorageManager = (function () {
 
         // 备份与恢复
         exportBackup,
-        importBackup
+        importBackup,
+
+        // 云同步读写与清理
+        getCloudLibraryPayload,
+        applyCloudLibrary,
+        clearUserLibrary
     };
 })();
