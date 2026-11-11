@@ -116,13 +116,62 @@ def _fetch_html(url: str, host: str = "com", timeout: float = 8.0) -> str:
 
 
 # ========================================================
-# 1. 官方排行榜列表与单榜 Top 50 抓取
+# 1. 官方排行榜列表与单榜 Top 50 抓取 (优先 /api/v5/chart/ 纯 JSON)
 # ========================================================
 def get_sv_chart_catalog() -> dict:
     return {
         "charts": SV_CHART_DEFINITIONS,
         "sections": SV_PLAYLIST_SECTIONS,
     }
+
+
+def _map_sv_song(song: dict, index: int, host: str = "com") -> dict:
+    """统一映射 StreetVoice API v5 单曲 JSON 为前端标准曲目结构（含真实时长与封面）"""
+    sid = str(song["id"])
+    title = (song.get("name") or "未知曲目").strip()
+    user = song.get("user") or {}
+    profile = user.get("profile") or {}
+    artist = (profile.get("nickname") or user.get("username") or "未知音乐人").strip()
+    length_sec = int(song.get("length") or 0)
+    cover = (song.get("image") or "").strip()
+    username = (user.get("username") or "").strip()
+    song_url = f"https://streetvoice.{host}/{username}/songs/{sid}/" if username else f"https://streetvoice.{host}/songs/{sid}/"
+    return {
+        "index": index,
+        "id": sid,
+        "name": title,
+        "title": title,
+        "artist": artist,
+        "album": "",
+        "durationMillis": length_sec * 1000,
+        "duration": length_sec,
+        "cover": cover,
+        "platform": "streetvoice",
+        "url": song_url,
+    }
+
+
+def _fetch_chart_json(kind: str, category: str, host: str = "com") -> list:
+    url = f"https://streetvoice.{host}/api/v5/chart/{kind}/{category}/?limit=50"
+    status, body, _, _ = http_get(url, headers=_sv_headers(host), timeout=6.0)
+    if status != 200 or not body:
+        return []
+    try:
+        data = json.loads(body.decode("utf-8", errors="ignore"))
+    except Exception:
+        return []
+    tracks = []
+    seen = set()
+    for entry in (data.get("results") or []):
+        song = entry.get("song") if isinstance(entry, dict) else None
+        if not isinstance(song, dict) or not song.get("id"):
+            continue
+        sid = str(song["id"])
+        if sid in seen:
+            continue
+        seen.add(sid)
+        tracks.append(_map_sv_song(song, len(tracks) + 1, host=host))
+    return tracks
 
 
 def _parse_chart_html(html_text: str, host: str = "com") -> list:
@@ -137,7 +186,7 @@ def _parse_chart_html(html_text: str, host: str = "com") -> list:
     tracks = []
     seen_ids = set()
     base = f"https://streetvoice.{host}"
-    for idx, match in enumerate(pattern.finditer(html_text)):
+    for match in pattern.finditer(html_text):
         cover, path, sid, raw_name, raw_artist = match.groups()
         if sid in seen_ids:
             continue
@@ -170,15 +219,24 @@ def _fetch_sv_chart_raw(meta: dict, host: str = "com") -> dict:
     kind = meta["kind"]
     category = meta["category"]
     used_host = host
-    url = f"https://streetvoice.{host}/music/charts/{kind}/{category}/"
-    html_text = _fetch_html(url, host=host, timeout=8.0)
-    tracks = _parse_chart_html(html_text, host=host)
 
+    # 1. 优先直连官方 JSON 榜单接口（自带真实曲目时长，体积小且无需正则解析 HTML）
+    tracks = _fetch_chart_json(kind, category, host=host)
     if not tracks and host == "com":
         used_host = "cn"
-        cn_url = f"https://streetvoice.cn/music/charts/{kind}/{category}/"
-        html_text = _fetch_html(cn_url, host="cn", timeout=8.0)
-        tracks = _parse_chart_html(html_text, host="cn")
+        tracks = _fetch_chart_json(kind, category, host="cn")
+
+    # 2. 兜底回退 SSR HTML 页面解析
+    if not tracks:
+        used_host = host
+        url = f"https://streetvoice.{host}/music/charts/{kind}/{category}/"
+        html_text = _fetch_html(url, host=host, timeout=8.0)
+        tracks = _parse_chart_html(html_text, host=host)
+        if not tracks and host == "com":
+            used_host = "cn"
+            cn_url = f"https://streetvoice.cn/music/charts/{kind}/{category}/"
+            html_text = _fetch_html(cn_url, host="cn", timeout=8.0)
+            tracks = _parse_chart_html(html_text, host="cn")
 
     return {
         "id": meta["id"],
@@ -329,28 +387,7 @@ def _fetch_sv_playlist_songs_raw(pid: str, host: str = "com") -> dict:
             song = entry.get("song") if isinstance(entry, dict) else None
             if not isinstance(song, dict) or not song.get("id"):
                 continue
-            sid = str(song["id"])
-            title = (song.get("name") or "未知曲目").strip()
-            user = song.get("user") or {}
-            profile = user.get("profile") or {}
-            artist = (profile.get("nickname") or user.get("username") or "未知音乐人").strip()
-            length_sec = int(song.get("length") or 0)
-            cover = (song.get("image") or "").strip()
-            username = (user.get("username") or "").strip()
-            song_url = f"https://streetvoice.{used_host}/{username}/songs/{sid}/" if username else f"https://streetvoice.{used_host}/songs/{sid}/"
-            tracks.append({
-                "index": len(tracks) + 1,
-                "id": sid,
-                "name": title,
-                "title": title,
-                "artist": artist,
-                "album": "",
-                "durationMillis": length_sec * 1000,
-                "duration": length_sec,
-                "cover": cover,
-                "platform": "streetvoice",
-                "url": song_url,
-            })
+            tracks.append(_map_sv_song(song, len(tracks) + 1, host=used_host))
 
         next_url = data.get("next") or ""
         if next_url and used_host == "cn" and "streetvoice.com" in next_url:

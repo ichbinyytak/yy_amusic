@@ -1,6 +1,6 @@
 # 🎸 Amusic 街声专区（StreetVoice）扩展架构设计书
 
-> **文档状态**：已按设计实施于 `feat/streetvoice` 分支（待 Vercel 预览地址验收后合并主干）  
+> **文档状态**：已合并至 `master` 上线运行  
 > **对齐基准**：沿用 [ARCHITECTURE.md](./ARCHITECTURE.md) 的「零三方依赖纯 Python + Vercel Serverless + 原生前端模块化 + 服务端 0 带宽客户端直取」设计哲学。
 
 ---
@@ -36,8 +36,8 @@
 
 | 能力 | 请求方式与地址 | 返回形态 | 关键实测结论 |
 | :--- | :--- | :--- | :--- |
-| **即时排行榜（8 榜）** | `GET https://streetvoice.com/music/charts/realtime/{cat}/` | SSR HTML | `cat` ∈ `all`, `rock`, `folk`, `hip_hop`, `urban`, `electronic`, `explore`, `ai_generated`；每榜固定 50 首，HTML 内含 `data-id`、`/songs/{id}/`、歌名、歌手、封面。 |
-| **每周排行榜（7 榜）** | `GET https://streetvoice.com/music/charts/weekly/{cat}/` | SSR HTML | `cat` ∈ `all`, `rock`, `folk`, `hip_hop`, `urban`, `electronic`, `explore`；每榜固定 50 首，共用同一套榜单 HTML 结构。 |
+| **即时排行榜（8 榜）** | `GET https://streetvoice.com/api/v5/chart/realtime/{cat}/?limit=50` | **纯 JSON** | `cat` ∈ `all`, `rock`, `folk`, `hip_hop`, `urban`, `electronic`, `explore`, `ai_generated`；每榜固定 50 首，自带 `song.id`、`name`、`length`（真实时长）、`image`、`user.profile.nickname`（SSR HTML 作兜底）。 |
+| **每周排行榜（7 榜）** | `GET https://streetvoice.com/api/v5/chart/weekly/{cat}/?limit=50` | **纯 JSON** | `cat` ∈ `all`, `rock`, `folk`, `hip_hop`, `urban`, `electronic`, `explore`；每榜固定 50 首，共用同一套纯 JSON 映射与真实时长提取。 |
 | **精选歌单广场** | `GET https://streetvoice.com/music/playlists/all/most_liked/` | SSR HTML | 单页返回 63 个精选歌单卡片（含 `playlist_id`、名称、封面、创建者）及 7 个主题分区入口。 |
 | **歌单主题分区** | `GET https://streetvoice.com/music/playlist/section/{sec}/` | SSR HTML | `sec` ∈ `1`, `chillouttree`, `DJ`, `campus`, `2style`, `situation`, `7`（合计 600+ 歌单，共用歌单卡片解析逻辑）。 |
 | **歌单曲目明细** | `GET https://streetvoice.com/api/v5/playlist/{id}/songs/?limit=100` | **纯 JSON** | 无需爬 HTML；直接返回 `results[].song`（含 `id`, `name`, `length`, `image`, `user.profile.nickname`）。 |
@@ -103,7 +103,7 @@ flowchart TD
   - `SV_CHART_DEFINITIONS`：静态枚举 8 个即时榜 + 7 个周榜的 `id`、中文标题、子路径 `realtime/{cat}/` 或 `weekly/{cat}/`。
   - `SV_PLAYLIST_SECTIONS`：静态枚举精选总览 + 7 个官方主题分区的中文名称与路径。
 - **核心函数**：
-  - `fetch_sv_chart(kind, category, host="com")`：抓取榜单页面，用标准库 `html.parser` 或精确状态机提取 50 首曲目（`id`, `name`, `artist`, `cover`, `album`, `platform="streetvoice"`, `url`）。
+  - `fetch_sv_chart(kind, category, host="com")`：优先直连 `/api/v5/chart/{kind}/{category}/?limit=50` 纯 JSON 提取 50 首曲目与真实时长 `durationMillis = length * 1000`（SSR HTML 解析仅作降级兜底）。
   - `fetch_sv_playlists(section="all", host="com")`：抓取歌单广场或指定主题分区的歌单卡片列表（`id`, `type="playlist"`, `title`, `curator`, `cover`, `url`）。
   - `fetch_sv_playlist_songs(playlist_id, host="com")`：调用 `/api/v5/playlist/{id}/songs/?limit=100`（如有需要支持 `offset` 翻页），映射为前端统一的曲目结构（含 `durationMillis = length * 1000`）。
   - `resolve_streetvoice_track(song_id, host="com")`：

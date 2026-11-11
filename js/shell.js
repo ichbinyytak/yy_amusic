@@ -89,7 +89,7 @@ window.Shell = (function () {
             const album = track.album || "";
 
             if (playerTitle) playerTitle.innerText = `${artist} - ${title}`;
-            if (playerArtist) playerArtist.innerText = album ? `专辑: ${album}` : "Apple Music 精选曲目";
+            if (playerArtist) playerArtist.innerText = album ? `专辑: ${album}` : (track.platform === "streetvoice" ? "StreetVoice 街声" : "Apple Music 精选曲目");
             if (playerCurTime) playerCurTime.innerText = "00:00";
             if (playerTotalTime) playerTotalTime.innerText = formatDuration(track.durationMillis || (track.duration ? track.duration * 1000 : 0));
             if (progressBarFill) progressBarFill.style.width = "0%";
