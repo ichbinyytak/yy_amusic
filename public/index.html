@@ -232,6 +232,29 @@
         </div>
     </div>
 
+    <!-- 弹窗：保存/更新外部导入歌单 (遵照 architecture-playlist-import.md 规范) -->
+    <div class="modal-overlay" id="saveImportModal" onclick="if(event.target===this) window.Modals.closeSaveImportModal()">
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3>＋ 保存到我的歌单</h3>
+                <button class="modal-close-btn" onclick="window.Modals.closeSaveImportModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:var(--fs-t4); color:var(--text-muted); display:block; margin-bottom:4px;">歌单名称 (可就地修改)</label>
+                    <input type="text" id="saveImportPlaylistTitle" class="modal-input modal-input-sm" placeholder="歌单名称..." />
+                </div>
+                <div id="saveImportHint" style="font-size:var(--fs-t4); color:var(--accent); margin-bottom:8px; display:none;"></div>
+                <label style="font-size:var(--fs-t4); color:var(--text-muted); display:block; margin-bottom:4px;">选择目标分组 (点击直接保存)</label>
+                <div class="playlist-choice-list" id="saveImportCategoryChoiceList" style="max-height:160px; overflow-y:auto; margin-bottom:8px;"></div>
+                <div class="create-playlist-inline" style="display:flex; gap:4px;">
+                    <input type="text" id="newSaveImportCategoryInput" class="modal-input modal-input-sm" placeholder="输入新分组名称..." onkeydown="if(event.key==='Enter') window.Modals.confirmCreateCategoryAndSaveImport()" />
+                    <button class="btn btn-sm btn-primary" onclick="window.Modals.confirmCreateCategoryAndSaveImport()">新建并保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 弹窗：批量打包下载确认 (遵照 SITE_ARCHITECTURE.md 规范) -->
     <div class="modal-overlay" id="batchDownloadModal" onclick="if(event.target===this) window.Modals.closeBatchDownloadModal()">
         <div class="modal-content modal-sm">
@@ -370,6 +393,7 @@
     <script src="js/library.js?v=6.7"></script>
     <script src="js/region.js?v=6.7"></script>
     <script src="js/streetvoice.js?v=6.7"></script>
+    <script src="js/importer.js?v=6.8"></script>
     <script src="js/search.js?v=6.7"></script>
     <script src="js/left.js?v=6.7"></script>
     <script src="js/right.js?v=6.7"></script>

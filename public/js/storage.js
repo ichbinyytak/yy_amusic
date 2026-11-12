@@ -89,6 +89,54 @@ window.StorageManager = (function () {
         return newPl;
     }
 
+    function findCustomPlaylistBySourceUrl(sourceUrl) {
+        if (!sourceUrl) return null;
+        const list = getCustomPlaylists();
+        return list.find(p => p.sourceUrl && p.sourceUrl === sourceUrl) || null;
+    }
+
+    function saveImportedPlaylist({ title, category = "未分组", tracks = [], sourceUrl = "", sourcePlatform = "" }) {
+        if (!title || !title.trim()) return null;
+        const list = getCustomPlaylists();
+        const trimmed = title.trim();
+        const normCat = normalizeCategory(category);
+
+        // 1. 如果已存在相同 sourceUrl 的歌单，就地更新其曲目与分组
+        if (sourceUrl) {
+            const existing = list.find(p => p.sourceUrl && p.sourceUrl === sourceUrl);
+            if (existing) {
+                existing.title = trimmed;
+                existing.category = normCat;
+                existing.tracks = Array.isArray(tracks) ? tracks : [];
+                existing.updatedAt = Date.now();
+                saveCustomPlaylists(list);
+                return { playlist: existing, isUpdate: true };
+            }
+        }
+
+        // 2. 如果无相同 sourceUrl 但名称撞车，底层自动附加序号后缀 (如 (2)) 保持独立
+        let finalTitle = trimmed;
+        let suffix = 2;
+        while (list.some(p => p.title === finalTitle)) {
+            finalTitle = `${trimmed} (${suffix})`;
+            suffix++;
+        }
+
+        const newPl = {
+            id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            title: finalTitle,
+            category: normCat,
+            sourceUrl: sourceUrl || "",
+            sourcePlatform: sourcePlatform || "",
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            tracks: Array.isArray(tracks) ? tracks : []
+        };
+        list.unshift(newPl);
+        saveCustomPlaylists(list);
+        return { playlist: newPl, isUpdate: false };
+    }
+
     function deleteCustomPlaylist(id) {
         let list = getCustomPlaylists();
         const initialLen = list.length;
@@ -575,6 +623,8 @@ window.StorageManager = (function () {
         getCustomPlaylists,
         saveCustomPlaylists,
         createCustomPlaylist,
+        findCustomPlaylistBySourceUrl,
+        saveImportedPlaylist,
         deleteCustomPlaylist,
         renameCustomPlaylist,
         addTrackToCustomPlaylist,

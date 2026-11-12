@@ -155,6 +155,10 @@ window.Shell = (function () {
     function handleSearch() {
         const query = searchInput ? searchInput.value.trim() : "";
         if (!query) return;
+        if (window.PlaylistImporter?.canHandle?.(query)) {
+            window.PlaylistImporter.importFromInput(query);
+            return;
+        }
         if (window.SearchPanel) {
             window.SearchPanel.search(query);
         } else {
@@ -764,6 +768,8 @@ window.Shell = (function () {
         openConfirmModal: (...args) => window.Modals?.openConfirmModal?.(...args),
         closeConfirmActionModal: (...args) => window.Modals?.closeConfirmActionModal?.(...args),
         openInputPromptModal: (...args) => window.Modals?.openInputPromptModal?.(...args),
-        closeInputPromptModal: (...args) => window.Modals?.closeInputPromptModal?.(...args)
+        closeInputPromptModal: (...args) => window.Modals?.closeInputPromptModal?.(...args),
+        openSaveImportModal: (...args) => window.Modals?.openSaveImportModal?.(...args),
+        closeSaveImportModal: (...args) => window.Modals?.closeSaveImportModal?.(...args)
     };
 })();

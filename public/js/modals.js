@@ -376,6 +376,108 @@ window.Modals = (function () {
         pendingInputCallback = null;
     }
 
+    /* -------------------- 7. 弹窗：保存/更新外部导入歌单 (architecture-playlist-import.md) -------------------- */
+    let pendingImportPlaylist = null;
+    let pendingImportTracks = [];
+
+    function openSaveImportModal(playlistMeta, tracks) {
+        if (!playlistMeta) return;
+        pendingImportPlaylist = playlistMeta;
+        pendingImportTracks = tracks || [];
+
+        const modal = document.getElementById("saveImportModal");
+        const titleInput = document.getElementById("saveImportPlaylistTitle");
+        const hintEl = document.getElementById("saveImportHint");
+        const choiceList = document.getElementById("saveImportCategoryChoiceList");
+        const newCatInput = document.getElementById("newSaveImportCategoryInput");
+
+        if (newCatInput) newCatInput.value = "";
+        const defaultTitle = playlistMeta.name || playlistMeta.title || "外部歌单";
+        if (titleInput) titleInput.value = defaultTitle;
+
+        // 检查是否已有相同 sourceUrl 的歌单
+        const existing = window.StorageManager.findCustomPlaylistBySourceUrl(playlistMeta.sourceUrl);
+        const existingCat = existing ? normalizeCategory(existing.category) : "";
+
+        if (hintEl) {
+            if (existing) {
+                hintEl.style.display = "block";
+                hintEl.innerHTML = `⚠️ 该歌单此前已收录于【<strong>${escapeHtml(existingCat)}</strong>】，点击目标分组即直接用最新曲目覆盖更新`;
+            } else {
+                hintEl.style.display = "none";
+                hintEl.innerHTML = "";
+            }
+        }
+
+        if (choiceList) {
+            const cats = window.StorageManager.getAllCategories ? window.StorageManager.getAllCategories() : window.StorageManager.getRegisteredCategories('custom');
+            const customs = window.StorageManager.getCustomPlaylists();
+            let html = '';
+            cats.forEach(c => {
+                const count = customs.filter(p => normalizeCategory(p.category) === c).length;
+                const isCurrent = existing && existingCat === c;
+                html += `
+                    <div class="playlist-choice-item" data-category="${escapeHtml(c)}" onclick="window.Modals.selectSaveImportCategory(this.dataset.category)" style="${isCurrent ? 'background:var(--accent-soft-bg); border-left:2px solid var(--accent);' : ''}">
+                        <div>
+                            <strong>${escapeHtml(c)}</strong>
+                            ${isCurrent ? '<span style="color:var(--accent); font-size:var(--fs-t4); margin-left:6px;">(已收录在此，点击即更新)</span>' : ''}
+                        </div>
+                        <span class="meta-tag">共 ${count} 个歌单</span>
+                    </div>
+                `;
+            });
+            choiceList.innerHTML = html;
+        }
+
+        if (modal) modal.classList.add("open");
+    }
+
+    function closeSaveImportModal() {
+        const modal = document.getElementById("saveImportModal");
+        if (modal) modal.classList.remove("open");
+        pendingImportPlaylist = null;
+        pendingImportTracks = [];
+    }
+
+    function selectSaveImportCategory(catName) {
+        if (!pendingImportPlaylist) return;
+        const titleInput = document.getElementById("saveImportPlaylistTitle");
+        const title = (titleInput ? titleInput.value.trim() : "") || pendingImportPlaylist.name || "外部歌单";
+
+        const res = window.StorageManager.saveImportedPlaylist({
+            title: title,
+            category: catName,
+            tracks: pendingImportTracks,
+            sourceUrl: pendingImportPlaylist.sourceUrl || "",
+            sourcePlatform: pendingImportPlaylist.platform || ""
+        });
+
+        if (res && res.playlist) {
+            if (res.isUpdate) {
+                showToast(`已将《${res.playlist.title}》更新为最新曲目 (${pendingImportTracks.length} 首)`);
+            } else {
+                showToast(`已成功保存《${res.playlist.title}》至【${catName}】`);
+            }
+            closeSaveImportModal();
+            window.LibraryPanel?.renderLibrary?.();
+            window.RightPanel?.selectCustomPlaylist?.(res.playlist.id);
+        } else {
+            showToast("保存歌单失败");
+        }
+    }
+
+    function confirmCreateCategoryAndSaveImport() {
+        if (!pendingImportPlaylist) return;
+        const input = document.getElementById("newSaveImportCategoryInput");
+        const catName = input ? input.value.trim() : "";
+        if (!catName) {
+            showToast("请输入新分组名称");
+            return;
+        }
+        window.StorageManager.addCategory('custom', catName);
+        selectSaveImportCategory(catName);
+    }
+
     return {
         openAddToFavModal,
         closeAddToFavModal,
@@ -395,6 +497,10 @@ window.Modals = (function () {
         openConfirmModal,
         closeConfirmActionModal,
         openInputPromptModal,
-        closeInputPromptModal
+        closeInputPromptModal,
+        openSaveImportModal,
+        closeSaveImportModal,
+        selectSaveImportCategory,
+        confirmCreateCategoryAndSaveImport
     };
 })();

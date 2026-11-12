@@ -366,6 +366,83 @@ window.RightPanel = (function () {
         });
     }
 
+    // 外部导入歌单预览通道 (遵照 architecture-playlist-import.md 规范)
+    function prepareImportLoading(rawInput) {
+        clearSelection();
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = null;
+        currentTracks = [];
+
+        if (detailTitle) detailTitle.innerText = "外部歌单解析中...";
+        if (detailSubtitle) detailSubtitle.innerText = "正在跨平台提取歌单曲目，请稍候...";
+        if (detailActions) detailActions.style.display = "none";
+        if (detailBody) {
+            detailBody.innerHTML = '<div class="loading-state">⏳ 正在解析并转化外部歌单曲目，请稍候...</div>';
+        }
+    }
+
+    function renderImportedPlaylist(importData) {
+        clearSelection();
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+
+        const rawTracks = importData.tracks || [];
+        currentTracks = rawTracks.map((t, idx) => ({
+            index: idx + 1,
+            name: t.name || "未知曲目",
+            artist: t.artist || "未知歌手",
+            album: t.album || importData.title,
+            durationMillis: t.durationMillis || 0,
+            url: t.url || importData.sourceUrl || "",
+            sourcePlatform: t.sourcePlatform || importData.platform,
+            platform: t.platform || "",
+            id: t.id ? String(t.id) : ""
+        }));
+
+        currentPlaylistData = {
+            id: `import_${importData.platform}_${importData.id}`,
+            type: "imported_playlist",
+            name: importData.title,
+            title: importData.title,
+            curator: importData.curator || importData.platformName || "外部歌单",
+            url: importData.sourceUrl || "",
+            sourceUrl: importData.sourceUrl || "",
+            platform: importData.platform,
+            resourceType: importData.resourceType || "playlist",
+            isImported: true,
+            notice: importData.notice || ""
+        };
+
+        if (detailTitle) detailTitle.innerText = importData.title;
+        const noticeTxt = importData.notice ? ` • ${importData.notice}` : '';
+        if (detailSubtitle) {
+            detailSubtitle.innerText = `${importData.platformName || '外部平台'} • ${importData.resourceTypeLabel || '歌单'} (共 ${currentTracks.length} 首)${noticeTxt}`;
+        }
+
+        renderHeaderActions();
+        renderTracklist(currentTracks);
+
+        if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+            window.player.setPlaylist(currentTracks, -1);
+        }
+    }
+
+    function renderImportError(errMsg) {
+        clearSelection();
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = null;
+        currentTracks = [];
+
+        if (detailTitle) detailTitle.innerText = "外部歌单解析失败";
+        if (detailSubtitle) detailSubtitle.innerText = "未能成功获取外部曲目清单";
+        if (detailActions) detailActions.style.display = "none";
+        if (detailBody) {
+            detailBody.innerHTML = `<div class="loading-state">❌ 解析失败: ${escapeHtml(errMsg || "未知错误")}<br><span style="font-size:var(--fs-t4); opacity:0.7;">请检查分享口令/链接是否有效，或稍后重试</span></div>`;
+        }
+    }
+
     /**
      * 实体总览顶部纯图标操作栏渲染
      */
@@ -800,6 +877,10 @@ window.RightPanel = (function () {
     // 右侧头部【＋】统一打开分组弹窗 (遵照用户指令3：可选择加入分组或新建分组)
     function openPlaylistGroupingModal() {
         if (!currentPlaylistData) return;
+        if (currentPlaylistData.isImported) {
+            window.Modals?.openSaveImportModal?.(currentPlaylistData, currentTracks);
+            return;
+        }
         if (isViewingCustomPlaylist && currentCustomPlaylistId) {
             window.Shell?.openMoveCategoryModal?.('custom', currentCustomPlaylistId, currentPlaylistData.category || '未分组');
         } else if (currentPlaylistData.id) {
@@ -1061,6 +1142,9 @@ window.RightPanel = (function () {
         prepareSearchLoading,
         renderSearchResults,
         renderSearchError,
+        prepareImportLoading,
+        renderImportedPlaylist,
+        renderImportError,
         searchArtistByTrack,
         searchArtistByName,
         openAlbumByTrack,

@@ -41,6 +41,10 @@ window.SearchPanel = (function () {
     async function search(term) {
         if (!term || !String(term).trim()) return;
         const query = String(term).trim();
+        if (window.PlaylistImporter?.canHandle?.(query)) {
+            window.PlaylistImporter.importFromInput(query);
+            return;
+        }
         currentQuery = query;
 
         // 同步顶部搜索框文字与清除按钮状态

@@ -680,6 +680,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not auth_user:
             return
 
+        # 外部歌单/专辑导入转化 (遵照 architecture-playlist-import.md 单一事实来源)
+        if path == "/api/import_playlist":
+            try:
+                payload = json.loads(body) if body else {}
+                text = (payload.get("text") or payload.get("url") or payload.get("query") or "").strip()
+                if not text:
+                    self.send_error_json("Missing text or url parameter", 400)
+                    return
+                from playlist_importer import import_external_resource
+                res_data = import_external_resource(text)
+                self.send_json(res_data, cache_control="private, no-cache")
+            except Exception as e:
+                self.send_error_json(str(e), 500)
+            return
+
         # 云端歌单资产保存 (POST /api/sync/library)
         if path == "/api/sync/library":
             try:
