@@ -22,10 +22,11 @@
       }
     },
     {
-      "src": "/",
+      "src": "/(index\\.html)?",
       "dest": "/public/index.html",
       "headers": {
-        "Access-Control-Allow-Origin": "*"
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-cache, no-store, must-revalidate"
       }
     },
     {
