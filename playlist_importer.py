@@ -1067,12 +1067,36 @@ def import_external_resource(input_text: str) -> dict:
         if plat == "mg":
             return import_migu(rtype, item_id, raw)
 
-    # 2. 从文案中提取 URL
+    # 2. 微信小程序分享口令与链接拦截与智能还原 (#小程序:// 或 wxaurl.cn)
+    if "#小程序://" in raw or "wxaurl.cn" in raw or raw.startswith("小程序://"):
+        # 尝试提取文本中携带的明文 ID 参数 (如 id=123456, disstid=123456, playlistId=123456)
+        m_id = re.search(r"(?:[?&]|^|\b)(?:id|disstid|playlistId|pid|mid|tid)=(\d+)", raw)
+        if m_id:
+            pid = m_id.group(1)
+            if "qq" in raw.lower() or "腾讯" in raw:
+                return import_qq("playlist", pid, raw)
+            return import_netease("playlist", pid, raw)
+
+        # 微信闭环加密 Token (#小程序://网易云音乐/AbCdEf...)
+        raise ValueError(
+            "微信小程序生成的「#小程序://」为微信专属闭环加密口令，未暴露歌单真实 ID。"
+            "请在对应音乐 App 内点击「分享」并选择「复制链接」（或在微信页面中选择“在浏览器中打开”），粘贴生成的公开网页链接即可秒级导入！"
+        )
+
+    # 3. 从文案中提取 URL
     target_url = extract_url_from_text(raw)
     if not target_url:
+        # 若未提取到 http 链接但文本明确包含平台关键词与 ID (如 '网易云歌单 24381616' 或 'QQ歌单 8378904797')
+        m_id = re.search(r"(?:id=|\b)(\d{6,12})\b", raw)
+        if m_id:
+            pid = m_id.group(1)
+            if "qq" in raw.lower() or "腾讯" in raw:
+                return import_qq("playlist", pid, raw)
+            if "网易" in raw or "163" in raw:
+                return import_netease("playlist", pid, raw)
         raise ValueError("未能识别出有效的音乐平台链接或分享口令")
 
-    # 3. 逐跳安全追踪重定向 (拦截 SSRF)
+    # 4. 逐跳安全追踪重定向 (拦截 SSRF)
     final_url, final_body, _ = resolve_safe_redirects(target_url)
 
     # 4. 根据 final_url 域名与路径分流

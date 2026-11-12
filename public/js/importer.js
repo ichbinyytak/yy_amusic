@@ -17,9 +17,10 @@ window.PlaylistImporter = (function () {
 
     const URL_REGEX = /https?:\/\/[^\s<>\"'()]+/i;
     const PREFIX_REGEX = /^(wy|qq|tx|kw|kg|mg):/i;
+    const MINI_PROGRAM_REGEX = /(?:#?小程序:\/\/|wxaurl\.cn|weixin:\/\/)/i;
     const PLATFORM_DOMAINS = [
-        "163cn.tv", "music.163.com",
-        "y.qq.com", "qqmusic.qq.com",
+        "163cn.tv", "music.163.com", "163.com", "163.lu",
+        "y.qq.com", "qqmusic.qq.com", "qq.com",
         "kuwo.cn",
         "kugou.com",
         "migu.cn",
@@ -36,6 +37,7 @@ window.PlaylistImporter = (function () {
         if (!input || typeof input !== 'string') return false;
         const text = input.trim();
         if (PREFIX_REGEX.test(text)) return true;
+        if (MINI_PROGRAM_REGEX.test(text)) return true;
         if (URL_REGEX.test(text)) {
             const lower = text.toLowerCase();
             return PLATFORM_DOMAINS.some(domain => lower.includes(domain));
