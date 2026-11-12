@@ -20,7 +20,7 @@ window.PlaylistImporter = (function () {
     const MINI_PROGRAM_REGEX = /(?:#?小程序:\/\/|wxaurl\.cn|weixin:\/\/)/i;
     const PLATFORM_DOMAINS = [
         "163cn.tv", "music.163.com", "163.com", "163.lu",
-        "y.qq.com", "qqmusic.qq.com", "qq.com",
+        "y.qq.com", "qqmusic.qq.com", "qq.com", "wx.qq.com", "weixin.qq.com",
         "kuwo.cn",
         "kugou.com",
         "migu.cn",
@@ -38,6 +38,7 @@ window.PlaylistImporter = (function () {
         const text = input.trim();
         if (PREFIX_REGEX.test(text)) return true;
         if (MINI_PROGRAM_REGEX.test(text)) return true;
+        if (text.includes("webwxcheckurl") || text.includes("requrl=")) return true;
         if (URL_REGEX.test(text)) {
             const lower = text.toLowerCase();
             return PLATFORM_DOMAINS.some(domain => lower.includes(domain));
@@ -46,13 +47,36 @@ window.PlaylistImporter = (function () {
     }
 
     /**
-     * 提取文本中的有效 URL
+     * 提取文本中的有效 URL (自动展开微信中转 requrl 并剥除多余 Markdown 括号)
      */
     function extractUrl(text) {
         if (!text) return "";
+
+        // 1. 优先提取微信中转安全链接里的真实目标 (requrl)
+        const wxMatch = text.match(/https?:\/\/(?:wx|weixin)\.qq\.com\/[^\s<>\"'()]+\?[^\s<>\"'()]*requrl=([^\s&<>\"'()]+)/i);
+        if (wxMatch && wxMatch[1]) {
+            try {
+                const unquoted = decodeURIComponent(wxMatch[1]).replace(/[，。！？；、),\"'>\]\[]+$/, '');
+                if (/^https?:\/\//i.test(unquoted)) {
+                    return unquoted;
+                }
+            } catch (e) {}
+        }
+
+        // 2. 通用 HTTP/HTTPS 链接提取
         const m = text.match(URL_REGEX);
         if (m) {
-            return m[0].replace(/[，。！？；、),\"'>]+$/, '');
+            let url = m[0].replace(/[，。！？；、),\"'>\]\[]+$/, '');
+            if (url.includes("webwxcheckurl") || url.includes("requrl=")) {
+                try {
+                    const u = new URL(url);
+                    const req = u.searchParams.get("requrl");
+                    if (req && /^https?:\/\//i.test(req)) {
+                        return req.replace(/[，。！？；、),\"'>\]\[]+$/, '');
+                    }
+                } catch (e) {}
+            }
+            return url;
         }
         return "";
     }

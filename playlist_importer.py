@@ -41,12 +41,34 @@ MAX_IMPORT_TRACKS = 1000
 # ========================================================
 
 def extract_url_from_text(text: str) -> str:
-    """从中文分享口令、文案中提取有效 HTTP/HTTPS 链接"""
+    """从中文分享口令、微信安全检测转链、Markdown 文案中提取有效 HTTP/HTTPS 链接"""
     if not text or not isinstance(text, str):
         return ""
+
+    # 1. 优先提取微信客户端安全转链中的真实目标 (requrl)
+    m_wx = re.search(r"https?://(?:wx|weixin)\.qq\.com/[^\s<>\"'()]+\?[^\s<>\"'()]*requrl=([^\s&<>\"'()]+)", text)
+    if m_wx:
+        try:
+            unquoted = urllib.parse.unquote(m_wx.group(1)).rstrip("，。！？；、),\"'>][")
+            if unquoted.startswith("http"):
+                return unquoted
+        except Exception:
+            pass
+
+    # 2. 通用 HTTP/HTTPS 链接提取 (剥除中文标点、括号与 Markdown 方括号)
     m = re.search(r"https?://[^\s<>\"'()]+", text)
     if m:
-        url = m.group(0).rstrip("，。！？；、),\"'>")
+        url = m.group(0).rstrip("，。！？；、),\"'>][")
+        if "webwxcheckurl" in url or "requrl=" in url:
+            try:
+                parsed = urllib.parse.urlparse(url)
+                qs = urllib.parse.parse_qs(parsed.query)
+                if "requrl" in qs and qs["requrl"]:
+                    real_req = qs["requrl"][0]
+                    if real_req.startswith("http"):
+                        return real_req.rstrip("，。！？；、),\"'>][")
+            except Exception:
+                pass
         return url
     return ""
 
