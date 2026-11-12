@@ -366,6 +366,164 @@ window.RightPanel = (function () {
         });
     }
 
+    // 加载国内五大平台官方榜单 (企鹅 / 网易 / 酷我 / 酷狗 / 咪咕)
+    function selectChartsPlaylist(platform, chartId, name, curator, coverUrl) {
+        if (!platform || !chartId) return;
+        const plat = platform.toLowerCase().trim();
+        const cid = String(chartId).trim();
+        const id = `chart_${plat}_${cid}`;
+        const displayName = name || "官方排行榜";
+        const displayCurator = curator || "官方榜单";
+
+        clearSelection();
+        isViewingCustomPlaylist = false;
+        currentCustomPlaylistId = null;
+        currentPlaylistData = {
+            id,
+            type: "playlist",
+            platform: "charts",
+            chartPlatform: plat,
+            chartId: cid,
+            name: displayName,
+            title: displayName,
+            curator: displayCurator,
+            coverUrl: coverUrl || "",
+            url: ""
+        };
+        currentTracks = [];
+
+        window.StorageManager?.setLastPlaylist?.({
+            kind: "charts",
+            id,
+            platform: "charts",
+            chartPlatform: plat,
+            chartId: cid,
+            name: displayName,
+            curator: displayCurator,
+            coverUrl: coverUrl || ""
+        });
+
+        if (detailTitle) detailTitle.innerText = displayName;
+        if (detailSubtitle) detailSubtitle.innerText = `${displayCurator} • 正在获取榜单曲目...`;
+        renderHeaderActions();
+        if (detailBody) {
+            detailBody.innerHTML = '<div class="loading-state">正在拉取最新榜单曲目...</div>';
+        }
+
+        let currentPage = 1;
+        const pageSize = 100;
+        const apiUrl = `/api/charts/detail?platform=${encodeURIComponent(plat)}&id=${encodeURIComponent(cid)}&page=1&pageSize=${pageSize}`;
+        const cacheKey = `charts_detail_${plat}_${cid}_1`;
+
+        const applyData = (data) => {
+            if (!data || !data.ok) {
+                if (!currentTracks || currentTracks.length === 0) {
+                    if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取榜单曲目失败: ${escapeHtml(data?.error || "未知异常")}</div>`;
+                    if (detailSubtitle) detailSubtitle.innerText = "获取榜单曲目失败";
+                }
+                return;
+            }
+
+            const rawTracks = Array.isArray(data.tracks) ? data.tracks : [];
+            currentTracks = rawTracks.map((t, idx) => ({
+                index: idx + 1,
+                id: String(t.id || ""),
+                name: t.name || "未知曲目",
+                title: t.name || "未知曲目",
+                artist: t.artist || "未知歌手",
+                album: t.album || displayName,
+                durationMillis: t.durationMillis || 0,
+                sourcePlatform: t.sourcePlatform || plat,
+                platform: t.platform || plat,
+                cover: t.coverUrl || coverUrl || "",
+                url: t.url || ""
+            }));
+
+            const totalCount = data.total || currentTracks.length;
+            if (detailSubtitle) {
+                detailSubtitle.innerText = `${data.platformName || displayCurator} • ${data.updateFrequency || '实时更新'} (共 ${totalCount} 首)`;
+            }
+
+            renderHeaderActions();
+            renderTracklist(currentTracks);
+
+            // 若榜单总数超过已展示数 (如酷狗 TOP500)，底部展示轻量「加载更多」按钮
+            if (totalCount > currentTracks.length && detailBody) {
+                const moreBox = document.createElement("div");
+                moreBox.className = "charts-load-more-box";
+                moreBox.style.cssText = "text-align: center; padding: 16px 0 24px 0;";
+                const remain = totalCount - currentTracks.length;
+                moreBox.innerHTML = `
+                    <button type="button" class="btn-charts-load-more" style="background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
+                        加载更多 (剩余 ${remain} 首)
+                    </button>
+                `;
+                const btn = moreBox.querySelector(".btn-charts-load-more");
+                btn.onclick = async () => {
+                    btn.disabled = true;
+                    btn.innerText = "正在加载...";
+                    currentPage += 1;
+                    try {
+                        const moreUrl = `/api/charts/detail?platform=${encodeURIComponent(plat)}&id=${encodeURIComponent(cid)}&page=${currentPage}&pageSize=${pageSize}`;
+                        const res = await fetch(moreUrl).then(r => r.json());
+                        if (res && res.ok && Array.isArray(res.tracks) && res.tracks.length > 0) {
+                            const newTracks = res.tracks.map((t, idx) => ({
+                                index: currentTracks.length + idx + 1,
+                                id: String(t.id || ""),
+                                name: t.name || "未知曲目",
+                                title: t.name || "未知曲目",
+                                artist: t.artist || "未知歌手",
+                                album: t.album || displayName,
+                                durationMillis: t.durationMillis || 0,
+                                sourcePlatform: t.sourcePlatform || plat,
+                                platform: t.platform || plat,
+                                cover: t.coverUrl || coverUrl || "",
+                                url: t.url || ""
+                            }));
+                            currentTracks = currentTracks.concat(newTracks);
+                            renderTracklist(currentTracks);
+                            if (totalCount > currentTracks.length) {
+                                btn.disabled = false;
+                                btn.innerText = `加载更多 (剩余 ${totalCount - currentTracks.length} 首)`;
+                                detailBody.appendChild(moreBox);
+                            } else {
+                                moreBox.remove();
+                            }
+                        } else {
+                            btn.innerText = "没有更多了";
+                            setTimeout(() => moreBox.remove(), 1500);
+                        }
+                    } catch (e) {
+                        btn.disabled = false;
+                        btn.innerText = "加载失败，点击重试";
+                    }
+                };
+                detailBody.appendChild(moreBox);
+            }
+
+            if (window.player && (!window.player.isPlaying || window.player.playlist.length === 0)) {
+                window.player.setPlaylist(currentTracks, -1);
+            }
+        };
+
+        if (window.swrFetch) {
+            window.swrFetch(apiUrl, cacheKey, {
+                onCached: (data) => applyData(data),
+                onUpdated: (data) => applyData(data),
+                onError: (err) => {
+                    if (!currentTracks || currentTracks.length === 0) {
+                        if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取榜单曲目失败: ${escapeHtml(err.message)}</div>`;
+                        if (detailSubtitle) detailSubtitle.innerText = "获取榜单曲目失败";
+                    }
+                }
+            });
+        } else {
+            fetch(apiUrl).then(r => r.json()).then(applyData).catch(err => {
+                if (detailBody) detailBody.innerHTML = `<div class="loading-state">❌ 获取榜单曲目失败: ${escapeHtml(err.message)}</div>`;
+            });
+        }
+    }
+
     // 外部导入歌单预览通道 (遵照 architecture-playlist-import.md 规范)
     function prepareImportLoading(rawInput) {
         clearSelection();
@@ -888,13 +1046,16 @@ window.RightPanel = (function () {
                 id: currentPlaylistData.id,
                 type: currentPlaylistData.type || "playlist",
                 platform: currentPlaylistData.platform || "",
+                chartPlatform: currentPlaylistData.chartPlatform || "",
+                chartId: currentPlaylistData.chartId || "",
+                coverUrl: currentPlaylistData.coverUrl || "",
                 svType: currentPlaylistData.svType || "",
                 svId: currentPlaylistData.svId || "",
                 svKind: currentPlaylistData.svKind || "",
                 svCategory: currentPlaylistData.svCategory || "",
                 name: currentPlaylistData.name,
                 title: currentPlaylistData.name,
-                curator: currentPlaylistData.curator || "Apple Music",
+                curator: currentPlaylistData.curator || "官方榜单",
                 url: currentPlaylistData.url || "",
                 trackCount: currentTracks ? currentTracks.length : 0
             };
@@ -1119,6 +1280,7 @@ window.RightPanel = (function () {
         selectCustomPlaylist,
         selectSvChart,
         selectSvPlaylist,
+        selectChartsPlaylist,
         renderTracklist,
         playCurrentAll,
         playSong,

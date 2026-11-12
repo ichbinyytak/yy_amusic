@@ -157,6 +157,7 @@ window.LeftPanel = (function () {
         const appleAcc = createTopAccordion({
             id: "top_apple_zone",
             title: "🍎 Apple 专区",
+            exclusiveGroup: "website",
             onToggle: (isOpen) => {
                 if (isOpen && !appleInitialized) {
                     appleInitialized = true;
@@ -171,6 +172,7 @@ window.LeftPanel = (function () {
         const svAcc = createTopAccordion({
             id: "top_streetvoice_zone",
             title: "🎸 街声",
+            exclusiveGroup: "website",
             extraHeaderHtml: '<span class="sv-badge-readonly">192k · .com</span>',
             onToggle: (isOpen) => {
                 if (isOpen && !svInitialized) {
@@ -181,6 +183,36 @@ window.LeftPanel = (function () {
         });
         svAcc.bodyEl.appendChild(svContent);
         viewApple.appendChild(svAcc.blockEl);
+
+        // 2.1.2 国内五大音乐平台榜单专区 (企鹅 / 网易 / 酷我 / 酷狗 / 咪咕)
+        const domesticPlatforms = [
+            { id: "top_qq_zone", plat: "qq", title: "🐧 企鹅音乐", badge: "官方榜" },
+            { id: "top_wy_zone", plat: "wy", title: "🔴 网易云音乐", badge: "官方榜" },
+            { id: "top_kw_zone", plat: "kw", title: "⭐ 酷我音乐", badge: "官方榜" },
+            { id: "top_kg_zone", plat: "kg", title: "🐶 酷狗音乐", badge: "官方榜" },
+            { id: "top_mg_zone", plat: "mg", title: "🎵 咪咕音乐", badge: "官方榜" }
+        ];
+
+        domesticPlatforms.forEach(p => {
+            const contentEl = document.createElement("div");
+            contentEl.id = `${p.plat}ChartsContent`;
+            let initialized = false;
+
+            const acc = createTopAccordion({
+                id: p.id,
+                title: p.title,
+                exclusiveGroup: "website",
+                extraHeaderHtml: `<span class="sv-badge-readonly" style="background:var(--bg-sub); font-size:10px;">${p.badge}</span>`,
+                onToggle: (isOpen) => {
+                    if (isOpen && !initialized) {
+                        initialized = true;
+                        window.ChartsPanel?.initPlatform?.(contentEl, p.plat);
+                    }
+                }
+            });
+            acc.bodyEl.appendChild(contentEl);
+            viewApple.appendChild(acc.blockEl);
+        });
 
         // 2.2 我的音乐库视图首行：独立设置行放置【备份歌单】与【恢复歌单】(彻底防止顶部Tab误触)
         const libToolbar = document.createElement("div");
@@ -335,7 +367,9 @@ window.LeftPanel = (function () {
         switchTab(activeTab);
     }
 
-    function createTopAccordion({ id, title, extraHeaderHtml, onToggle }) {
+    const accordionGroupRegistry = new Map();
+
+    function createTopAccordion({ id, title, extraHeaderHtml, exclusiveGroup, onToggle }) {
         const block = document.createElement("div");
         block.className = "top-accordion-block";
         if (id) block.id = id;
@@ -357,25 +391,56 @@ window.LeftPanel = (function () {
         const body = document.createElement("div");
         body.className = `top-accordion-body ${isOpen ? 'open' : ''}`;
 
-        hdr.onclick = () => {
+        const closeSelf = () => {
             if (expandedTopAccordions.has(id)) {
                 expandedTopAccordions.delete(id);
                 body.classList.remove("open");
                 hdr.classList.remove("open");
                 const arrow = hdr.querySelector(".top-accordion-arrow");
-                arrow.classList.remove("open");
-                arrow.innerHTML = iconArrowCollapsed;
+                if (arrow) {
+                    arrow.classList.remove("open");
+                    arrow.innerHTML = iconArrowCollapsed;
+                }
                 if (onToggle) onToggle(false);
-            } else {
+            }
+        };
+
+        const openSelf = () => {
+            if (!expandedTopAccordions.has(id)) {
+                // 若定义了互斥组，则自动平滑收缩组内其他所有已展开的项
+                if (exclusiveGroup && accordionGroupRegistry.has(exclusiveGroup)) {
+                    accordionGroupRegistry.get(exclusiveGroup).forEach(ctrl => {
+                        if (ctrl.id !== id) {
+                            ctrl.close();
+                        }
+                    });
+                }
                 expandedTopAccordions.add(id);
                 body.classList.add("open");
                 hdr.classList.add("open");
                 const arrow = hdr.querySelector(".top-accordion-arrow");
-                arrow.classList.add("open");
-                arrow.innerHTML = iconArrowExpanded;
+                if (arrow) {
+                    arrow.classList.add("open");
+                    arrow.innerHTML = iconArrowExpanded;
+                }
                 if (onToggle) onToggle(true);
             }
         };
+
+        hdr.onclick = () => {
+            if (expandedTopAccordions.has(id)) {
+                closeSelf();
+            } else {
+                openSelf();
+            }
+        };
+
+        if (exclusiveGroup) {
+            if (!accordionGroupRegistry.has(exclusiveGroup)) {
+                accordionGroupRegistry.set(exclusiveGroup, new Set());
+            }
+            accordionGroupRegistry.get(exclusiveGroup).add({ id, close: closeSelf, open: openSelf });
+        }
 
         block.appendChild(hdr);
         block.appendChild(body);
@@ -383,7 +448,9 @@ window.LeftPanel = (function () {
         return {
             blockEl: block,
             headerEl: hdr,
-            bodyEl: body
+            bodyEl: body,
+            close: closeSelf,
+            open: openSelf
         };
     }
 
@@ -400,10 +467,11 @@ window.LeftPanel = (function () {
 
         const isStreetVoice = item.platform === "streetvoice" || String(item.id || "").startsWith("sv_");
         const isSvChart = isStreetVoice && (item.svType === "chart" || String(item.id || "").startsWith("sv_chart_"));
-        const isCurated = !isStreetVoice && (!!item.isCurated || item.type === "curated" || item.kind === "curated" || (item.tracks && item.tracks.length > 0));
+        const isChart = item.platform === "charts" || String(item.id || "").startsWith("chart_");
+        const isCurated = !isStreetVoice && !isChart && (!!item.isCurated || item.type === "curated" || item.kind === "curated" || (item.tracks && item.tracks.length > 0));
         const kind = item.kind || item.type || (item.attributes ? (item.type === "albums" ? "album" : "playlist") : "playlist");
-        const isAlbum = !isStreetVoice && (kind === "album" || kind === "albums");
-        const typeLabel = isCustom ? "[自建]" : (isSvChart ? "[榜单]" : (isCurated ? "[精选]" : (isAlbum ? "[专辑]" : "[歌单]")));
+        const isAlbum = !isStreetVoice && !isChart && (kind === "album" || kind === "albums");
+        const typeLabel = isCustom ? "[自建]" : ((isSvChart || isChart) ? "[榜单]" : (isCurated ? "[精选]" : (isAlbum ? "[专辑]" : "[歌单]")));
         // 遵循色彩规范：仅大标题红，卡片内标签采用标准中性/副色，杜绝红字
         const tagColor = isCustom ? "var(--accent)" : (isAlbum ? "var(--tag-album-color)" : "var(--text-secondary)");
 
@@ -530,6 +598,22 @@ window.LeftPanel = (function () {
                 const svId = item.svId || String(item.id || "").replace(/^sv_pl_/, "");
                 window.RightPanel?.selectSvPlaylist?.(svId, name, curator, url, item.id);
             }
+            if (onLoaded) setTimeout(onLoaded, 300);
+            return;
+        }
+
+        const isChart = item.platform === "charts" || String(item.id || "").startsWith("chart_");
+        if (isChart) {
+            let chartPlat = item.chartPlatform;
+            let chartId = item.chartId;
+            if (!chartPlat || !chartId) {
+                const m = String(item.id || "").match(/^chart_([a-zA-Z0-9]+)_(.+)$/);
+                if (m) {
+                    chartPlat = m[1];
+                    chartId = m[2];
+                }
+            }
+            window.RightPanel?.selectChartsPlaylist?.(chartPlat, chartId, name, curator, item.coverUrl);
             if (onLoaded) setTimeout(onLoaded, 300);
             return;
         }

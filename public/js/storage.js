@@ -409,6 +409,9 @@ window.StorageManager = (function () {
             if (playlistData.title) favs[idx].title = playlistData.title;
             if (playlistData.trackCount !== undefined) favs[idx].trackCount = playlistData.trackCount;
             if (playlistData.platform) favs[idx].platform = playlistData.platform;
+            if (playlistData.chartPlatform) favs[idx].chartPlatform = playlistData.chartPlatform;
+            if (playlistData.chartId) favs[idx].chartId = playlistData.chartId;
+            if (playlistData.coverUrl) favs[idx].coverUrl = playlistData.coverUrl;
             if (playlistData.svType) favs[idx].svType = playlistData.svType;
             if (playlistData.svId) favs[idx].svId = playlistData.svId;
             if (playlistData.svKind) favs[idx].svKind = playlistData.svKind;
@@ -420,6 +423,9 @@ window.StorageManager = (function () {
                 id: playlistData.id,
                 type: playlistData.type || 'playlist',
                 platform: playlistData.platform || '',
+                chartPlatform: playlistData.chartPlatform || '',
+                chartId: playlistData.chartId || '',
+                coverUrl: playlistData.coverUrl || '',
                 svType: playlistData.svType || '',
                 svId: playlistData.svId || '',
                 svKind: playlistData.svKind || '',

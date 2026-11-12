@@ -72,6 +72,10 @@ from streetvoice_catalog import (
     resolve_streetvoice_track,
     probe_sv_health,
 )
+from charts_catalog import (
+    get_charts_list,
+    get_charts_detail,
+)
 
 # ========================================================
 # 区块 1: 网络安全校验与 SSRF / 私网穿透探测防护
@@ -474,6 +478,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.send_json(fetch_sv_playlist_songs(pid), cache_control=sv_cache_ctl)
             except Exception as e:
                 self.send_error_json(e, status=400 if isinstance(e, ValueError) else 500)
+            return
+
+        # 5.6 国内五大音乐平台榜单专区 (企鹅 / 网易 / 酷我 / 酷狗 / 咪咕)
+        if req_path == "/api/charts/list":
+            qs = urllib.parse.parse_qs(parsed_req.query)
+            platform = qs.get("platform", ["qq"])[0]
+            try:
+                res = get_charts_list(platform)
+                self.send_json(res, cache_control="public, max-age=3600, s-maxage=3600, stale-while-revalidate=7200")
+            except Exception as e:
+                self.send_error_json(str(e))
+            return
+
+        if req_path == "/api/charts/detail":
+            qs = urllib.parse.parse_qs(parsed_req.query)
+            platform = qs.get("platform", ["qq"])[0]
+            cid = qs.get("id", [""])[0]
+            try:
+                page = int(qs.get("page", ["1"])[0])
+            except Exception:
+                page = 1
+            try:
+                pageSize = int(qs.get("pageSize", ["100"])[0])
+            except Exception:
+                pageSize = 100
+            try:
+                res = get_charts_detail(platform, cid, page=page, page_size=pageSize)
+                self.send_json(res, cache_control="public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600")
+            except Exception as e:
+                self.send_error_json(str(e))
             return
 
         # 6. 音频底层：音源健康度队列 (真实透传各音源健康度与延迟)
