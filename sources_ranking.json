@@ -1,31 +1,19 @@
 {
-  "generatedAt": "2026-11-12T02:04:07Z",
-  "testedAt": "2026-11-12T02:04:07Z",
+  "generatedAt": "2026-11-13T01:34:24Z",
+  "testedAt": "2026-11-13T01:34:24Z",
   "total": 16,
   "sources": [
     {
-      "id": "wy_yy_zddyr_top_0e26",
-      "name": "星海音乐源 · yy.zddyr.top (wy)",
-      "platform": "wy",
+      "id": "tx_api_vkeys_cn_f307",
+      "name": "星澜聚合音源 (StellarWave) · api.vkeys.cn (tx)",
+      "platform": "tx",
       "platforms": [
-        "wy"
+        "tx"
       ],
       "status": "ok",
-      "latency_ms": 857.8,
+      "latency_ms": 1541.2,
       "consecutive_fails": 0,
-      "success_count": 3
-    },
-    {
-      "id": "kw_c_wwwweb_top_12cc",
-      "name": "轻量音源（四平台多源并行） · c.wwwweb.top (kw)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1335.3,
-      "consecutive_fails": 0,
-      "success_count": 3
+      "success_count": 2
     },
     {
       "id": "tx_cyapi_top_ccff",
@@ -35,129 +23,21 @@
         "tx"
       ],
       "status": "ok",
-      "latency_ms": 1457.7,
+      "latency_ms": 1638.2,
       "consecutive_fails": 0,
       "success_count": 5
     },
     {
-      "id": "kg_yy_zddyr_top_3843",
-      "name": "juhev0-0-1 · yy.zddyr.top (kg)",
-      "platform": "kg",
-      "platforms": [
-        "kg"
-      ],
-      "status": "ok",
-      "latency_ms": 1652.4,
-      "consecutive_fails": 0,
-      "success_count": 20
-    },
-    {
-      "id": "wy_oiapi",
-      "name": "网易云极速源 (网易)",
+      "id": "wy_yy_zddyr_top_0e26",
+      "name": "星海音乐源 · yy.zddyr.top (wy)",
       "platform": "wy",
       "platforms": [
         "wy"
       ],
       "status": "ok",
-      "latency_ms": 2144.6,
+      "latency_ms": 1641.1,
       "consecutive_fails": 0,
-      "success_count": 25
-    },
-    {
-      "id": "wy_c_wwwweb_top_edf3",
-      "name": "𝖧౿ᥣᥣ𝗈 Ԝ𝗈𝗋ᥣᑯ · c.wwwweb.top (wy)",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 2176.7,
-      "consecutive_fails": 0,
-      "success_count": 20
-    },
-    {
-      "id": "wy_103_79_184_97_1621",
-      "name": "音乐源 · 103.79.184.97 (wy)",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 2169.4,
-      "consecutive_fails": 0,
-      "success_count": 7
-    },
-    {
-      "id": "kw_yy_zddyr_top_77cf",
-      "name": "杰翔聚合音源 · yy.zddyr.top (kw)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 2298.9,
-      "consecutive_fails": 0,
-      "success_count": 8
-    },
-    {
-      "id": "kw_yaohu",
-      "name": "妖狐直通源 (酷我)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 2437.3,
-      "consecutive_fails": 0,
-      "success_count": 50
-    },
-    {
-      "id": "kw_nxinxz",
-      "name": "念心车机穿透源 (酷我)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 2463.4,
-      "consecutive_fails": 0,
-      "success_count": 5
-    },
-    {
-      "id": "tx_tang_api_s01s_cn_115f",
-      "name": "lx-玉宁熙-Pro · tang.api.s01s.cn (tx)",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "ok",
-      "latency_ms": 2536.2,
-      "consecutive_fails": 0,
-      "success_count": 6
-    },
-    {
-      "id": "kg_official",
-      "name": "酷狗官方直通源 (酷狗)",
-      "platform": "kg",
-      "platforms": [
-        "kg"
-      ],
-      "status": "ok",
-      "latency_ms": 4184.9,
-      "consecutive_fails": 0,
-      "success_count": 20
-    },
-    {
-      "id": "wy_api_s0o1_com_604a",
-      "name": "Ciallo～(∠・ω< )⌒☆ · api.s0o1.com (wy)",
-      "platform": "wy",
-      "platforms": [
-        "wy"
-      ],
-      "status": "ok",
-      "latency_ms": 4515.7,
-      "consecutive_fails": 0,
-      "success_count": 1
+      "success_count": 3
     },
     {
       "id": "kw_haitang",
@@ -167,9 +47,33 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 5077.9,
+      "latency_ms": 1959.3,
       "consecutive_fails": 0,
       "success_count": 15
+    },
+    {
+      "id": "wy_oiapi",
+      "name": "网易云极速源 (网易)",
+      "platform": "wy",
+      "platforms": [
+        "wy"
+      ],
+      "status": "ok",
+      "latency_ms": 2026.5,
+      "consecutive_fails": 0,
+      "success_count": 25
+    },
+    {
+      "id": "kg_yy_zddyr_top_3843",
+      "name": "juhev0-0-1 · yy.zddyr.top (kg)",
+      "platform": "kg",
+      "platforms": [
+        "kg"
+      ],
+      "status": "ok",
+      "latency_ms": 2202.0,
+      "consecutive_fails": 0,
+      "success_count": 20
     },
     {
       "id": "tx_103_79_184_97_c14d",
@@ -178,10 +82,106 @@
       "platforms": [
         "tx"
       ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 1,
+      "status": "ok",
+      "latency_ms": 2072.5,
+      "consecutive_fails": 0,
       "success_count": 4
+    },
+    {
+      "id": "kw_yaohu",
+      "name": "妖狐直通源 (酷我)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 2309.0,
+      "consecutive_fails": 0,
+      "success_count": 50
+    },
+    {
+      "id": "wy_c_wwwweb_top_edf3",
+      "name": "𝖧౿ᥣᥣ𝗈 Ԝ𝗈𝗋ᥣᑯ · c.wwwweb.top (wy)",
+      "platform": "wy",
+      "platforms": [
+        "wy"
+      ],
+      "status": "ok",
+      "latency_ms": 2355.3,
+      "consecutive_fails": 0,
+      "success_count": 20
+    },
+    {
+      "id": "kg_official",
+      "name": "酷狗官方直通源 (酷狗)",
+      "platform": "kg",
+      "platforms": [
+        "kg"
+      ],
+      "status": "ok",
+      "latency_ms": 2395.8,
+      "consecutive_fails": 0,
+      "success_count": 20
+    },
+    {
+      "id": "kw_c_wwwweb_top_12cc",
+      "name": "轻量音源（四平台多源并行） · c.wwwweb.top (kw)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 2218.7,
+      "consecutive_fails": 0,
+      "success_count": 3
+    },
+    {
+      "id": "tx_tang_api_s01s_cn_115f",
+      "name": "lx-玉宁熙-Pro · tang.api.s01s.cn (tx)",
+      "platform": "tx",
+      "platforms": [
+        "tx"
+      ],
+      "status": "ok",
+      "latency_ms": 2535.4,
+      "consecutive_fails": 0,
+      "success_count": 6
+    },
+    {
+      "id": "kw_yy_zddyr_top_77cf",
+      "name": "杰翔聚合音源 · yy.zddyr.top (kw)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 2588.7,
+      "consecutive_fails": 0,
+      "success_count": 8
+    },
+    {
+      "id": "kw_nxinxz",
+      "name": "念心车机穿透源 (酷我)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 2668.3,
+      "consecutive_fails": 0,
+      "success_count": 5
+    },
+    {
+      "id": "wy_api_s0o1_com_604a",
+      "name": "Ciallo～(∠・ω< )⌒☆ · api.s0o1.com (wy)",
+      "platform": "wy",
+      "platforms": [
+        "wy"
+      ],
+      "status": "ok",
+      "latency_ms": 4356.4,
+      "consecutive_fails": 0,
+      "success_count": 1
     },
     {
       "id": "mg_oiapi_net_7de1",
@@ -192,7 +192,7 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 4,
+      "consecutive_fails": 5,
       "success_count": 7
     }
   ]
