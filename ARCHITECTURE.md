@@ -1,191 +1,271 @@
-# 🍎 Amusic 架构全景图与模块速查手册
+# 🍎 Amusic 工程架构总纲与避坑宪法 (ARCHITECTURE.md)
 
-本文档为 **Amusic (Apple Music 纯文本数据库浏览器 + 多源无损音频底座)** 的核心架构与模块速查指南，供日常维护、二次开发以及未来移植原生安卓 App 时快速查阅。
+> **文档定位**：全工程**唯一事实来源（Single Source of Truth）**与对内“宪法级”架构手册。  
+> **适用对象**：后续开发者与 AI 编程助手。**在动手修改任何代码前，必须全文精读本手册，严禁违背文中所列铁律。**
 
 ---
 
-## 一、 系统架构总览
+## 目录
+- [一、 物理现实与跨洋网络铁律（防 AI/本地思维乱改指南）](#一-物理现实与跨洋网络铁律防-ai本地思维乱改指南)
+- [二、 系统架构全景与模块主权地图](#二-系统架构全景与模块主权地图)
+- [三、 核心业务链路与出声防伪准则](#三-核心业务链路与出声防伪准则)
+- [四、 认证鉴权与歌单存储架构](#四-认证鉴权与歌单存储架构)
+- [五、 专区与特色功能架构规范](#五-专区与特色功能架构规范)
+- [六、 基础设施、排班与环境变量清单](#六-基础设施排班与环境变量清单)
+
+---
+
+## 一、 物理现实与跨洋网络铁律（防 AI/本地思维乱改指南）
+
+### 1. 物理拓扑真相（决不能拿着 `localhost` 的思维写代码）
+
+```text
+  ┌──────────────────────────────────────────────────────────────┐
+  │                      真实世界的物理网络拓扑                     │
+  └──────────────────────────────────────────────────────────────┘
+
+   【用户终端】 (中国大陆家庭宽带/移动端 4G/5G)
+        │
+        │ 跨洋长距离传输 (物理 RTT: 150ms ~ 250ms)
+        ▼
+   【Vercel 边缘网关 & Serverless 容器】 (美国东部 iad1 节点，境外运行环境)
+        │
+        ├──▶【国际数据源】: Apple Music 目录、GitHub Actions 密文包
+        │
+        └──▶【国内音乐 CDN】: 酷我、网易、QQ、咪咕等国内音频节点 (再次跨洋请求国内)
+```
+
+1. **服务器在境外，用户在境内**：
+   - 本项目线上环境托管于 **Vercel 美东（iad1）Serverless**。
+   - 终端用户绝大多数位于 **中国大陆**。
+   - 绝大多数音频 CDN 位于 **中国大陆境内**。
+2. **本地只是简单开发容器，绝不代表生产环境**：
+   - 本地 `127.0.0.1:8000` 调试时，网络请求直接从你本地电脑发出，延迟低且能直连国内 IP；
+   - 线上运行时，所有后端逻辑都是在美东机房运行，存在严苛的跨洋延迟、境内防火墙与上游机房 IP 风控！
+
+### 2. 跨洋网络六大红线禁令（违者必造成线上卡死）
+
+1. **【禁令 1】严禁无节制的串行 HTTP 请求（握手爆炸）**：
+   - 美东到中国单次 TCP+TLS 握手需 150ms~250ms。串行发起 4 次请求页面就直接卡死 1 秒以上。
+   - **执行准则**：所有网络调用必须走 [net_pool.py](file:///home/yytak/gd/MyFiles/project/Amusic/net_pool.py)，强制复用 `urllib3` Keep-Alive 连接池；开启应用层 DNS 缓存与 **IPv4 强制优选**，彻底消除重复握手。
+2. **【禁令 2】严禁在 Lambda 中全量下载大音频（内存与超时爆破）**：
+   - 音频出声验证的目的是确认“该链接是真音频还是 404/防盗链阻断”，绝非下载整首歌！
+   - **执行准则**：嗅探只读前 **1.2MB**（`MIN_VALID_BYTES`），验证格式魔数与音频头通过后**立即切断连接**，将最终音频直链派发给前端直接加载。
+3. **【禁令 3】严禁在生产环境把“优雅降级”当成“放行通过”（Fail-Close 铁律）**：
+   - 在本地调试时，缺少环境变量允许退守 `.local_auth.json` 且邀请码默认 `1111`；
+   - **执行准则**：在 Vercel 生产环境（`is_vercel_env() == True`），若缺少 `AMUSIC_AUTH_SECRET`、邀请码或云存储凭据，**必须直接抛出异常拒绝访问（Fail-Close）**！严禁在线上静默放行未授权注册，严禁尝试写本地只读磁盘！
+4. **【禁令 4】严禁在 Serverless 中创建持久后台线程或写文件持久化**：
+   - Vercel Serverless 是无状态、请求结束即冻结的沙箱，文件系统除 `/tmp` 外全局只读；
+   - **执行准则**：严禁写本地持久文件；严禁运行 `threading.Thread` 做未超时的异步长循环；所有持久状态必须推送到云存储（Upstash KV / Vercel Blob / 客户端 localStorage）。
+5. **【禁令 5】严禁引入庞大的三方依赖（冷启动杀手）**：
+   - 项目保持 **0 pip 繁重依赖**（仅基础网络连接池 `urllib3`）。彻底废除 Node.js 子进程与外部几十 MB 的运行时二进制，保证冷启动在 50ms 内完成。
+6. **【禁令 6】直链优先，反代兜底**：
+   - 客户端能直连播放的 CDN 链接优先下发直链，利用国内边缘 CDN 直达用户耳朵；
+   - 仅当遇到严格防盗链 Referer 或跨域 CORS 阻断时，才允许走 `/api/stream_proxy` 管道代理。
+
+---
+
+## 二、 系统架构全景与模块主权地图
+
+### 1. 架构拓扑全景图
 
 ```mermaid
 flowchart TD
-    subgraph UI["前端视图与外壳交互层"]
-        HTML["index.html (骨架结构)"]
-        LeftView["LeftPanel (左侧面板/手风琴/卡片)"]
-        RightView["RightPanel (右侧详情/曲目表/批量栏)"]
-        Shell["Shell (顶栏搜索/双行歌词/直立音量/抽屉)"]
-        Modals["Modals (6大业务模态弹窗)"]
+    subgraph Client["前端客户端 (Browser 原生 SPA)"]
+        Index["index.html (外壳与骨架)"]
+        PlayerJS["player.js (核心播放引擎)"]
+        Modules["public/js/* (模块化组件)"]
+        Storage["StorageManager (localStorage 容灾持久化)"]
     end
 
-    subgraph Core["前端核心业务与驱动引擎"]
-        Player["player.js (MusicPlayer 核心播放引擎)"]
-        Library["LibraryPanel (我的音乐库/自建歌单树)"]
-        Region["RegionPanel (Apple 专区与区域榜单)"]
-        Search["SearchPanel (全网跨源搜索与路由)"]
-        Downloader["Downloader (ZIP多任务并发下载)"]
-        Storage["StorageManager (LocalStorage 数据持久化)"]
-        ContextMenu["ContextMenu (歌曲右键操作菜单)"]
-        API["API Client (统一 Fetch 封装与缓存)"]
-    end
-
-    subgraph Backend["后端服务网关与音源调度 (纯 Python 原生 / Serverless)"]
-        Server["server.py (HTTP 网关 / SSRF 防御 / 静态服务)"]
-        SourceHub["source_manager.py (纯 Python 原生音源池 / 毫秒并发竞速 / 防伪拦截)"]
-        SongSearch["song_search.py (多源聚合搜索 / 繁简字库 / 时长门禁打分)"]
-        Catalog["apple_catalog.py (Apple Music 目录协议抓取)"]
-        NetPool["net_pool.py (Keep-Alive 连接池 / DNS 缓存 / 音频魔数嗅探)"]
-    end
-
-    subgraph Data["外部数据与音频 CDN"]
-        AppleAPI["Apple Music 官方 CDN & 目录服务"]
-        KuwoCDN["酷我音乐 (官方 / 车机 / Haifang / 念心穿透)"]
-        NeteaseCDN["网易云音乐 (直通 / 320k / 无损)"]
-        LXHub["lx-hub (第三方开源音源生态脚本)"]
-    end
-
-    UI --> Core
-    Core -->|HTTP / JSON| Backend
-    Backend --> Data
-```
-
----
-
-## 二、 全工程模块职责与全局命名空间速查表
-
-### 1. 前端视图与交互模块 (`js/` & `css/`)
-
-| 文件名 | 全局命名空间 | 核心职责与功能 | 依赖协同模块 |
-| :--- | :--- | :--- | :--- |
-| **`js/modals.js`** | `window.Modals` | **6大独立业务弹窗集中管理**：<br>① 添加到收藏分类；② 移动歌单分组；③ 添加到自建歌单；④ 批量打包下载确认；⑤ 通用二次防误触确认；⑥ 通用重命名/单行文本输入。 | `StorageManager`, `RightPanel`, `LibraryPanel`, `Downloader`, `Shell` |
-| **`js/shell.js`** | `window.Shell` | **主页外壳与全局播控联动**：<br>① 顶部紧凑搜索框；② 底部播控条与进度跳转；③ 垂直直立音量弹出滑块；④ 毫秒级双行歌词 Dock；⑤ 播放队列抽屉与底层音源状态抽屉；⑥ 全局轻量 Toast。兼容转发 Modals 代理。 | `player`, `Modals`, `LeftPanel`, `RightPanel` |
-| **`js/left.js`** | `window.LeftPanel` | **左侧抽屉式单窗口就地手风琴**：<br>① 顶部主标签页（Apple专区 / 我的音乐库）；② 歌单卡片纯净构造器（清洗脱水前缀）；③ 单指右滑 / 鼠标拖拽带出抽屉手势；④ 抽屉打开/关闭吸附管理。 | `RegionPanel`, `LibraryPanel`, `RightPanel` |
-| **`js/right.js`** | `window.RightPanel` | **右侧实体详情与表格渲染**：<br>① 专辑/歌单总览操作头；② 自适应歌曲表格（hover 复选框切换）；③ 浮动批量多选工具栏；④ 搜索结果与歌手详情联动路由。 | `player`, `StorageManager`, `Modals`, `ContextMenu` |
-| **`js/library.js`** | `window.LibraryPanel` | **我的音乐库树状管理**：<br>自建歌单、收藏官方歌单的分类树形折叠、就地重命名、删除与卡片装配。 | `StorageManager`, `LeftPanel`, `Modals` |
-| **`js/region.js`** | `window.RegionPanel` | **Apple Music 区域与专区**：<br>Storefront 跨区切换（国区/港区/美区/日区等）、每日热门 Top 100 榜单与分类专区拉取。 | `API`, `LeftPanel`, `RightPanel` |
-| **`js/search.js`** | `window.SearchPanel` | **搜索中心路由与结果展示**：<br>承接全局搜索输入，调用后端跨源搜索接口，组织歌曲、歌单、专辑三合一卡片流。 | `API`, `LeftPanel`, `RightPanel` |
-| **`js/storage.js`** | `window.StorageManager` | **本地数据持久化层**：<br>封装 `localStorage`，管理自建歌单 CRUD、收藏歌单、分类标签管理、上次播放记忆、一键导出与导入备份。 | *无外部依赖（底层基础模块）* |
-| **`js/download.js`** | `window.Downloader` | **音频下载与打包引擎**：<br>单曲直链下载、跨源音频嗅探、批量 3 任务并发下载队列，客户端生成 ZIP 归档。 | `API`, `Shell` |
-| **`js/context_menu.js`** | `window.ContextMenu` | **歌曲行右键上下文操作菜单**：<br>播放、下一首播放、加入歌单、下载、查看歌手/专辑。 | `player`, `RightPanel`, `Modals`, `Downloader` |
-| **`js/backup.js`** | `window.Backup` | **数据导入导出弹窗**：<br>格式校验、JSON 文件解析与一键恢复。 | `StorageManager`, `Shell` |
-| **`js/api.js`** | `window.AmusicAPI` | **后端网络请求统一客户端**：<br>统一封装 `fetch`、超时熔断、SWR 内存缓存与 ETag 支持。 | *底层网络基座* |
-| **`js/main.js`** | *(自执行)* | **主应用启动入口**：<br>按顺序初始化各个子系统，绑定全局未捕获异常处理。 | 统领所有前端模块 |
-
----
-
-### 2. 核心播放引擎 (`player.js`)
-
-| 核心组件 | 职责与技术细节 |
-| :--- | :--- |
-| **Audio 驱动** | 基于 HTML5 Audio，处理音频解码、移动端自动播放安全策略解锁（Unlock）。 |
-| **MediaSession** | 深度集成 W3C 标准 `navigator.mediaSession`，实现系统锁屏封面、标题、歌手展示与硬件多媒体按键支持。 |
-| **定向预加载 (Prefetch)** | 当前歌曲播放至 70% 时静默拉取下一首直链，存入 LRU 缓存，实现 **0ms 秒切歌曲**。 |
-| **回退重试与容灾** | 音频流播放失败时，自动重试并降级至反代节点，连续重试失败智能跳过下一首。 |
-| **双向回溯栈 (History)** | 维护播放历史堆栈，使随机播放模式下点击“上一首”能够精准退回刚刚播放过的歌曲。 |
-
----
-
-### 3. 后端服务与音源调度模块 (`*.py` & 沙箱)
-
-| 文件名 | 核心类/函数 | 职责与技术细节 |
-| :--- | :--- | :--- |
-| **`source_manager.py`** | `SourceManager`<br>`AudioSource` | **纯 Python 原生音源池与并发竞速调度器**：<br>① 统一管理各大异构原生通道（海棠SVIP、念心车机、酷我官方、网易极速等）；<br>② **0 进程开销**：彻底废除 Node.js 子进程与 32MB 二进制包，0ms 冷启动；<br>③ **并发竞速**：前两强原生源并行冲刺，毫秒级即时出声；<br>④ **防伪铁律**：`MIN_VALID_BYTES = 1.2MB` 严格拦截试听残卷，首包音频魔数（Magic Number）嗅探确保真流；<br>⑤ 单一事实来源与自适应奖惩模型。 |
-| **`song_search.py`** | `search_candidates` | **全网跨源聚合搜索与繁简转换打分**：<br>① 酷我 + 网易云多通道并发检索；<br>② 内置 362 个高频汉字繁简映射词库，抹平简繁版本差异；<br>③ 结合标题相似度、歌手精确度与**时长硬门禁（偏差 > 15s 一票否决）**进行多维打分排序，杜绝翻唱串曲。 |
-| **`server.py`** | `Handler`<br>`ThreadingTCPServer` | **HTTP 服务网关与安全防御**：<br>① 静态资源分发与 ETag 缓存；<br>② SSRF 白名单防御（严防 `file://` 与内网 IP 穿透）；<br>③ 音频流直通反向代理 (`/api/stream_proxy`)。 |
-| **`apple_catalog.py`** | `fetch_apple_playlist`<br>`fetch_apple_album` | **Apple Music 目录协议解析器**：<br>直接解析官方公开网页与微元数据，无缝提取多 Storefront 官方歌单与专辑曲目列表。 |
-| **`net_pool.py`** | `verify_audio_stream`<br>`http_get` | **全局网络连接池与音频流真实性校验**：<br>基于 `urllib3` Keep-Alive 连接池复用，支持 IPv4 优选、DNS 缓存与音频文件格式魔数嗅探。 |
-
----
-
-## 三、 核心业务数据流与时序
-
-### 1. 歌曲点播与双核并发冲刺时序
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as 用户 (前端界面)
-    participant Right as RightPanel
-    participant Player as player.js (MusicPlayer)
-    participant Hub as source_manager.py
-    participant Node as 便携 Node 沙箱 (/tmp/node)
-    participant CDN as 音频 CDN (酷我 / 网易)
-
-    User->>Right: 点击单曲行
-    Right->>Player: playTracklist([track], startIndex)
-    Player->>Player: 检查本地 LRU 缓存 (0ms 命中?)
-    alt 缓存未命中
-        Player->>Hub: POST /api/resolve (歌曲元数据)
-        Note over Hub: 双核并发冲刺 (派发前2强音源)
-        par 音源 A (如 LX 全豆要)
-            Hub->>Node: 运行 lx_runner.js
-            Node->>CDN: 跨网解密请求
-            CDN-->>Node: 返回直链
-            Node-->>Hub: 直链 A
-        and 音源 B (如 海棠穿透源)
-            Hub->>CDN: 直接请求穿透接口
-            CDN-->>Hub: 直链 B
+    subgraph Edge["Vercel Edge & Serverless (iad1 美东)"]
+        Router["api/index.py (Serverless 统一反向路由入口)"]
+        Server["server.py (HTTP 网关 / 静态服务 / 流反代)"]
+        
+        subgraph CoreBackend["后端核心业务调度集群 (纯 Python 标准库)"]
+            SourceHub["source_manager.py (音源调度 / 竞速池)"]
+            Resolver["resolver.py (短路瀑布流寻链 / 出声打分)"]
+            SongSearch["song_search.py (跨源聚合搜索 / 繁简纠偏)"]
+            AuthStore["auth_store.py (PBKDF2鉴权 / 歌单同步)"]
+            KVCache["kv_cache.py (出声真流 ID 云快取)"]
+            Catalogs["apple_catalog.py / charts_catalog.py / streetvoice_catalog.py"]
+            Importer["playlist_importer.py (歌单导入引擎)"]
         end
-        Note over Hub: Range 嗅探校验 (大小 > 1.5MB?)
-        Hub-->>Player: 返回胜者有效直链 (最快出声)
+
+        NetPool["net_pool.py (Keep-Alive 复用 / DNS 缓存 / 魔数嗅探)"]
+        Crypto["api_crypto.py (AES-256 密文解密)"]
     end
-    Player->>User: Audio.play() 开始流畅播放
-    Note over Player: 播放到 70% 时静默预拉取下一首
+
+    subgraph StorageCloud["云端存储与凭据 (外置持久层)"]
+        Upstash["Upstash KV / Vercel Blob (账号、歌单、候选快取)"]
+        SyncRepo["yy-lx-hub (GitHub Actions 每日测速加密包)"]
+    end
+
+    Client -->|HTTPS API / SWR 缓存| Router
+    Router --> Server
+    Server --> CoreBackend
+    CoreBackend --> NetPool
+    CoreBackend --> StorageCloud
+    CoreBackend --> Crypto
 ```
 
+### 2. 全工程核心文件主权映射表
+
+| 文件路径 | 模块主权与职责 | 修改红线与必须遵守的规范 |
+| :--- | :--- | :--- |
+| **`server.py`** | 统一 HTTP 请求分发网关、CORS 响应、流代理 | 保持路由轻量，仅做参数校验与分发，严禁把复杂业务解析逻辑堆砌在 Handler 内。 |
+| **`api/index.py`** | Vercel Serverless 入口网关桥接 | 负责路径还原（`x-forwarded-uri`），严禁在此处编写具体业务逻辑。 |
+| **`resolver.py`** | 歌曲寻链、短路瀑布流（Waterfall）、真实出声检验 | 核心出声中枢。必须遵守“策略 A 短路原则”与打分门禁（>= 80 分方可入库）。 |
+| **`source_manager.py`** | 原生音源池、并发冲刺调度、自愈熔断机制 | 纯 Python 实现，零外部进程；音源排班受 `sources_ranking.json` 驱动。 |
+| **`song_search.py`** | 多源跨平台歌曲聚合搜索、362个高频繁简词库映射 | 搜索标题与歌手必须做繁简归一化与清洗，过滤伴奏与下架占位符。 |
+| **`auth_store.py`** | 邀请码注册、PBKDF2 密码哈希、HMAC 会话签名 Cookie、歌单备份 | 生产环境强制 Fail-Close；歌单写入前严格校验 `<= 512KB` 报文体积上限。 |
+| **`kv_cache.py`** | 歌曲出声候选 ID 云端持久化快取 (Upstash REST) | 仅存真实出声合格（>1.2MB）候选，30天 TTL；遇失效必须主动 DEL 自愈。 |
+| **`net_pool.py`** | 高性能 `urllib3` 连接池、IPv4 优选、音频魔数嗅探 | 全局底层网络基石。严禁绕过连接池使用生硬的 `urllib.request.urlopen`。 |
+| **`public/player.js`** | 浏览器前端音频驱动（HTML5 Audio、MediaSession 锁屏） | 负责 0ms 预加载（70% 进度静默拉取下一首直链）、失败回退重试与双向回溯历史栈。 |
+| **`public/js/storage.js`**| 浏览器本地持久化（自建歌单、收藏、分类） | 本地数据的单一事实来源，负责全量导入导出与 2 秒防抖触发云端同步。 |
+
 ---
 
-## 四、 常见二次开发与维护指南
+## 三、 核心业务链路与出声防伪准则
 
-### 1. 如何增加或更新一个 LX 音源？
-1. 将新的 LX 音源脚本（如 `xxx.js`）放置在 `sources_cache/` 目录下；
-2. 在 `sources_ranking.json` 中配置该音源的测试用例与初始信息；
-3. 本地启动或推送后，`source_manager.py` 会自动扫描并将其纳入动态排班池。
-
-### 2. 如何增加一个新的业务模态弹窗？
-1. 在 `index.html` 的弹窗区域添加对应的 `modal-overlay` 容器；
-2. 在 `js/modals.js` 中新增该弹窗的私有状态、`openXxxModal()` 与 `closeXxxModal()` 方法并在 `return` 中暴露；
-3. 如需保持兼容性，在 `js/shell.js` 中添加一行代理转发方法即可。
-
----
-
-## 五、 音源平台本质与检索底座准则（不重复、不漏过原则）
-
-国内主流音乐平台看似繁多，在**底层商业版权与曲库**维度上，本质上只有 **3 大独立版权阵营**。理解这一点是避免代码过度设计、接口冗余和无效等待的最高准则：
-
-### 1. 三大独立版权阵营本质表
-
-| 版权阵营 | 包含平台 | 底层曲库关系与平台特性 | 架构选型与去重原则 |
-| :--- | :--- | :--- | :--- |
-| **TME 阵营**<br>(腾讯音乐) | **酷我 (kw)**<br>**QQ 音乐 (tx)**<br>**酷狗 (kg)** | **曲库 90%+ 共享**（环球/索尼/华纳/杰威尔等统一采购）。<br>• **酷我**：协议最轻、防盗链宽松、车机/免VIP通道多，出声最快。<br>• **QQ 音乐**：TME 亲儿子，新歌/综艺/欧美首发最快、Live 最全，但加密风控极严。<br>• **酷狗**：偏下沉伴奏、DJ、翻唱。 | **首选酷我，备选 QQ，排除酷狗**。<br>• 严禁酷我/酷狗/QQ 三家盲目全搜（90% 是冗余重复项与低质伴奏）。<br>• 用酷我代表 TME 极速出声；若搜空再由 QQ 补足独家与最新 Live。 |
-| **网易阵营** | **网易云 (wy)** | **完全独立曲库**。<br>独立音乐人、欧美小众厂牌、日漫/ACG 音轨极全，与 TME 强互补。 | **必选核心**。<br>与 TME 形成双子星互补，必搜。 |
-| **运营商阵营** | **咪咕音乐 (mg)** | **完全独立曲库**（中国移动）。<br>早年彩铃时代沉淀的硬核正版母带（周杰伦等老华语经典常驻无损）。 | **特种兜底**。<br>老歌与特定经典曲目的重要兜底源。 |
-
-### 2. 检索底座铁律：既不重复，也不漏过
-1. **不重复原则**：同属 TME 阵营的平台不无脑并发全扫，由“酷我”担纲主力，杜绝同质化网络开销与垃圾结果清洗成本；
-2. **不漏过原则**：真正的全网覆盖由 **TME (酷我/QQ) + 网易云 + 咪咕** 构成，足以覆盖 99.5% 流行曲库。当主流酷我/网易均搜空时，严禁原地重复打转，必须向 QQ 音乐或咪咕发起二次精准兜底。
-
-### 3. 歌曲点播与寻链战略：短路式阶梯回退（策略 A 铁律）
+### 1. 歌曲寻链战略：短路式阶梯回退（策略 A 铁律）
 
 在歌单播放、自动切歌与后台寻链（`/api/resolve`）核心链路中，**严格采纳“策略 A（短路式阶梯回退，Waterfall）”**，以出声速度为第一物理指标：
 
-1. **核心哲学**：“一击即中即停”。用户目标是耳朵尽快听到歌，寻找一条通畅路径即刻截断，绝不等待其他平台。
+```mermaid
+flowchart TD
+    Start["发起歌曲解析 (Title + Artist)"] --> CacheCheck{"云端/内存已命中高分候选?"}
+    CacheCheck -- 是 (命中) --> VerifyCached["极速轻量探活 (Range: 0-1024)"]
+    VerifyCached -- 存活 --> QuickPlay["0ms 胜出，直接下发播放"]
+    VerifyCached -- 已失效/404 --> DelCache["云端 DEL 废除失效缓存"] --> Step1
+    
+    CacheCheck -- 否 (未命中) --> Step1["【第一阶梯：主力并发冲刺】<br>并发检索：酷我 (代表TME) + 网易云 (独立阵营)"]
+    Step1 --> CheckStep1{"任一源返回真实全曲?<br>(大小 >= 1.2MB 且魔数正确)"}
+    CheckStep1 -- 成功 --> ShortCircuit["【短路截断】立即胜出出声！<br>彻底终止后续所有平台请求"]
+    
+    CheckStep1 -- 搜空/失败 --> Step2["【第二阶梯：独家二次精准兜底】<br>仅当第一阶梯搜空，触发向 QQ音乐/咪咕 检索"]
+    Step2 --> CheckStep2{"兜底成功?"}
+    CheckStep2 -- 成功 --> ShortCircuit
+    CheckStep2 -- 失败 --> Return404["明确返回无法解析，触发前端智能跳下一首"]
+
+    ShortCircuit --> AsyncCache["异步写入云端候选 (TTL 30天)"]
+```
+
+1. **核心哲学：“一击即中即停”**：用户的目标是耳朵尽快听到歌，找到一条通畅路径即刻截断，绝不等待其他平台。
 2. **两级阶梯执行流**：
-   - **第一阶梯（主力冲刺，~600ms）**：并发检索 **酷我 (代表TME) + 网易云 (独立阵营)**。任一源返回有效实体全曲（> 1.5MB），**立即短路胜出并出声**，彻底截断一切后续网络开销！
-   - **第二阶梯（独家兜底）**：**仅当第一阶梯确认搜空时**，才触发向 **QQ 音乐 (tx) / 咪咕 (mg)** 发起二次精准检索，挽救独家版权或冷门老歌，实现 100% 兜底救活。
+   - **第一阶梯（主力冲刺，~600ms）**：并发检索 **酷我 (代表 TME) + 网易云 (独立阵营)**。任一源返回有效实体全曲（> 1.2MB），**立即短路胜出并出声**！
+   - **第二阶梯（独家兜底）**：**仅当第一阶梯确认搜空时**，才触发向 **QQ 音乐 (tx) / 咪咕 (mg)** 发起二次精准检索，挽救独家版权或冷门老歌。
    - **防死锁禁令**：严禁在第一阶梯搜空后继续在酷我/网易原地打转盲目重试！
-3. **全工程核心统一事实**：
-   - **元数据目录（视图层）**：无论 Apple 专区、歌单、专辑还是顶栏搜索框，一律统一呈现 Apple Music 官方高质量结构化元数据；
-   - **音频底座（寻链层）**：一旦用户触发播放，所有来源（歌单/专辑/搜索结果）一律统一进入后端的 **策略 A（短路阶梯式寻链）**，追求 1 秒内极致出声。
+
+### 2. 出声三大防伪门禁（宁缺毋滥）
+
+1. **体积硬门禁**：
+   - `MIN_VALID_BYTES = 1.2 * 1024 * 1024`（1.2MB）。凡是返回几百 KB 的短试听片段、防盗链警告 HTML，一律视为无效废链。
+2. **音频魔数（Magic Number）嗅探**：
+   - 首包必须命中标准音频格式特征头：
+     - MP3: `b"ID3"` 或帧同步头 `b"\xff\xfb"` / `b"\xff\xf3"`
+     - FLAC: `b"fLaC"`
+     - M4A / AAC: `b"ftyp"`
+3. **时长与翻唱硬门禁**：
+   - 候选歌曲与目标歌曲时长偏差 **> 15 秒** 直接一票否决；歌手匹配度打分低于 80 分严禁存入持久缓存，坚决杜绝翻唱、伴奏污染。
 
 ---
 
-## 六、 与 yy-lx-hub 对接与密文速查（🤖 AI 维护速览）
+## 四、 认证鉴权与歌单存储架构
 
-1. **上游来源与同步节奏**：
-   - 上游仓库 `ichbinyytak/yy-lx-hub` 每日 **04:00**（UTC `0 20 * * *`）发布加密端点包到 `https://github.com/ichbinyytak/yy-lx-hub/releases/download/amusic-sync/extracted_apis.enc`。
-   - 本仓库 `.github/workflows/daily_sync.yml` 每日 **05:00**（UTC `0 21 * * *`）自动执行 `python3 sync_sources.py --pull` 拉取并更新 `extracted_apis.enc` 与 `sources_ranking.json`，提交后自动触发 Vercel 部署。
-2. **零配置内存解密**：
-   - 解密模块：`api_crypto.py`（纯 Python 标准库 `hashlib` + `hmac`，0 第三方依赖）。
-   - `source_manager.py` 启动时直接在内存解密本地 `extracted_apis.enc` 注册探针；仓库中 `.gitignore` 忽略明文 `extracted_apis.json`。
-   - **默认内置密码**：`yy-lx-hub::amusic::auto-sync-v1`（环境变量 `AMUSIC_SYNC_KEY` / `AMUSIC_SYNC_SECRET` 可选覆盖）；算法为 `PBKDF2-SHA256-CTR-HMAC`（100,000 次迭代 + Encrypt-then-MAC）。
+### 1. 零依赖安全鉴权模型
 
+- **口令加密**：PBKDF2-HMAC-SHA256 算法，迭代 100,000 次，结合 16 字节随机 Salt 盐，哈希安全不可逆。
+- **会话维持**：无状态 HMAC-SHA256 签名 Cookie（`amusic_session`）。服务端通过 `AMUSIC_AUTH_SECRET` 校验合法性与过期时间（默认 30 天），无需在服务端数据库维持 Session 字典。
+- **注册防重机制**：依赖存储的原子唯一约束（如 Redis `SET ... NX`）。
 
+### 2. 歌单资产同步与保护原则
+
+- **分级存储原则**：
+  - 音量、最后播放进度、SWR 目录缓存、主题配置等高频/临时状态**仅存浏览器本地 `localStorage`**，严禁消耗云端额度。
+  - 自建歌单与收藏歌单触发 **2 秒防抖合并上传**，避免用户频繁拖拽/收藏导致请求打爆。
+- **体积熔断**：单用户歌单 JSON 严格限制在 **512 KB** 以内，超标直接阻断，防止异常恶意大 JSON 撑爆云端存储。
+
+---
+
+## 五、 专区与特色功能架构规范
+
+### 1. Apple Music 专区 ([apple_catalog.py](file:///home/yytak/gd/MyFiles/project/Amusic/apple_catalog.py))
+- 直接解析官方结构化元数据（Storefronts、Top100 榜单、编辑精选）。
+- 服务端设置内存缓存（TTL 20 分钟），严格复用 `net_pool.py` 请求头（User-Agent 对齐 Safari）。
+
+### 2. 街声专区 ([streetvoice_catalog.py](file:///home/yytak/gd/MyFiles/project/Amusic/streetvoice_catalog.py))
+- **内容矩阵**：
+  - **官方排行榜（15 榜 × Top 50）**：即时排行（8 个分类）+ 每周排行（7 个分类），纯 JSON 接口极速抓取；
+  - **精选歌单广场**：精选总览（63 个精选）+ 7 大官方主题分区。
+- **线路高可用与降级**：
+  - 默认使用 **`streetvoice.com`**（海外 Vercel 节点直连极速、提供 **192kbps** HLS 音频流、繁体元数据）；
+  - 若 `.com` 请求失败，后端自动静默降级重试 **`streetvoice.cn`**（**96kbps** HLS），并在 `source_name` 中回显标记。
+- **音频流与 0 带宽下载闭环**：
+  - **绝不走“策略 A 跨源寻链”**：点播携带 `platform: "streetvoice"`，直接播放街声官方原生 HLS 流，避免去外部版权库错误串曲；
+  - **客户端纯 JS 脱壳**：利用街声 CDN 开放 `CORS *` 且 `.ts` 分片内封装未加密原生 MP3 帧的物理特性，在浏览器端完成 MPEG-TS 脱壳，单曲与 ZIP 批量下载均直出标准 `.mp3`，**Vercel 服务端 0 带宽消耗**。
+
+### 3. 跨平台全网排行榜 ([charts_catalog.py](file:///home/yytak/gd/MyFiles/project/Amusic/charts_catalog.py))
+- **平台覆盖**：聚合企鹅 (QQ)、网易云、酷我、酷狗、咪咕五大平台官方无鉴权 API 榜单。
+- **低压长效双层缓存策略**：
+  - 榜单目录结构缓存 **24 小时**，曲目列表缓存 **12 小时**，彻底保护上游接口。
+- **播放与透传**：
+  - 提取标准曲目元数据（`name`, `artist`, `album`, `durationMillis`, `sourcePlatform`, `id`）。直连源优先播放，遇会员独占/下架自动无缝回退至策略 A 瀑布流补全出声。
+
+### 4. 第三方歌单导入与转化引擎 ([playlist_importer.py](file:///home/yytak/gd/MyFiles/project/Amusic/playlist_importer.py))
+- **覆盖平台**：
+  - 主流无登录全覆盖（9 大平台）：网易云 (`wy`)、QQ 音乐 (`tx`)、酷我 (`kw`)、汽水音乐、咪咕 (`mg`)、酷狗概念版 (`kg`)、Apple Music、街声、Spotify（公开歌单前 100 首）。
+- **交互与存储规范**：
+  - **搜索框双模分流**：输入普通文本走 Apple 曲库搜索；输入 URL/分享口令/平台短前缀静默分流至解析接口，**直接在右侧详情区预览**（UI 零破坏）。
+  - **多跳短链防 SSRF**：每一跳短链重定向（`163cn.tv`, `c6.y.qq.com`, `qishui.douyin.com` 等）均严格执行 SSRF 安全校验与域名白名单。
+  - **转存快照**：转存为 `customPlaylists`（自建快照歌单），0ms 本地秒开，不将外部失效链接写入本地，彻底免疫原歌单下架或设为私密。
+
+### 5. 主题自适应配色系统
+- **7 套精选主题**：纯 CSS Variables 驱动。
+  - `dark`（暗夜黑，默认）、`midnight`（午夜深蓝）、`light`（极简纯白）、`sky`（晴空浅蓝）、`warm`（护眼暖米）、`mint`（薄荷浅绿）、`pink`（樱花浅粉）。
+- **Zero-FOUC 防闪烁**：
+  - 主题 ID 仅存 `localStorage.getItem('amusic_theme')`，不耗云端配额；
+  - `<head>` 顶端以 3 行同步内联脚本预设 `dataset.theme`，彻底消除白屏/黑屏闪烁。
+
+### 6. 前端 SPA 架构与 API 路由全景表
+- **前端四大视图分层**：
+  - `Shell`：顶栏搜索、地区选择、双行歌词、立式音量、抽屉。
+  - `LeftPanel`：网站推荐（Apple 专区 + 街声手风琴 + 平台榜单）与我的音乐库。
+  - `RightPanel`：歌单详情、曲目列表、批量复选与操作栏。
+  - `PlayerBar` (`player.js`)：HTML5 Audio 底座、0ms 静默预载下一曲（70% 进度探测）、MediaSession 锁屏控制。
+- **核心 API 路由索引**：
+  - `/api/catalog`：Apple Music 官方目录与市场数据。
+  - `/api/charts`：全网排行榜分类与曲目拉取。
+  - `/api/streetvoice/*`：街声排行榜、歌单广场与曲目直解。
+  - `/api/import_playlist`：外部歌单口令与链接解构。
+  - `/api/resolve`：策略 A 阶梯短路寻链与真流检验。
+  - `/api/search`：跨源聚合搜索与繁简转换纠偏。
+  - `/api/stream_proxy`：跨域防盗链音频直通中继。
+  - `/api/lyric`：多源歌词检索与时间轴解析。
+  - `/api/auth/*`：邀请码校验、登录注册、歌单云同步。
+  - `/api/sources`：底层音源健康度与实时测速排班表。
+
+---
+
+## 六、 基础设施、排班与环境变量清单
+
+### 1. 核心环境变量清单
+
+| 环境变量名 | 作用与级别 | 缺失时的默认行为 |
+| :--- | :--- | :--- |
+| **`AMUSIC_AUTH_SECRET`** | **[生产必填]** 会话签名核心密钥 | 本地开发使用随机生成密钥；**生产环境缺失则 Fail-Close 拒绝鉴权**。 |
+| **`AMUSIC_INVITE_CODES`** | **[生产必填]** 注册邀请码列表 (逗号分隔) | 本地默认 `1111`；**生产环境缺失则关闭新用户注册**。 |
+| **`KV_REST_API_URL`**<br>**`KV_REST_API_TOKEN`** | **[核心]** Upstash Redis / Vercel KV 连接凭据 | 本地退守 `.local_auth.json`；生产缺失则账户/歌单同步接口报 500。 |
+| **`BLOB_READ_WRITE_TOKEN`**| **[可选]** Vercel Blob 存储凭据 | 当歌单系统切换至 Blob 时必填。 |
+| **`AMUSIC_SYNC_KEY`** | **[可选]** 音源密文解密密钥 | 默认内置密码 `yy-lx-hub::amusic::auto-sync-v1`。 |
+| **`CRON_SECRET`** | **[运维必填]** 定时任务触发鉴权 Token | 保护备份与自动化巡检接口不被外部盗刷。 |
+
+### 2. 自动化排班与音源更新机制
+
+- 上游仓库 `ichbinyytak/yy-lx-hub` 每日 **04:00 (UTC)** 发布密文包 `extracted_apis.enc`。
+- 本仓库 GitHub Actions 每日 **05:00 (UTC)** 触发 [sync_sources.py](file:///home/yytak/gd/MyFiles/project/Amusic/sync_sources.py)，拉取最新密文并在本地完成并发测速，更新 [sources_ranking.json](file:///home/yytak/gd/MyFiles/project/Amusic/sources_ranking.json) 并自动推送到仓库，触发 Vercel 自动化构建。
+- `source_manager.py` 在 Serverless 启动时，直接读取 `sources_ranking.json` 即可实现 **0ms 秒级预热**，无需在线测速。
+
+---
+
+> **结语**：Amusic 的第一生命线是**出声速度与稳定性（准而稳）**。任何功能的重构、扩展或优化，都必须在上述物理网络边界与架构铁律下进行。

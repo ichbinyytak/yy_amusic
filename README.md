@@ -42,7 +42,8 @@ python3 server.py
 
 ---
 
-### 三、 版本历史与架构文档
+### 三、 核心架构与版本记录
 
-详见完整的交接与版本演进记录：
-👉 [`VERSION_HISTORY.md`](VERSION_HISTORY.md)
+* 🏛️ 工程架构总纲与避坑宪法：[`ARCHITECTURE.md`](ARCHITECTURE.md)
+* 📜 版本演进与更新历史：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+* 📦 历史设计草案与 RFC 归档：[`docs/ARCHIVE_RFCS.md`](docs/ARCHIVE_RFCS.md)
