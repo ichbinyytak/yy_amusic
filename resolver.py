@@ -113,18 +113,19 @@ def _resolve_candidate_with_lyrics(
     return res, None
 
 
-def _select_diverse_candidates(cands: list, max_count: int = 3) -> list:
+def _select_diverse_candidates(cands: list, max_count: int = 3, min_score: float = 0.0) -> list:
     """跨平台优选，优先取各平台最高分候选，再补齐剩余高分"""
+    filtered = [c for c in cands if c.get("score", 0) >= min_score]
     selected = []
     seen_platforms = set()
-    for c in cands:
+    for c in filtered:
         plat = c.get("platform")
         if plat not in seen_platforms:
             selected.append(c)
             seen_platforms.add(plat)
             if len(selected) >= max_count:
                 return selected
-    for c in cands:
+    for c in filtered:
         if c not in selected:
             selected.append(c)
             if len(selected) >= max_count:
@@ -209,7 +210,11 @@ def resolve_track(cand: dict, fetch_apple_native_fn=None) -> tuple:
 
     # 2.1 第一阶梯：酷我 + 网易 + 酷狗（搜空时内部补查 QQ）
     cands = search_candidates(search_key, target_artist=artist, target_title=title, target_duration=duration)
-    for c in _select_diverse_candidates(cands, max_count=3):
+    # 分级置信度铁律：优先冲刺 >= 80 分的高置信度正版原唱候选，防止 60~79 分的翻唱抢跑
+    high_cands = _select_diverse_candidates(cands, max_count=3, min_score=80.0)
+    low_cands = _select_diverse_candidates(cands, max_count=2, min_score=60.0) if not high_cands else []
+
+    for c in high_cands:
         rem = overall_deadline - time.time()
         if rem <= 1.2:
             break
@@ -273,6 +278,24 @@ def resolve_track(cand: dict, fetch_apple_native_fn=None) -> tuple:
                 return res, 200
             if err:
                 last_err = err
+
+    # 2.4 末尾救生圈：仅当高分正版全部搜空，才允许尝试 60~79 分的低置信度候选（严禁存入云缓存）
+    if low_cands:
+        rem_low = overall_deadline - time.time()
+        if rem_low > 0.6:
+            for lc in low_cands:
+                rem_c = overall_deadline - time.time()
+                if rem_c <= 0.6:
+                    break
+                lc["duration"] = lc.get("duration") or duration
+                res, err = _resolve_candidate_with_lyrics(
+                    lc, title, artist, overall_deadline, rem_c,
+                    cache_key=cache_key, source_suffix=" ⚠️低置信备选", cache_to_kv=False,
+                )
+                if res:
+                    return res, 200
+                if err:
+                    last_err = err
 
     return {
         "success": False,

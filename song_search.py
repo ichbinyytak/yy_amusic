@@ -328,11 +328,12 @@ def _search_kuwo(query_k: str, target_title: str, target_artist: str, limit: int
                     sname = d.get("name", "")
                     sart = d.get("songname", "")
                     salb = d.get("album", "")
+                    rid = str(d.get("rid") or d.get("musicrid") or d.get("id") or "").replace("MUSIC_", "").strip()
                     score, ok = calculate_song_match_score(sname, sart, salb, target_title, target_artist, target_duration=target_duration)
-                    if ok:
+                    if ok and rid and rid.isdigit():
                         res.append({
                             "platform": "kw",
-                            "id": f"kw_{hashlib.md5(f'{sname}_{sart}'.encode()).hexdigest()[:8]}",
+                            "id": rid,
                             "title": sname,
                             "artist": sart,
                             "album": salb,

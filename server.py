@@ -566,13 +566,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             resp_obj = None
             try:
                 cur_url = target_url
+                req_headers = {"User-Agent": USER_AGENT}
+                client_range = self.headers.get("Range") or self.headers.get("range")
+                if client_range:
+                    req_headers["Range"] = client_range
+
                 for _ in range(5):
                     if not net_pool._HTTP_POOL:
                         raise RuntimeError("HTTP pool unavailable")
                     r = net_pool._HTTP_POOL.request(
                         "GET",
                         cur_url,
-                        headers={"User-Agent": USER_AGENT},
+                        headers=req_headers,
                         timeout=20,
                         redirect=False,
                         preload_content=False,
@@ -597,9 +602,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     self.send_error_json(f"Upstream HTTP {resp_obj.status}", 502)
                     return
 
-                self.send_response(200)
+                self.send_response(resp_obj.status)
                 self.send_header("Content-Type", resp_obj.headers.get("Content-Type", "audio/mpeg"))
                 self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Accept-Ranges", "bytes")
+                cr = resp_obj.headers.get("Content-Range") or resp_obj.headers.get("content-range")
+                if cr:
+                    self.send_header("Content-Range", cr)
                 cl = resp_obj.headers.get("Content-Length") or resp_obj.headers.get("content-length")
                 if cl:
                     self.send_header("Content-Length", cl)

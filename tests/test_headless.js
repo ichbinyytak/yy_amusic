@@ -459,9 +459,9 @@ async function run() {
     if (contextMenuOpen) throw new Error("歌曲长按不应弹出冗余操作菜单！");
     if (!headerHasBatchActions) throw new Error("歌单头部未能集中承载多选操作栏！");
 
-    // 勾选第 2 首歌
+    // 勾选第 2 首歌（点击首列复选框区域增加勾选）
     console.log("多选模式下轻触勾选第 2 首歌曲...");
-    await evaluate(`document.querySelector('.track-table tbody tr:nth-child(2)').click()`);
+    await evaluate(`document.querySelector('.track-table tbody tr:nth-child(2) .track-index-col')?.click()`);
     await sleep(300);
 
     console.log("点击下载按钮，测试多首下载清单确认弹窗...");
