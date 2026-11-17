@@ -820,7 +820,7 @@ body {
 .player-controls {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
@@ -829,26 +829,51 @@ body {
     border: none;
     color: var(--text-primary);
     cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    touch-action: manipulation;
+    transition: background-color 0.15s ease, transform 0.1s ease;
 }
 .player-btn:hover { background-color: var(--bg-surface-hover); }
+.player-btn:active { transform: scale(0.92); }
+
+.player-btn svg {
+    width: 17px;
+    height: 17px;
+    display: block;
+}
 
 .player-btn-main {
     background-color: var(--accent-apple) !important;
     color: var(--text-on-accent) !important;
     border-radius: 50% !important;
-    width: 28px !important;
-    height: 28px !important;
+    width: 36px !important;
+    height: 36px !important;
+    box-shadow: 0 2px 8px rgba(250, 45, 72, 0.32);
+    transition: transform 0.1s ease, background-color 0.15s ease;
+}
+.player-btn-main:hover {
+    background-color: var(--accent-hover, #ff3b56) !important;
+}
+.player-btn-main:active {
+    transform: scale(0.92) !important;
+}
+
+.player-btn-main svg {
+    width: 19px !important;
+    height: 19px !important;
+    display: block;
 }
 
 .player-right {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
@@ -1096,7 +1121,7 @@ body {
     width: 100vw !important;
     height: 100vh !important;
     height: 100dvh !important;
-    z-index: 9999 !important;
+    z-index: 2000 !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: space-between !important;
@@ -1197,7 +1222,7 @@ body {
     inset: 0;
     background-color: var(--bg-backdrop-heavy);
     backdrop-filter: blur(2px);
-    z-index: 900;
+    z-index: 2100;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -1216,7 +1241,7 @@ body {
     border-bottom: none;
     border-radius: 14px 14px 0 0;
     box-shadow: var(--shadow-bottom-drawer);
-    z-index: 1000;
+    z-index: 2200;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1283,7 +1308,7 @@ body {
     position: fixed;
     inset: 0;
     background-color: var(--bg-backdrop-heavy);
-    z-index: 1100;
+    z-index: 2300;
     display: none;
     align-items: center;
     justify-content: center;
