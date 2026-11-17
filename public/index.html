@@ -163,11 +163,19 @@
             <audio id="mainAudio" playsinline webkit-playsinline preload="auto"></audio>
         </footer>
 
-        <!-- 独立智能歌词栏 (平时 2 行 ⇄ 点击向上平滑拉伸为 6 行；支持上下拖拽浏览前后歌词，长按复制歌词) -->
-        <div class="lyric-dock" id="lyricDock" onclick="window.Shell.expandLyricDock(event)" title="点击展开完整歌词 / 上下拉动浏览前后歌词 / 长按复制歌词">
-            <div class="lyric-dock-header">
-                <span class="lyric-dock-indicator">♪ 歌词实时同步</span>
-                <button class="lyric-close-btn" id="lyricCloseBtn" onclick="window.Shell.collapseLyricDock(event)" title="收回为两行">✕</button>
+        <!-- 独立智能歌词栏 (平时 2 行 ⇄ 单击拉伸为 6 行 ⇄ 双击最大化全屏歌词；支持上下拖拽浏览，长按复制) -->
+        <div class="lyric-dock" id="lyricDock" onclick="window.Shell.expandLyricDock(event)" title="单击展开多行 / 双击最大化全屏 / 上下拉动浏览 / 长按复制">
+            <div class="lyric-dock-header" id="lyricDockHeader">
+                <div class="lyric-dock-title-group">
+                    <span class="lyric-dock-indicator" id="lyricDockIndicator">♪ 歌词实时同步</span>
+                    <div class="lyric-fullscreen-meta" id="lyricFullscreenMeta" style="display:none;">
+                        <span class="lyric-fullscreen-title" id="lyricFullscreenTitle">YY-Amusic</span>
+                        <span class="lyric-fullscreen-artist" id="lyricFullscreenArtist"></span>
+                    </div>
+                </div>
+                <div class="lyric-header-actions">
+                    <button class="lyric-close-btn" id="lyricCloseBtn" onclick="window.Shell.collapseLyricDock(event)" title="收起/关闭">✕</button>
+                </div>
             </div>
             <div class="lyric-lines-wrapper" id="lyricLinesWrapper">
                 <div class="lyric-lines-track" id="lyricLinesTrack">

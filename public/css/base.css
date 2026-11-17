@@ -1085,6 +1085,105 @@ body {
     border-radius: 4px;
 }
 
+/* 全屏歌词最大化状态 (双击空白处进入，控制栏在最下方) */
+.bottom-dock-container.lyric-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background-color: var(--bg-main) !important;
+    backdrop-filter: blur(16px);
+}
+
+.bottom-dock-container.lyric-fullscreen .player-dock {
+    order: 2 !important;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--bg-main);
+    flex-shrink: 0;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-dock {
+    order: 1 !important;
+    flex: 1 !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    border-top: none;
+    padding: 12px 16px;
+    background-color: transparent !important;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-dock-header {
+    display: flex !important;
+    padding: 8px 12px 12px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    align-items: center;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-dock-indicator {
+    display: none !important;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-fullscreen-meta {
+    display: flex !important;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-fullscreen-title {
+    font-size: var(--fs-t2, 16px);
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-fullscreen-artist {
+    font-size: var(--fs-t4, 12px);
+    color: var(--text-muted);
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-close-btn {
+    font-size: 16px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--bg-surface-hover, rgba(255,255,255,0.08));
+    color: var(--text-main);
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-lines-wrapper {
+    flex: 1;
+    height: 100%;
+    overflow: hidden;
+    padding: 16px 0;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-line {
+    height: 38px;
+    line-height: 38px;
+    font-size: 15px;
+    opacity: 0.55;
+    padding: 0 16px;
+}
+
+.bottom-dock-container.lyric-fullscreen .lyric-line.lyric-line-current {
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.4;
+    opacity: 1;
+    color: var(--lyric-current-color);
+    background: var(--lyric-current-bg, rgba(250, 45, 72, 0.12));
+    border-radius: 8px;
+    padding: 2px 16px;
+}
+
 /* 底部向上拉起抽屉 (队列与音源) */
 .drawer-backdrop {
     position: fixed;

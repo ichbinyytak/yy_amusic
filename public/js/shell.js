@@ -41,9 +41,15 @@ window.Shell = (function () {
     const searchInput = document.getElementById("searchInput");
     const clearBtn = document.getElementById("clearBtn");
     const toast = document.getElementById("toast");
+    const bottomDockContainer = document.querySelector(".bottom-dock-container");
+    const lyricFullscreenTitle = document.getElementById("lyricFullscreenTitle");
+    const lyricFullscreenArtist = document.getElementById("lyricFullscreenArtist");
+    const lyricFullscreenMeta = document.getElementById("lyricFullscreenMeta");
 
     let toastTimer = null;
     let isLyricExpanded = false;
+    let isLyricFullscreen = false;
+    let lastTapTime = 0;
     let lastLyricIdx = -1;
     let currentSongLyricLines = [];
     let renderedLyricKey = null;
@@ -80,6 +86,7 @@ window.Shell = (function () {
             if (progressBarFill) progressBarFill.style.width = "0%";
             updatePlayPauseButton(true);
             updateQueueCount();
+            updateFullscreenMeta(track);
 
             // 重新高亮右侧当前正在播放的行
             document.querySelectorAll(".track-table tr").forEach(tr => tr.classList.remove("track-row-playing"));
@@ -264,10 +271,16 @@ window.Shell = (function () {
     }
 
     function getLineHeight() {
+        if (isLyricFullscreen) return 38;
         return isLyricExpanded ? 24 : 18;
     }
 
     function getCenterOffset() {
+        if (isLyricFullscreen) {
+            const wrapper = lyricLinesWrapper || document.getElementById("lyricLinesWrapper");
+            const h = wrapper && wrapper.clientHeight > 0 ? wrapper.clientHeight : window.innerHeight * 0.7;
+            return Math.max(0, Math.round((h - 38) / 2));
+        }
         return isLyricExpanded ? 24 : 0;
     }
 
@@ -477,13 +490,25 @@ window.Shell = (function () {
             }
         }, { passive: false });
 
-        const endTouch = () => {
+        const endTouch = (e) => {
             clearTimeout(longPressTimer);
             if (isUserDragging) {
                 isUserDragging = false;
                 lyricDock.classList.remove("dragging");
                 snapBackToCurrent();
             }
+
+            // 移动端快速双击 (Double Tap) 检测：间隔在 350ms 内且未拖拽长按
+            if (!hasDragged && !isLongPress) {
+                const now = Date.now();
+                if (now - lastTapTime < 350) {
+                    lastTapTime = 0;
+                    toggleLyricFullscreen(e);
+                    return;
+                }
+                lastTapTime = now;
+            }
+
             setTimeout(() => {
                 hasDragged = false;
                 isLongPress = false;
@@ -572,11 +597,64 @@ window.Shell = (function () {
                 e.stopImmediatePropagation();
             }
         }, true);
+
+        // 5. 桌面端双击最大化全屏歌词 / 退出全屏
+        lyricDock.addEventListener("dblclick", (e) => {
+            if (e.target.closest("#lyricCloseBtn")) return;
+            toggleLyricFullscreen(e);
+        });
+    }
+
+    function updateFullscreenMeta(track) {
+        const song = track || (window.player && window.player.currentSong);
+        if (!song) return;
+        if (lyricFullscreenTitle) {
+            lyricFullscreenTitle.textContent = song.title || song.name || "YY-Amusic";
+        }
+        if (lyricFullscreenArtist) {
+            const artist = song.artist || "";
+            const album = song.album || "";
+            lyricFullscreenArtist.textContent = album ? `${artist} · ${album}` : artist;
+        }
+    }
+
+    function toggleLyricFullscreen(e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.target && e.target.closest("#lyricCloseBtn")) return;
+        }
+        if (hasDragged || isLongPress) return;
+
+        if (isLyricFullscreen) {
+            exitLyricFullscreen();
+        } else {
+            enterLyricFullscreen();
+        }
+    }
+
+    function enterLyricFullscreen() {
+        if (!lyricDock || !bottomDockContainer) return;
+        isLyricFullscreen = true;
+        isLyricExpanded = true;
+        updateFullscreenMeta();
+        bottomDockContainer.classList.add("lyric-fullscreen");
+        lyricDock.classList.add("expanded", "fullscreen");
+        setTimeout(snapBackToCurrent, 40);
+    }
+
+    function exitLyricFullscreen() {
+        if (!lyricDock || !bottomDockContainer) return;
+        isLyricFullscreen = false;
+        bottomDockContainer.classList.remove("lyric-fullscreen");
+        lyricDock.classList.remove("fullscreen");
+        setTimeout(snapBackToCurrent, 40);
     }
 
     function expandLyricDock(e) {
         if (e && e.target.closest("#lyricCloseBtn")) return;
         if (hasDragged || isLongPress) return;
+        if (isLyricFullscreen) return;
         if (!lyricDock) return;
         isLyricExpanded = true;
         lyricDock.classList.add("expanded");
@@ -586,6 +664,10 @@ window.Shell = (function () {
     function collapseLyricDock(e) {
         if (e) e.stopPropagation();
         if (!lyricDock) return;
+        if (isLyricFullscreen) {
+            exitLyricFullscreen();
+            return;
+        }
         isLyricExpanded = false;
         lyricDock.classList.remove("expanded");
         snapBackToCurrent();
@@ -744,6 +826,8 @@ window.Shell = (function () {
         handleCycleMode,
         expandLyricDock,
         collapseLyricDock,
+        toggleLyricFullscreen,
+        exitLyricFullscreen,
         toggleQueueModal,
         toggleSourceModal,
         closeAllDrawers,
