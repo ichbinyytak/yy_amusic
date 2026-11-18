@@ -49,6 +49,8 @@ window.Shell = (function () {
     let toastTimer = null;
     let isLyricExpanded = false;
     let isLyricFullscreen = false;
+    let isCurrentLyricUntimed = false;
+    let untimedManualScroll = false;
     let lastTapTime = 0;
     let lastLyricIdx = -1;
     let currentSongLyricLines = [];
@@ -74,6 +76,8 @@ window.Shell = (function () {
 
         // 监听播放器事件
         window.player.on("trackChange", ({ index, song }) => {
+            isCurrentLyricUntimed = false;
+            untimedManualScroll = false;
             const track = song || {};
             const title = track.title || track.name || "未知歌曲";
             const artist = track.artist || "未知歌手";
@@ -112,9 +116,10 @@ window.Shell = (function () {
             }
         });
 
-        window.player.on("lyricUpdate", ({ index, currentLine, nextLine, allLines }) => {
+        window.player.on("lyricUpdate", ({ index, currentLine, nextLine, allLines, isUntimed }) => {
             lastLyricIdx = index;
             currentSongLyricLines = allLines || [];
+            isCurrentLyricUntimed = Boolean(isUntimed) || (currentSongLyricLines && currentSongLyricLines.some(l => l && l.untimed));
             renderLyricsView(currentLine, nextLine);
         });
 
@@ -292,6 +297,15 @@ window.Shell = (function () {
         return offset - clamped * lh;
     }
 
+    function isCurrentLyricsUntimed() {
+        return Boolean(
+            currentSongLyricLines &&
+            currentSongLyricLines.length > 0 &&
+            (currentSongLyricLines.some(l => l && l.untimed) ||
+             (currentSongLyricLines.length > 1 && currentSongLyricLines.every(l => !l || !l.time)))
+        );
+    }
+
     function renderLyricsView(curText, nxtText) {
         const track = getTrackElement();
         if (!track) return;
@@ -318,28 +332,32 @@ window.Shell = (function () {
         if (renderedLyricKey !== currentSongKey) {
             renderedLyricKey = currentSongKey;
             let html = '';
+            if (isCurrentLyricUntimed) {
+                html += '<div class="lyric-line lyric-line-prev" style="font-size:11px; opacity:0.65;">ⓘ 纯文本歌词（无时间轴 · 可上下滑动自由浏览）</div>';
+            }
             currentSongLyricLines.forEach((item, idx) => {
                 let cls = 'lyric-line';
                 if (idx === curIdx) cls += ' lyric-line-current';
                 else if (idx === curIdx + 1) cls += ' lyric-line-next';
-                else if (idx < curIdx) cls += ' lyric-line-prev';
+                else if (idx < curIdx && !isCurrentLyricUntimed) cls += ' lyric-line-prev';
                 html += `<div class="${cls}" data-idx="${idx}" title="上下拉动浏览前后歌词 / 长按复制">${escapeHtml(item.text)}</div>`;
             });
             track.innerHTML = html;
         } else {
             // 增量高效更新高亮与前后状态类名
-            const lineEls = track.querySelectorAll(".lyric-line");
-            lineEls.forEach((el, idx) => {
+            const lineEls = track.querySelectorAll(".lyric-line[data-idx]");
+            lineEls.forEach((el) => {
+                const idx = parseInt(el.getAttribute("data-idx"), 10);
                 let cls = 'lyric-line';
                 if (idx === curIdx) cls += ' lyric-line-current';
                 else if (idx === curIdx + 1) cls += ' lyric-line-next';
-                else if (idx < curIdx) cls += ' lyric-line-prev';
+                else if (idx < curIdx && !isCurrentLyricUntimed) cls += ' lyric-line-prev';
                 el.className = cls;
             });
         }
 
         // 若用户未处于手动拖拽拉扯状态，平滑滚入当前播放行
-        if (!isUserDragging) {
+        if (!isUserDragging && !(isCurrentLyricUntimed && untimedManualScroll)) {
             const targetY = getTargetY(curIdx);
             track.style.transition = 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)';
             track.style.transform = `translateY(${targetY}px)`;
@@ -350,6 +368,25 @@ window.Shell = (function () {
     function snapBackToCurrent() {
         const track = getTrackElement();
         if (!track) return;
+
+        // 若当前歌词为无时间轴纯文本歌词 (untimed)，松手/滚轮静止后保持在用户滑动位置，仅在越界时做阻尼回弹到边缘，绝不强行弹回首行
+        if (isCurrentLyricUntimed) {
+            untimedManualScroll = true;
+            const totalLines = currentSongLyricLines.length;
+            const lh = getLineHeight();
+            const offset = getCenterOffset();
+            const maxY = offset;
+            const minY = offset - Math.max(0, totalLines - 1) * lh;
+            let clampedY = currentTranslateY;
+            if (clampedY > maxY) clampedY = maxY;
+            else if (clampedY < minY) clampedY = minY;
+
+            track.style.transition = 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)';
+            track.style.transform = `translateY(${clampedY}px)`;
+            currentTranslateY = clampedY;
+            return;
+        }
+
         const targetY = getTargetY(lastLyricIdx >= 0 ? lastLyricIdx : 0);
         track.style.transition = 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)';
         track.style.transform = `translateY(${targetY}px)`;

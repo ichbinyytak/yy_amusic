@@ -410,18 +410,20 @@ def parse_sv_lyrics(raw_lyrics: str, is_lrc: bool = False) -> tuple:
     if not raw_lyrics or not isinstance(raw_lyrics, str):
         return [], False
 
-    text = raw_lyrics.strip()
+    text = html_lib.unescape(raw_lyrics).strip()
     if not text:
         return [], False
 
-    if is_lrc or re.search(r'\[\d{1,3}:\d{2}(?:\.\d+)?\]', text):
-        parsed = _parse_lrc_text(text)
+    # 兼容 [mm:ss.xx] 与 [mm:ss:xx] 两种时间标签格式
+    normalized_text = re.sub(r'\[(\d{1,3}):(\d{2}):(\d{1,3})\]', r'[\1:\2.\3]', text)
+    if is_lrc or re.search(r'\[\d{1,3}:\d{2}(?:\.\d+)?\]', normalized_text):
+        parsed = _parse_lrc_text(normalized_text)
         if parsed:
             return parsed, False
 
     lines = []
     for raw_line in text.splitlines():
-        clean = raw_line.strip()
+        clean = re.sub(r'\[\d{1,3}:\d{2}(?:[.:]\d+)?\]', '', raw_line).strip()
         if clean:
             lines.append({"time": 0, "text": clean, "untimed": True})
     return lines, bool(lines)
@@ -431,18 +433,30 @@ def fetch_sv_song_lyrics(song_id: str, host: str = "com") -> list:
     sid = str(song_id or "").strip()
     if not sid.isdigit():
         return []
-    url = f"https://streetvoice.{host}/api/v5/song/{sid}/"
-    status, body, _, _ = http_get(url, headers=_sv_headers(host), timeout=4.0)
-    if (status != 200 or not body) and host == "com":
-        status, body, _, _ = http_get(f"https://streetvoice.cn/api/v5/song/{sid}/", headers=_sv_headers("cn"), timeout=4.0)
-    if status != 200 or not body:
-        return []
-    try:
-        detail = json.loads(body.decode("utf-8", errors="ignore"))
-        lines, _ = parse_sv_lyrics(detail.get("lyrics", ""), bool(detail.get("lyrics_is_lrc")))
-        return lines
-    except Exception:
-        return []
+
+    def _fetch_one(target_host: str) -> list:
+        url = f"https://streetvoice.{target_host}/api/v5/song/{sid}/"
+        status, body, _, _ = http_get(url, headers=_sv_headers(target_host), timeout=3.5)
+        if status != 200 or not body:
+            return []
+        try:
+            detail = json.loads(body.decode("utf-8", errors="ignore"))
+            lines, _ = parse_sv_lyrics(detail.get("lyrics", ""), bool(detail.get("lyrics_is_lrc")))
+            return lines
+        except Exception:
+            return []
+
+    hosts = ["com", "cn"] if host == "com" else [host, "com"]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futs = [pool.submit(_fetch_one, h) for h in hosts]
+        for fut in futs:
+            try:
+                res = fut.result(timeout=4.0)
+                if res:
+                    return res
+            except Exception:
+                pass
+    return []
 
 
 def _resolve_on_host(song_id: str, host: str = "com") -> dict:
@@ -450,7 +464,7 @@ def _resolve_on_host(song_id: str, host: str = "com") -> dict:
     hdrs = _sv_headers(host)
 
     def _fetch_hls():
-        st, body, _ = http_post_json(f"{base}/api/v5/song/{song_id}/hls/file/", {}, headers=hdrs, timeout=4.5)
+        st, body, _ = http_post_json(f"{base}/api/v5/song/{song_id}/hls/file/", {}, headers=hdrs, timeout=3.5)
         if st == 200 and body:
             try:
                 return json.loads(body.decode("utf-8", errors="ignore"))
@@ -459,7 +473,7 @@ def _resolve_on_host(song_id: str, host: str = "com") -> dict:
         return {}
 
     def _fetch_detail():
-        st, body, _, _ = http_get(f"{base}/api/v5/song/{song_id}/", headers=hdrs, timeout=4.5)
+        st, body, _, _ = http_get(f"{base}/api/v5/song/{song_id}/", headers=hdrs, timeout=3.5)
         if st == 200 and body:
             try:
                 return json.loads(body.decode("utf-8", errors="ignore"))
@@ -471,11 +485,17 @@ def _resolve_on_host(song_id: str, host: str = "com") -> dict:
         hls_fut = pool.submit(_fetch_hls)
         detail_fut = pool.submit(_fetch_detail)
         hls_data = hls_fut.result()
-        detail_data = detail_fut.result()
 
-    m3u8_url = (hls_data or {}).get("file") or ""
-    if not m3u8_url:
-        return None
+        m3u8_url = (hls_data or {}).get("file") or ""
+        if not m3u8_url:
+            detail_fut.cancel()
+            return None
+
+        # 详情页最多再等 1.8s，绝不因歌词慢拖死音频起播
+        try:
+            detail_data = detail_fut.result(timeout=1.8)
+        except Exception:
+            detail_data = {}
 
     lyrics, untimed = parse_sv_lyrics(
         (detail_data or {}).get("lyrics", ""),
@@ -507,12 +527,20 @@ def resolve_streetvoice_track(song_id: str, host: str = "com") -> dict:
             "no_cross_fallback": True,
         }
 
-    res = _resolve_on_host(sid, host=host)
-    if not res and host == "com":
-        res = _resolve_on_host(sid, host="cn")
+    # 双域名并发竞速，优先采用最先返回的有效流（优先 .com 192k）
+    hosts = ["com", "cn"] if host == "com" else [host, "com"]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_map = {h: pool.submit(_resolve_on_host, sid, h) for h in hosts}
+        results = {}
+        for h in hosts:
+            try:
+                results[h] = fut_map[h].result(timeout=4.2)
+            except Exception:
+                results[h] = None
 
-    if res:
-        return res
+        for h in hosts:
+            if results.get(h):
+                return results[h]
 
     return {
         "success": False,

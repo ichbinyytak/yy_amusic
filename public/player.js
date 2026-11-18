@@ -251,10 +251,34 @@
       const isHls = String(url).includes('.m3u8');
       if (isHls) {
         if (typeof window !== 'undefined' && window.Hls && window.Hls.isSupported()) {
-          const hls = new window.Hls({ enableWorker: true });
+          const hls = new window.Hls({
+            enableWorker: false,
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            manifestLoadingTimeOut: 12000,
+            manifestLoadingMaxRetry: 3,
+            manifestLoadingRetryDelay: 600,
+            levelLoadingTimeOut: 12000,
+            levelLoadingMaxRetry: 3,
+            fragLoadingTimeOut: 20000,
+            fragLoadingMaxRetry: 4,
+            fragLoadingRetryDelay: 800
+          });
           this.hlsInstance = hls;
+          let networkRecoveries = 0;
           hls.on(window.Hls.Events.ERROR, (event, data) => {
             if (data && data.fatal) {
+              if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 2) {
+                networkRecoveries++;
+                console.warn(`[Player] HLS 网络抖动，第 ${networkRecoveries} 次自动重连...`);
+                hls.startLoad();
+                return;
+              }
+              if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR && networkRecoveries < 2) {
+                networkRecoveries++;
+                hls.recoverMediaError();
+                return;
+              }
               console.warn("[Player] HLS fatal error:", data.type, data.details);
               this._destroyHls();
               this._handleAudioError(new Error(data.details || "HLS fatal error"));
@@ -521,7 +545,7 @@
       }
     }
 
-    // 毫秒级歌词同步 (带 150ms 听觉-视觉感知前置补偿；纯文本无时间戳歌词保持首行)
+    // 毫秒级歌词同步 (带 150ms 听觉-视觉感知前置补偿；纯文本无时间戳歌词按播放时长比例推进)
     _syncLyrics(currentTime) {
       if (!this.lyrics || this.lyrics.length === 0) return;
 
@@ -530,7 +554,12 @@
 
       let idx = -1;
       if (isUntimed) {
-        idx = 0;
+        const song = this.playlist[this.currentIndex];
+        const dur = (this.audio && isFinite(this.audio.duration) && this.audio.duration > 0)
+          ? this.audio.duration
+          : (song?.duration || (song?.durationMillis ? song.durationMillis / 1000 : 210));
+        const ratio = Math.min(0.999, Math.max(0, (currentTime || 0) / Math.max(1, dur)));
+        idx = Math.min(this.lyrics.length - 1, Math.floor(ratio * this.lyrics.length));
       } else {
         // 引入 150ms 听觉感知前置补偿，抵消 HTML5 audio timeupdate 事件 250ms 采样周期滞后感
         const syncTime = (currentTime || 0) + 0.15;
@@ -552,7 +581,8 @@
           index: idx,
           currentLine,
           nextLine,
-          allLines: this.lyrics
+          allLines: this.lyrics,
+          isUntimed
         });
       }
     }
@@ -803,10 +833,6 @@
             nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
             allLines: this.lyrics
           });
-        } else if (cached.lyricsResolved || song.platform === 'streetvoice') {
-          this.lyrics = [];
-          this.currentLyricIdx = -1;
-          this._emit('lyricUpdate', { index: -1, currentLine: "纯音乐 / 暂无歌词", nextLine: "", allLines: [] });
         } else {
           this.fetchLyrics(song);
         }
@@ -912,10 +938,6 @@
               nextLine: this.lyrics[1] ? this.lyrics[1].text : "",
               allLines: this.lyrics
             });
-          } else if (song.platform === 'streetvoice') {
-            this.lyrics = [];
-            this.currentLyricIdx = -1;
-            this._emit('lyricUpdate', { index: -1, currentLine: "纯音乐 / 暂无歌词", nextLine: "", allLines: [] });
           } else {
             // 后端未能提取到同源歌词时，异步兜底独立抓取
             this.fetchLyrics(song);
@@ -928,8 +950,7 @@
             sourceName: data.source_name,
             costMs: cost,
             ts: Date.now(),
-            lyrics: this.lyrics || [],
-            lyricsResolved: song.platform === 'streetvoice'
+            lyrics: this.lyrics || []
           });
 
           this._setAudioSource(data.url);
