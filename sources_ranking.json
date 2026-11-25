@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-24T05:04:02Z",
-  "testedAt": "2026-11-24T05:04:02Z",
-  "total": 17,
+  "generatedAt": "2026-11-25T03:52:28Z",
+  "testedAt": "2026-11-25T03:52:28Z",
+  "total": 16,
   "sources": [
     {
       "id": "kg_yy_zddyr_top_3843",
@@ -11,43 +11,7 @@
         "kg"
       ],
       "status": "ok",
-      "latency_ms": 1300.2,
-      "consecutive_fails": 0,
-      "success_count": 20
-    },
-    {
-      "id": "tx_api_vkeys_cn_f307",
-      "name": "星澜聚合音源 (StellarWave) · api.vkeys.cn (tx)",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "ok",
-      "latency_ms": 1236.8,
-      "consecutive_fails": 0,
-      "success_count": 9
-    },
-    {
-      "id": "kw_oiapi_net_875f",
-      "name": "非常刀 · oiapi.net (kw)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1081.5,
-      "consecutive_fails": 0,
-      "success_count": 1
-    },
-    {
-      "id": "kg_official",
-      "name": "酷狗官方直通源 (酷狗)",
-      "platform": "kg",
-      "platforms": [
-        "kg"
-      ],
-      "status": "ok",
-      "latency_ms": 1411.3,
+      "latency_ms": 1355.8,
       "consecutive_fails": 0,
       "success_count": 20
     },
@@ -59,21 +23,21 @@
         "wy"
       ],
       "status": "ok",
-      "latency_ms": 1567.4,
+      "latency_ms": 1225.7,
       "consecutive_fails": 0,
       "success_count": 3
     },
     {
-      "id": "kw_yaohu",
-      "name": "妖狐直通源 (酷我)",
-      "platform": "kw",
+      "id": "tx_api_vkeys_cn_f307",
+      "name": "星澜聚合音源 (StellarWave) · api.vkeys.cn (tx)",
+      "platform": "tx",
       "platforms": [
-        "kw"
+        "tx"
       ],
       "status": "ok",
-      "latency_ms": 1843.9,
+      "latency_ms": 1401.7,
       "consecutive_fails": 0,
-      "success_count": 50
+      "success_count": 9
     },
     {
       "id": "kw_haitang",
@@ -83,45 +47,21 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 1857.2,
+      "latency_ms": 1640.9,
       "consecutive_fails": 0,
       "success_count": 15
     },
     {
-      "id": "wy_api_yutangxiaowu_cn_537b",
-      "name": "轻量音源（四平台多源并行） · api.yutangxiaowu.cn (wy)",
-      "platform": "wy",
+      "id": "tx_cyapi_top_ccff",
+      "name": "收集の聚合接口(LX版) · cyapi.top (tx)",
+      "platform": "tx",
       "platforms": [
-        "wy"
+        "tx"
       ],
       "status": "ok",
-      "latency_ms": 1727.7,
-      "consecutive_fails": 0,
-      "success_count": 2
-    },
-    {
-      "id": "kw_nxinxz",
-      "name": "念心车机穿透源 (酷我)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1857.8,
+      "latency_ms": 1539.4,
       "consecutive_fails": 0,
       "success_count": 5
-    },
-    {
-      "id": "kw_c_wwwweb_top_12cc",
-      "name": "轻量音源（四平台多源并行） · c.wwwweb.top (kw)",
-      "platform": "kw",
-      "platforms": [
-        "kw"
-      ],
-      "status": "ok",
-      "latency_ms": 1866.6,
-      "consecutive_fails": 0,
-      "success_count": 3
     },
     {
       "id": "kw_yy_zddyr_top_77cf",
@@ -131,9 +71,21 @@
         "kw"
       ],
       "status": "ok",
-      "latency_ms": 1994.6,
+      "latency_ms": 2246.5,
       "consecutive_fails": 0,
       "success_count": 8
+    },
+    {
+      "id": "kw_c_wwwweb_top_12cc",
+      "name": "轻量音源（四平台多源并行） · c.wwwweb.top (kw)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 2127.6,
+      "consecutive_fails": 0,
+      "success_count": 3
     },
     {
       "id": "wy_c_wwwweb_top_edf3",
@@ -143,9 +95,69 @@
         "wy"
       ],
       "status": "ok",
-      "latency_ms": 2350.5,
+      "latency_ms": 2573.6,
       "consecutive_fails": 0,
       "success_count": 20
+    },
+    {
+      "id": "kw_nxinxz",
+      "name": "念心车机穿透源 (酷我)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "ok",
+      "latency_ms": 3014.6,
+      "consecutive_fails": 0,
+      "success_count": 5
+    },
+    {
+      "id": "kg_official",
+      "name": "酷狗官方直通源 (酷狗)",
+      "platform": "kg",
+      "platforms": [
+        "kg"
+      ],
+      "status": "ok",
+      "latency_ms": 5227.7,
+      "consecutive_fails": 0,
+      "success_count": 20
+    },
+    {
+      "id": "kw_yaohu",
+      "name": "妖狐直通源 (酷我)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "failed",
+      "latency_ms": 9999.0,
+      "consecutive_fails": 1,
+      "success_count": 50
+    },
+    {
+      "id": "wy_api_bugpk_com_8f5f",
+      "name": "lx-玉宁熙 · api.bugpk.com (wy)",
+      "platform": "wy",
+      "platforms": [
+        "wy"
+      ],
+      "status": "failed",
+      "latency_ms": 9999.0,
+      "consecutive_fails": 1,
+      "success_count": 1
+    },
+    {
+      "id": "kw_oiapi_net_0d41",
+      "name": "非常刀 · oiapi.net (kw)",
+      "platform": "kw",
+      "platforms": [
+        "kw"
+      ],
+      "status": "failed",
+      "latency_ms": 9999.0,
+      "consecutive_fails": 1,
+      "success_count": 1
     },
     {
       "id": "wy_103_79_184_97_7312",
@@ -156,32 +168,8 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 1,
+      "consecutive_fails": 2,
       "success_count": 6
-    },
-    {
-      "id": "tx_cyapi_top_ccff",
-      "name": "收集の聚合接口(LX版) · cyapi.top (tx)",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 1,
-      "success_count": 5
-    },
-    {
-      "id": "tx_music_lzmhhh_com_36f0",
-      "name": "轻量音源（四平台多源并行） · music.lzmhhh.com (tx)",
-      "platform": "tx",
-      "platforms": [
-        "tx"
-      ],
-      "status": "failed",
-      "latency_ms": 9999.0,
-      "consecutive_fails": 7,
-      "success_count": 2
     },
     {
       "id": "wy_oiapi",
@@ -192,7 +180,7 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 9,
+      "consecutive_fails": 10,
       "success_count": 25
     },
     {
@@ -204,7 +192,7 @@
       ],
       "status": "failed",
       "latency_ms": 9999.0,
-      "consecutive_fails": 16,
+      "consecutive_fails": 17,
       "success_count": 7
     }
   ]
